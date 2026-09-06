@@ -132,10 +132,14 @@ test("keeps market fetch errors out of the Pine compiler console", () => {
 });
 
 test("symbol search binds the selected venue to the chart feed", () => {
-  const source = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
-  assert.match(source, /setChartVenue\(market\.venue\)/);
-  assert.match(source, /loadAllMarketCatalogs/);
-  assert.match(source, /Filter by exchange/);
-  assert.match(source, /All exchanges/);
-  assert.match(source, /chartDrawingMarket\(symbol, chartVenue\)/);
+  const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
+  const dialog = readFileSync(fileURLToPath(new URL("../components/symbol-search-dialog.tsx", import.meta.url)), "utf8");
+  assert.match(workspace, /setChartVenue\(market\.venue\)/);
+  assert.match(workspace, /loadAllMarketCatalogs/);
+  assert.match(workspace, /chartDrawingMarket\(symbol, chartVenue\)/);
+  assert.match(workspace, /SymbolSearchDialog/);
+  assert.match(dialog, /Open sources/);
+  assert.match(dialog, /All sources/);
+  assert.match(dialog, /id="sources-sheet-title"/);
+  assert.match(dialog, /Asset type/);
 });
