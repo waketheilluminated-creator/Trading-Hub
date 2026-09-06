@@ -1,5 +1,5 @@
 import { fetchVenueKlines } from "@/lib/market-rest.ts";
-import { compactSymbol, isChartInterval, isMarketVenue } from "@/lib/market-venues.ts";
+import { compactSymbol, isChartInterval, isMarketVenue, supportedExchangesMessage } from "@/lib/market-venues.ts";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get("limit") || 300) || 300));
 
   if (!isMarketVenue(exchange)) {
-    return Response.json({ error: "Supported exchanges: bybit, binance, okx" }, { status: 400 });
+    return Response.json({ error: supportedExchangesMessage() }, { status: 400 });
   }
   if (!/^[A-Z0-9]{5,20}$/.test(symbol)) {
     return Response.json({ error: "Use a compact perpetual symbol such as BTCUSDT" }, { status: 400 });

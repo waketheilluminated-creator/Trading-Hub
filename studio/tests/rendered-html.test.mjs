@@ -95,17 +95,30 @@ test("derivatives API rejects unsupported exchanges", async () => {
   const app = await worker();
   const response = await app.fetch(new Request("http://localhost/api/derivatives?exchange=unknown"), env, context);
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx" });
+  assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
 });
 
 test("klines and markets APIs reject unsupported exchanges", async () => {
   const app = await worker();
   const klines = await app.fetch(new Request("http://localhost/api/klines?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
   assert.equal(klines.status, 400);
-  assert.deepEqual(await klines.json(), { error: "Supported exchanges: bybit, binance, okx" });
+  assert.deepEqual(await klines.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
   const markets = await app.fetch(new Request("http://localhost/api/markets?exchange=unknown"), env, context);
   assert.equal(markets.status, 400);
-  assert.deepEqual(await markets.json(), { error: "Supported exchanges: bybit, binance, okx" });
+  assert.deepEqual(await markets.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+});
+
+test("markets API can list all public catalogs without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/markets?exchange=all"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.exchange, "all");
+  assert.ok(Array.isArray(payload.markets));
+  const venues = new Set(payload.markets.map((market) => market.venue));
+  assert.ok(venues.has("okx"));
+  assert.ok(venues.has("bitget"));
+  assert.ok(payload.markets.some((market) => market.symbol === "BTCUSDT"));
 });
 
 test("klines API can serve OKX public candles without API keys", async () => {

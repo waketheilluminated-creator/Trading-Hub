@@ -2,6 +2,7 @@ import {
   classifyMarketFailure,
   compactSymbol,
   toBinanceInterval,
+  toBitgetBar,
   toOkxSwapInstId,
   toOkxBar,
   type ChartInterval,
@@ -41,6 +42,9 @@ export function klineRequestUrl(venue: MarketVenue, symbol: string, interval: Ch
   if (venue === "okx") {
     return `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(toOkxSwapInstId(compact))}&bar=${toOkxBar(interval)}&limit=${limit}`;
   }
+  if (venue === "bitget") {
+    return `https://api.bitget.com/api/v2/mix/market/candles?symbol=${compact}&granularity=${toBitgetBar(interval)}&limit=${limit}&productType=USDT-FUTURES`;
+  }
   const endpoint = (host === "public-mirror" ? BINANCE_KLINE_HOSTS[1] : BINANCE_KLINE_HOSTS[0]).klines;
   return `${endpoint}?symbol=${compact}&interval=${toBinanceInterval(interval)}&limit=${limit}`;
 }
@@ -48,6 +52,7 @@ export function klineRequestUrl(venue: MarketVenue, symbol: string, interval: Ch
 export function marketsRequestUrl(venue: MarketVenue, host = "official"): string {
   if (venue === "bybit") return "https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000";
   if (venue === "okx") return "https://www.okx.com/api/v5/public/instruments?instType=SWAP";
+  if (venue === "bitget") return "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES";
   return (host === "public-mirror" ? BINANCE_KLINE_HOSTS[1] : BINANCE_KLINE_HOSTS[0]).markets;
 }
 
@@ -61,6 +66,10 @@ export function parseVenueKlines(venue: MarketVenue, payload: unknown): MarketCa
   if (venue === "okx") {
     const rows = Array.isArray((payload as { data?: unknown })?.data) ? (payload as { data: unknown[] }).data : [];
     return rows.map(parseOkxRow).filter(isCandle).sort(byTime);
+  }
+  if (venue === "bitget") {
+    const rows = Array.isArray((payload as { data?: unknown })?.data) ? (payload as { data: unknown[] }).data : [];
+    return rows.map(parseBitgetRow).filter(isCandle).sort(byTime);
   }
   const rows = Array.isArray(payload) ? payload : [];
   return rows.map(parseBinanceRow).filter(isCandle).sort(byTime);
@@ -119,6 +128,14 @@ export function parseVenueMarkets(venue: MarketVenue, payload: unknown): RestMar
       return [{ symbol: `${base}USDT`, base, quote: "USDT" }];
     }));
   }
+  if (venue === "bitget") {
+    const rows = Array.isArray((payload as { data?: unknown })?.data) ? (payload as { data: Record<string, unknown>[] }).data : [];
+    return uniqueMarkets(rows.flatMap((row) => {
+      if (row.symbolStatus !== "normal" || row.symbolType !== "perpetual" || row.quoteCoin !== "USDT") return [];
+      if (typeof row.symbol !== "string" || typeof row.baseCoin !== "string") return [];
+      return [{ symbol: row.symbol, base: row.baseCoin, quote: "USDT" }];
+    }));
+  }
   const rows = Array.isArray((payload as { symbols?: unknown })?.symbols)
     ? (payload as { symbols: Record<string, unknown>[] }).symbols
     : [];
@@ -175,6 +192,12 @@ function assertVenuePayload(venue: MarketVenue, payload: unknown): void {
       throw classifyMarketFailure(venue, 502, String((payload as { msg?: unknown }).msg || "OKX kline request failed"));
     }
   }
+  if (venue === "bitget") {
+    const code = (payload as { code?: unknown })?.code;
+    if (code != null && String(code) !== "00000") {
+      throw classifyMarketFailure(venue, 502, String((payload as { msg?: unknown }).msg || "Bitget kline request failed"));
+    }
+  }
 }
 
 function parseBybitRow(row: unknown): MarketCandle | null {
@@ -188,6 +211,11 @@ function parseBinanceRow(row: unknown): MarketCandle | null {
 }
 
 function parseOkxRow(row: unknown): MarketCandle | null {
+  if (!Array.isArray(row) || row.length < 6) return null;
+  return candleFromMs(row[0], row[1], row[2], row[3], row[4], row[5]);
+}
+
+function parseBitgetRow(row: unknown): MarketCandle | null {
   if (!Array.isArray(row) || row.length < 6) return null;
   return candleFromMs(row[0], row[1], row[2], row[3], row[4], row[5]);
 }

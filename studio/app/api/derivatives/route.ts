@@ -1,4 +1,5 @@
-import { binance, bybit, okx, type Exchange } from "ccxt";
+import { binance, bitget, bybit, okx, type Exchange } from "ccxt";
+import { supportedExchangesMessage } from "@/lib/market-venues.ts";
 
 function withPlatformFetch(exchange: Exchange) {
   // CCXT otherwise selects Node's undici transport. Sites runs on Workers,
@@ -18,6 +19,7 @@ const exchanges: Record<string, () => Exchange> = {
   bybit: () => withPlatformFetch(new bybit({ enableRateLimit: true })),
   binance: () => withPlatformFetch(new binance({ enableRateLimit: true, options: { defaultType: "swap" } })),
   okx: () => withPlatformFetch(new okx({ enableRateLimit: true, options: { defaultType: "swap" } })),
+  bitget: () => withPlatformFetch(new bitget({ enableRateLimit: true, options: { defaultType: "swap" } })),
 };
 
 function numeric(value: unknown): number | null {
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
   const makeExchange = exchanges[exchangeId];
 
   if (!makeExchange) {
-    return Response.json({ error: "Supported exchanges: bybit, binance, okx" }, { status: 400 });
+    return Response.json({ error: supportedExchangesMessage() }, { status: 400 });
   }
   if (!/^[A-Z0-9]{2,12}\/[A-Z0-9]{2,12}:[A-Z0-9]{2,12}$/.test(symbol)) {
     return Response.json({ error: "Use a unified perpetual symbol such as BTC/USDT:USDT" }, { status: 400 });

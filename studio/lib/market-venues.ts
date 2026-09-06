@@ -1,4 +1,4 @@
-export const MARKET_VENUES = ["bybit", "binance", "okx"] as const;
+export const MARKET_VENUES = ["bybit", "binance", "okx", "bitget"] as const;
 export type MarketVenue = (typeof MARKET_VENUES)[number];
 export type ChartInterval = "1" | "5" | "15" | "60" | "240" | "D";
 
@@ -8,7 +8,10 @@ export const VENUE_LABELS: Record<MarketVenue, string> = {
   bybit: "Bybit",
   binance: "Binance",
   okx: "OKX",
+  bitget: "Bitget",
 };
+
+const CANADA_FRIENDLY_FALLBACK: readonly MarketVenue[] = ["okx", "bitget", "binance", "bybit"];
 
 export type MarketCandle = {
   time: number;
@@ -44,8 +47,17 @@ const OKX_BAR: Record<ChartInterval, string> = {
   D: "1D",
 };
 
+const BITGET_BAR: Record<ChartInterval, string> = {
+  "1": "1m",
+  "5": "5m",
+  "15": "15m",
+  "60": "1H",
+  "240": "4H",
+  D: "1D",
+};
+
 export function isMarketVenue(value: unknown): value is MarketVenue {
-  return value === "bybit" || value === "binance" || value === "okx";
+  return MARKET_VENUES.includes(value as MarketVenue);
 }
 
 export function isChartInterval(value: unknown): value is ChartInterval {
@@ -56,9 +68,29 @@ export function venueLabel(venue: MarketVenue): string {
   return VENUE_LABELS[venue];
 }
 
+export function venueCode(venue: MarketVenue): string {
+  return venue.toUpperCase();
+}
+
+export function supportedExchangesMessage(): string {
+  return `Supported exchanges: ${MARKET_VENUES.join(", ")}`;
+}
+
 export function venueFallbackOrder(preferred: MarketVenue): MarketVenue[] {
-  const rest = (["okx", "binance", "bybit"] as const).filter((venue) => venue !== preferred);
-  return [preferred, ...rest];
+  return [preferred, ...CANADA_FRIENDLY_FALLBACK.filter((venue) => venue !== preferred)];
+}
+
+export function formatMarketId(venue: MarketVenue, symbol: string): string {
+  return `${venueCode(venue)}:${compactSymbol(symbol)}`;
+}
+
+export function parseMarketId(value: string): { venue: MarketVenue; symbol: string } {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^([A-Za-z]+):(.+)$/);
+  if (match && isMarketVenue(match[1].toLowerCase())) {
+    return { venue: match[1].toLowerCase() as MarketVenue, symbol: compactSymbol(match[2]) };
+  }
+  return { venue: "bybit", symbol: compactSymbol(raw) };
 }
 
 export function compactSymbol(symbol: string): string {
@@ -78,6 +110,10 @@ export function toBinanceInterval(interval: ChartInterval): string {
 
 export function toOkxBar(interval: ChartInterval): string {
   return OKX_BAR[interval];
+}
+
+export function toBitgetBar(interval: ChartInterval): string {
+  return BITGET_BAR[interval];
 }
 
 export function classifyMarketFailure(venue: MarketVenue, status: number, body: string): MarketRequestFailure {

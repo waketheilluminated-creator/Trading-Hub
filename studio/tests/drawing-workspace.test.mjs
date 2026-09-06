@@ -58,3 +58,31 @@ test("derivatives venue changes do not change the Bybit chart drawing collection
   assert.deepEqual(after, before);
   assert.deepEqual(loadDrawings(storage, after.venue, after.symbol), [bybitDrawing]);
 });
+
+test("user-selected chart venue remounts drawings; feed fallback does not", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  const bybitDrawing = {
+    id: "bybit-drawing",
+    type: "trend-line",
+    points: [{ time: 100, price: 10 }, { time: 200, price: 20 }],
+    style: { color: "#76e7a4", lineWidth: 2 },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const binanceDrawing = { ...bybitDrawing, id: "binance-drawing" };
+  saveDrawings(storage, "bybit", "BTCUSDT", [bybitDrawing]);
+  saveDrawings(storage, "binance", "BTCUSDT", [binanceDrawing]);
+
+  const selected = chartDrawingMarket("BTCUSDT", "bybit");
+  const liveFallbackVenue = "okx";
+  assert.notEqual(liveFallbackVenue, selected.venue);
+  assert.deepEqual(loadDrawings(storage, selected.venue, selected.symbol), [bybitDrawing]);
+
+  const switched = chartDrawingMarket("BTCUSDT", "binance");
+  assert.equal(switched.venue, "binance");
+  assert.deepEqual(loadDrawings(storage, switched.venue, switched.symbol), [binanceDrawing]);
+});

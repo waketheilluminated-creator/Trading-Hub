@@ -1,4 +1,5 @@
-import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, toBinanceInterval, toOkxBar, toOkxSwapInstId, venueFallbackOrder, venueLabel, type ChartInterval, type MarketCandle, type MarketRequestFailure, type MarketVenue } from "./market-venues.ts";
+import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, isMarketVenue, MARKET_VENUES, toBinanceInterval, toBitgetBar, toOkxBar, toOkxSwapInstId, venueFallbackOrder, venueLabel, type ChartInterval, type MarketCandle, type MarketRequestFailure, type MarketVenue } from "./market-venues.ts";
+import { fallbackCatalog, tagMarket } from "./market-symbols.js";
 
 export type ChartHistoryResult = {
   venue: MarketVenue;
@@ -44,6 +45,12 @@ export function parseLiveKline(venue: MarketVenue, payload: unknown): MarketCand
     const item = (payload as { k?: Record<string, unknown> })?.k;
     if (!item?.t) return null;
     return candle(item.t, item.o, item.h, item.l, item.c, item.v);
+  }
+  if (venue === "bitget") {
+    const rows = (payload as { data?: unknown[] })?.data;
+    const row = Array.isArray(rows?.[0]) ? rows[0] : null;
+    if (!row) return null;
+    return candle(row[0], row[1], row[2], row[3], row[4], row[5]);
   }
   const rows = (payload as { data?: unknown[] })?.data;
   const row = Array.isArray(rows?.[0]) ? rows[0] : null;
@@ -92,21 +99,53 @@ export async function loadChartHistory(
   throw Object.assign(new Error(joinFailureMessage(failures)), { failures, blocked: failures.some((failure) => failure.blocked), venue: preferred, status: preferredFailure?.status ?? 0 });
 }
 
+export type CatalogMarket = { venue: MarketVenue; symbol: string; base: string; quote: string; kind?: string };
+
 export async function loadMarketCatalog(
   preferred: MarketVenue,
   fetchImpl: FetchImpl = fetch,
-): Promise<{ venue: MarketVenue; markets: { symbol: string; base: string; quote: string }[] }> {
+): Promise<{ venue: MarketVenue; markets: CatalogMarket[] }> {
   for (const venue of venueFallbackOrder(preferred)) {
     try {
       const response = await fetchImpl(`/api/markets?exchange=${venue}`);
       if (!response.ok) continue;
       const payload = await response.json() as { markets?: { symbol: string; base: string; quote: string }[] };
-      if (payload.markets?.length) return { venue, markets: payload.markets };
+      if (payload.markets?.length) {
+        return { venue, markets: payload.markets.map((market) => tagMarket(venue, market)) };
+      }
     } catch {
       // Try the next public catalog before using the offline fallback.
     }
   }
   return { venue: preferred, markets: [] };
+}
+
+export async function loadAllMarketCatalogs(fetchImpl: FetchImpl = fetch): Promise<CatalogMarket[]> {
+  try {
+    const response = await fetchImpl("/api/markets?exchange=all");
+    if (response.ok) {
+      const payload = await response.json() as { markets?: CatalogMarket[] };
+      const markets = (payload.markets || []).filter((market) => isMarketVenue(market.venue) && market.symbol);
+      if (markets.length) return markets;
+    }
+  } catch {
+    // Fall through to per-venue fetches, then the offline catalog.
+  }
+
+  const catalogs = await Promise.all(MARKET_VENUES.map(async (venue) => {
+    try {
+      const response = await fetchImpl(`/api/markets?exchange=${venue}`);
+      if (!response.ok) return fallbackCatalog([venue]);
+      const payload = await response.json() as { markets?: { symbol: string; base: string; quote: string }[] };
+      return payload.markets?.length
+        ? payload.markets.map((market) => tagMarket(venue, market))
+        : fallbackCatalog([venue]);
+    } catch {
+      return fallbackCatalog([venue]);
+    }
+  }));
+  const merged = catalogs.flat();
+  return merged.length ? merged : fallbackCatalog();
 }
 
 export function openKlineStream(
@@ -131,9 +170,11 @@ export function openKlineStream(
   socket.onopen = () => {
     const subscribe = klineSubscribeMessage(venue, compact, interval);
     if (subscribe) socket.send(subscribe);
-    if (venue === "bybit" || venue === "okx") {
+    if (venue === "bybit" || venue === "okx" || venue === "bitget") {
       heartbeat = setIntervalSafe(() => {
-        if (socket.readyState === 1) socket.send(venue === "okx" ? "ping" : JSON.stringify({ op: "ping" }));
+        if (socket.readyState === 1) {
+          socket.send(venue === "okx" || venue === "bitget" ? "ping" : JSON.stringify({ op: "ping" }));
+        }
       }, 20000);
     }
     handlers.onOpen();
@@ -166,6 +207,7 @@ export function klineStreamUrl(venue: MarketVenue, symbol: string, interval: Cha
   const compact = compactSymbol(symbol);
   if (venue === "bybit") return "wss://stream.bybit.com/v5/public/linear";
   if (venue === "okx") return "wss://ws.okx.com:8443/ws/v5/public";
+  if (venue === "bitget") return "wss://ws.bitget.com/v2/ws/public";
   return `wss://fstream.binance.com/ws/${compact.toLowerCase()}@kline_${toBinanceInterval(interval)}`;
 }
 
@@ -174,6 +216,12 @@ export function klineSubscribeMessage(venue: MarketVenue, symbol: string, interv
   if (venue === "bybit") return JSON.stringify({ op: "subscribe", args: [`kline.${interval}.${compact}`] });
   if (venue === "okx") {
     return JSON.stringify({ op: "subscribe", args: [{ channel: `candle${toOkxBar(interval)}`, instId: toOkxSwapInstId(compact) }] });
+  }
+  if (venue === "bitget") {
+    return JSON.stringify({
+      op: "subscribe",
+      args: [{ instType: "USDT-FUTURES", channel: `candle${toBitgetBar(interval)}`, instId: compact }],
+    });
   }
   return null;
 }
@@ -200,7 +248,7 @@ function parseJson(body: string): unknown {
 }
 
 function joinFailureMessage(failures: MarketRequestFailure[]): string {
-  if (!failures.length) return "Live market data is unavailable from Bybit, Binance, and OKX.";
+  if (!failures.length) return "Live market data is unavailable from Bybit, Binance, OKX, and Bitget.";
   const unique = [...new Map(failures.map((failure) => [failure.venue, failure])).values()];
   const blocked = unique.filter((failure) => failure.blocked).map((failure) => venueLabel(failure.venue));
   if (blocked.length === unique.length) {

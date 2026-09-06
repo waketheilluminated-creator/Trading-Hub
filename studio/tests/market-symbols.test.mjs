@@ -45,16 +45,37 @@ test("normalizes Binance USDT markets and OKX linear swaps", async () => {
   }), [{ symbol: "SOLUSDT", base: "SOL", quote: "USDT" }]);
 });
 
-test("searches market symbols by ticker and coin name", async () => {
+test("searches market symbols by ticker, coin name, and exchange", async () => {
   assert.ok(existsSync(fileURLToPath(moduleUrl)), "market symbol logic module should exist");
-  const { searchMarkets } = await import(moduleUrl.href);
+  const { filterSymbolSearch, searchMarkets } = await import(moduleUrl.href);
   const markets = [
-    { symbol: "BTCUSDT", base: "BTC", quote: "USDT" },
-    { symbol: "SOLUSDT", base: "SOL", quote: "USDT" },
+    { venue: "binance", symbol: "BTCUSDT", base: "BTC", quote: "USDT", kind: "perpetual" },
+    { venue: "okx", symbol: "BTCUSDT", base: "BTC", quote: "USDT", kind: "perpetual" },
+    { venue: "bybit", symbol: "SOLUSDT", base: "SOL", quote: "USDT", kind: "perpetual" },
   ];
 
-  assert.deepEqual(searchMarkets(markets, "sol"), [markets[1]]);
-  assert.deepEqual(searchMarkets(markets, "btc / usdt"), [markets[0]]);
+  assert.deepEqual(searchMarkets(markets, "sol"), [markets[2]]);
+  assert.deepEqual(searchMarkets(markets, "btc / usdt").map((item) => item.venue), ["binance", "okx"]);
+  assert.deepEqual(searchMarkets(markets, "okx").map((item) => item.venue), ["okx"]);
+  assert.deepEqual(searchMarkets(markets, "BINANCE:BTCUSDT").map((item) => item.venue), ["binance"]);
+  assert.deepEqual(filterSymbolSearch(markets, { venue: "okx" }).map((item) => item.venue), ["okx"]);
+});
+
+test("normalizes Bitget USDT perpetual markets", async () => {
+  const { normalizeBitgetMarkets } = await import(moduleUrl.href);
+  assert.deepEqual(normalizeBitgetMarkets({
+    data: [
+      { symbol: "BTCUSDT", baseCoin: "BTC", quoteCoin: "USDT", symbolType: "perpetual", symbolStatus: "normal" },
+      { symbol: "ETHUSDT", baseCoin: "ETH", quoteCoin: "USDT", symbolType: "perpetual", symbolStatus: "offline" },
+    ],
+  }), [{ symbol: "BTCUSDT", base: "BTC", quote: "USDT" }]);
+});
+
+test("parses TradingView-style market identities", async () => {
+  const { formatMarketId, parseMarketId } = await import(moduleUrl.href);
+  assert.equal(formatMarketId("binance", "btc-usdt"), "BINANCE:BTCUSDT");
+  assert.deepEqual(parseMarketId("OKX:ETHUSDT"), { venue: "okx", symbol: "ETHUSDT" });
+  assert.deepEqual(parseMarketId("BTCUSDT"), { venue: "bybit", symbol: "BTCUSDT" });
 });
 
 test("keeps recent symbols unique and newest first", async () => {

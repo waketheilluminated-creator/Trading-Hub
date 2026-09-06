@@ -1,12 +1,28 @@
 import { fetchVenueMarkets } from "@/lib/market-rest.ts";
-import { isMarketVenue } from "@/lib/market-venues.ts";
+import { fallbackCatalog, tagMarket } from "@/lib/market-symbols.js";
+import { isMarketVenue, MARKET_VENUES, supportedExchangesMessage, type MarketVenue } from "@/lib/market-venues.ts";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const exchange = (url.searchParams.get("exchange") || "bybit").toLowerCase();
 
+  if (exchange === "all") {
+    const catalogs = await Promise.all(MARKET_VENUES.map(async (venue) => {
+      try {
+        const result = await fetchVenueMarkets(venue);
+        return result.markets.map((market) => tagMarket(venue, market));
+      } catch {
+        return fallbackCatalog([venue]);
+      }
+    }));
+    return Response.json({
+      exchange: "all",
+      markets: catalogs.flat(),
+    }, { headers: { "Cache-Control": "public, max-age=60, s-maxage=60" } });
+  }
+
   if (!isMarketVenue(exchange)) {
-    return Response.json({ error: "Supported exchanges: bybit, binance, okx" }, { status: 400 });
+    return Response.json({ error: supportedExchangesMessage() }, { status: 400 });
   }
 
   try {
@@ -14,7 +30,7 @@ export async function GET(request: Request) {
     return Response.json({
       exchange: result.venue,
       source: result.source,
-      markets: result.markets,
+      markets: result.markets.map((market) => tagMarket(exchange as MarketVenue, market)),
     }, { headers: { "Cache-Control": "public, max-age=60, s-maxage=60" } });
   } catch (error) {
     const failure = error && typeof error === "object" ? error as { message?: string; blocked?: boolean; status?: number; venue?: string } : {};

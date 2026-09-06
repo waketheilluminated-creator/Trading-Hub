@@ -6,9 +6,9 @@ import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, toOkxS
 import { fetchVenueKlines, parseVenueKlines, parseVenueMarkets } from "../lib/market-rest.ts";
 import { loadChartHistory, mergeLiveCandle, parseLiveKline } from "../lib/market-feed.ts";
 
-test("falls back from Bybit to OKX before Binance", () => {
-  assert.deepEqual(venueFallbackOrder("bybit"), ["bybit", "okx", "binance"]);
-  assert.deepEqual(venueFallbackOrder("okx"), ["okx", "binance", "bybit"]);
+test("falls back from Bybit to OKX before Bitget and Binance", () => {
+  assert.deepEqual(venueFallbackOrder("bybit"), ["bybit", "okx", "bitget", "binance"]);
+  assert.deepEqual(venueFallbackOrder("okx"), ["okx", "bitget", "binance", "bybit"]);
 });
 
 test("classifies CloudFront and Binance geo blocks", () => {
@@ -46,6 +46,11 @@ test("normalizes REST klines from Bybit, Binance, and OKX", () => {
   }), [
     { time: 1700000900, open: 2, high: 4, low: 1, close: 3, volume: 10 },
   ]);
+  assert.deepEqual(parseVenueKlines("bitget", {
+    data: [["1700000900000", "2", "4", "1", "3", "10"]],
+  }), [
+    { time: 1700000900, open: 2, high: 4, low: 1, close: 3, volume: 10 },
+  ]);
 });
 
 test("parses live websocket klines without mixing them into compiler state", () => {
@@ -56,6 +61,9 @@ test("parses live websocket klines without mixing them into compiler state", () 
     time: 1700000000, open: 1, high: 2, low: 1, close: 1.5, volume: 9,
   });
   assert.deepEqual(parseLiveKline("okx", { data: [["1700000000000", "1", "2", "1", "1.5", "9"]] }), {
+    time: 1700000000, open: 1, high: 2, low: 1, close: 1.5, volume: 9,
+  });
+  assert.deepEqual(parseLiveKline("bitget", { data: [["1700000000000", "1", "2", "1", "1.5", "9"]] }), {
     time: 1700000000, open: 1, high: 2, low: 1, close: 1.5, volume: 9,
   });
 });
@@ -121,4 +129,13 @@ test("keeps market fetch errors out of the Pine compiler console", () => {
   assert.doesNotMatch(marketEffect, /setConsoleText|setConsoleKind/);
   assert.match(source, /Compiler output/);
   assert.match(source, /market-feed-error/);
+});
+
+test("symbol search binds the selected venue to the chart feed", () => {
+  const source = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
+  assert.match(source, /setChartVenue\(market\.venue\)/);
+  assert.match(source, /loadAllMarketCatalogs/);
+  assert.match(source, /Filter by exchange/);
+  assert.match(source, /All exchanges/);
+  assert.match(source, /chartDrawingMarket\(symbol, chartVenue\)/);
 });
