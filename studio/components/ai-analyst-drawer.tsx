@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AI_PROVIDERS,
   aiProvider,
@@ -9,7 +9,7 @@ import {
   type AiProviderId,
 } from "@/lib/ai/providers.ts";
 import { buildContextPack, summarizeContextPack, type AnalystSnapshot } from "@/lib/ai/context-pack.ts";
-import { browserSessionStorage, defaultByokSession, loadByokSession, saveByokSession } from "@/lib/ai/session.ts";
+import { browserSessionStorage, loadByokSession, saveByokSession, type ByokSession } from "@/lib/ai/session.ts";
 
 type AIMessage = { id: number; role: "user" | "assistant"; content: string };
 type ConnectionStatus = { kind: "idle" | "testing" | "ok" | "error"; message: string };
@@ -23,49 +23,33 @@ export function AiAnalystDrawer({
   onClose: () => void;
   snapshot: AnalystSnapshot;
 }) {
-  const initial = defaultByokSession();
-  const [providerId, setProviderId] = useState<AiProviderId>(initial.providerId);
-  const [endpoint, setEndpoint] = useState(initial.endpoint);
-  const [model, setModel] = useState(initial.model);
-  const [apiKey, setApiKey] = useState("");
-  const [rememberKey, setRememberKey] = useState(false);
+  const [session, setSession] = useState<ByokSession>(() => loadByokSession(browserSessionStorage()));
+  const { providerId, endpoint, model, apiKey, rememberKey } = session;
   const [question, setQuestion] = useState("Analyze the current market structure and identify the most important risk signals.");
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus>({ kind: "idle", message: "Not tested this session" });
 
   const provider = aiProvider(providerId);
   const pack = useMemo(() => buildContextPack(snapshot), [snapshot]);
   const summary = useMemo(() => summarizeContextPack(pack), [pack]);
 
-  useEffect(() => {
-    const stored = loadByokSession(browserSessionStorage());
-    setProviderId(stored.providerId);
-    setEndpoint(stored.endpoint);
-    setModel(stored.model);
-    setRememberKey(stored.rememberKey);
-    setApiKey(stored.apiKey);
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveByokSession(browserSessionStorage(), { providerId, endpoint, model, rememberKey, apiKey });
-  }, [apiKey, endpoint, hydrated, model, providerId, rememberKey]);
+  const updateSession = (patch: Partial<ByokSession>) => {
+    setSession((current) => {
+      const next = { ...current, ...patch };
+      saveByokSession(browserSessionStorage(), next);
+      return next;
+    });
+  };
 
   const chooseProvider = (nextId: AiProviderId) => {
-    const next = applyProviderPreset(nextId, { providerId, endpoint, model });
-    setProviderId(next.providerId);
-    setEndpoint(next.endpoint);
-    setModel(next.model);
+    updateSession(applyProviderPreset(nextId, { providerId, endpoint, model }));
     setStatus({ kind: "idle", message: "Preset updated · test the connection" });
   };
 
   const changeEndpoint = (value: string) => {
-    setEndpoint(value);
-    setProviderId(providerFromEndpoint(value));
+    updateSession({ endpoint: value, providerId: providerFromEndpoint(value) });
   };
 
   const requestAnalyst = async (mode: "analyze" | "test") => {
@@ -152,16 +136,16 @@ export function AiAnalystDrawer({
           <p className="ai-field-hint">Public HTTPS chat-completions URL. Base `/v1` paths are completed automatically.</p>
           <div className="ai-field-row">
             <label>Model ID
-              <input placeholder={provider.defaultModel || "your-model-id"} value={model} onChange={(event) => setModel(event.target.value)} />
+              <input placeholder={provider.defaultModel || "your-model-id"} value={model} onChange={(event) => updateSession({ model: event.target.value })} />
             </label>
             <label>
               <span className="ai-key-label">API key <em>Session only</em></span>
-              <input type="password" autoComplete="off" placeholder="Bearer key · not stored on the server" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+              <input type="password" autoComplete="off" placeholder="Bearer key · not stored on the server" value={apiKey} onChange={(event) => updateSession({ apiKey: event.target.value })} />
             </label>
           </div>
           <p className="ai-field-hint">{provider.modelHelp} {provider.keyHelp}</p>
           <label className="ai-persist">
-            <input type="checkbox" checked={rememberKey} onChange={(event) => setRememberKey(event.target.checked)} />
+            <input type="checkbox" checked={rememberKey} onChange={(event) => updateSession({ rememberKey: event.target.checked })} />
             <span>Remember the key in this tab’s sessionStorage. Closing the tab clears it. The key is never written to localStorage or server logs.</span>
           </label>
           <div className="ai-test-row">

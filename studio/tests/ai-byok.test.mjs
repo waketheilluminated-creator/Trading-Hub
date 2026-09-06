@@ -124,6 +124,7 @@ test("sessionStorage keeps settings and only writes the key when opted in", () =
   const stored = parseByokSession(storage.getItem(BYOK_SESSION_KEY));
   assert.equal(stored.apiKey, secret);
   assert.equal(JSON.parse(serializeByokSession({ ...session, rememberKey: false })).apiKey, undefined);
+  assert.equal(loadByokSession(null).providerId, "openai");
 });
 
 test("proxy test mode validates the model without echoing secrets", async () => {
