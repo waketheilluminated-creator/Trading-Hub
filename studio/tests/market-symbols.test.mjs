@@ -25,6 +25,26 @@ test("normalizes only active Bybit USDT perpetual markets", async () => {
   ]);
 });
 
+test("normalizes Binance USDT markets and OKX linear swaps", async () => {
+  const { normalizeBinanceMarkets, normalizeOkxSwapMarkets } = await import(moduleUrl.href);
+  assert.deepEqual(normalizeBinanceMarkets({
+    symbols: [
+      { symbol: "BTCUSDT", status: "TRADING", baseAsset: "BTC", quoteAsset: "USDT", contractType: "PERPETUAL" },
+      { symbol: "ETHUSDT", status: "BREAK", baseAsset: "ETH", quoteAsset: "USDT", contractType: "PERPETUAL" },
+      { symbol: "SOLUSDT", status: "TRADING", baseAsset: "SOL", quoteAsset: "USDT" },
+    ],
+  }), [
+    { symbol: "BTCUSDT", base: "BTC", quote: "USDT" },
+    { symbol: "SOLUSDT", base: "SOL", quote: "USDT" },
+  ]);
+  assert.deepEqual(normalizeOkxSwapMarkets({
+    data: [
+      { state: "live", ctType: "linear", settleCcy: "USDT", ctValCcy: "SOL", instFamily: "SOL-USDT" },
+      { state: "suspend", ctType: "linear", settleCcy: "USDT", ctValCcy: "BTC", instFamily: "BTC-USDT" },
+    ],
+  }), [{ symbol: "SOLUSDT", base: "SOL", quote: "USDT" }]);
+});
+
 test("searches market symbols by ticker and coin name", async () => {
   assert.ok(existsSync(fileURLToPath(moduleUrl)), "market symbol logic module should exist");
   const { searchMarkets } = await import(moduleUrl.href);

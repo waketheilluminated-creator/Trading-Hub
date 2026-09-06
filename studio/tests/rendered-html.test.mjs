@@ -53,6 +53,8 @@ test("server-renders the πlab trading workspace", async () => {
   assert.match(html, /Resize Pine editor panel/);
   assert.match(html, /aria-valuemin="37"/);
   assert.match(html, /Resize compiler console/);
+  assert.match(html, /Compiler output/);
+  assert.match(html, /Chart market venue/);
   assert.match(html, /aria-label="Resize compiler console"[^>]*aria-orientation="horizontal"/);
   assert.match(html, /aria-label="Select drawing tool"/);
   assert.match(html, /aria-label="Trend line drawing tool"/);
@@ -94,4 +96,25 @@ test("derivatives API rejects unsupported exchanges", async () => {
   const response = await app.fetch(new Request("http://localhost/api/derivatives?exchange=unknown"), env, context);
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx" });
+});
+
+test("klines and markets APIs reject unsupported exchanges", async () => {
+  const app = await worker();
+  const klines = await app.fetch(new Request("http://localhost/api/klines?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
+  assert.equal(klines.status, 400);
+  assert.deepEqual(await klines.json(), { error: "Supported exchanges: bybit, binance, okx" });
+  const markets = await app.fetch(new Request("http://localhost/api/markets?exchange=unknown"), env, context);
+  assert.equal(markets.status, 400);
+  assert.deepEqual(await markets.json(), { error: "Supported exchanges: bybit, binance, okx" });
+});
+
+test("klines API can serve OKX public candles without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/klines?exchange=okx&symbol=BTCUSDT&interval=15&limit=2"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.exchange, "okx");
+  assert.ok(Array.isArray(payload.candles));
+  assert.ok(payload.candles.length >= 1);
+  assert.equal(typeof payload.candles[0].close, "number");
 });

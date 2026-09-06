@@ -1,3 +1,5 @@
+// Drawings stay on this collection even when the live candle feed
+// falls back to Binance or OKX, so changing data venue does not remount drawings.
 export const CHART_MARKET_VENUE = "bybit" as const;
 
 export type ChartDrawingMarket = Readonly<{

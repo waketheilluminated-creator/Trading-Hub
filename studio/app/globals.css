@@ -55,7 +55,12 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .toolbar-separator { width:1px; height:18px; background:var(--line); margin:0 5px; }
 .live-dot { width:6px; height:6px; border-radius:50%; background:var(--faint); box-shadow:0 0 0 3px rgba(89,100,118,.12); }
 .live-dot.online { background:var(--accent); box-shadow:0 0 0 3px rgba(118,231,164,.12); }
+.live-dot.polling { background:var(--amber); box-shadow:0 0 0 3px rgba(242,198,109,.16); }
+.live-dot.error { background:var(--red); box-shadow:0 0 0 3px rgba(240,111,117,.16); }
 .live-copy { color:var(--muted); font-size:11px; }
+.toolbar-venue-select { padding:4px 6px; color:var(--ink); background:#111720; border:1px solid var(--line); border-radius:6px; font-size:10px; }
+.market-banner { position:absolute; z-index:5; left:14px; right:14px; bottom:12px; padding:7px 9px; color:#f2e3b5; border:1px solid #5d4c2a; border-radius:6px; background:rgba(36,28,14,.92); font:10px/1.45 var(--font-geist-sans); pointer-events:none; }
+.market-feed-error { color:#f3c0c3; padding:0 28px; text-align:center; line-height:1.5; }
 .chart-alert-button { display:flex; align-items:center; gap:5px; padding:6px 8px; color:var(--muted); border:1px solid transparent; border-radius:6px; background:transparent; cursor:pointer; }
 .chart-alert-button span { color:#aeb8c7; font:14px/1 var(--font-geist-mono); }
 .chart-alert-button:hover { color:var(--ink); background:var(--panel-2); }
