@@ -17,6 +17,7 @@ import { DrawingSaveScheduler, createDrawingStorage, loadDrawings, type DrawingS
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts";
 import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
+import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { savePineSource, usePineSource } from "./pine-source";
@@ -30,7 +31,6 @@ type Derivatives = {
   nextFundingTimestamp: number | null; exchange: string; updatedAt: number;
 };
 type PinePlot = { title?: string; data?: (number | null)[] };
-type AIMessage = { id: number; role: "user" | "assistant"; content: string };
 type MarketOption = SymbolSearchMarket;
 
 function venueOptions() {
@@ -153,13 +153,6 @@ export function TradingWorkspace() {
   const [alertPrice, setAlertPrice] = useState("");
   const [pinePlots, setPinePlots] = useState<PinePlot[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiEndpoint, setAiEndpoint] = useState("");
-  const [aiModel, setAiModel] = useState("");
-  const [aiKey, setAiKey] = useState("");
-  const [aiQuestion, setAiQuestion] = useState("Analyze the current market structure and identify the most important risk signals.");
-  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
-  const [aiRunning, setAiRunning] = useState(false);
-  const [aiError, setAiError] = useState("");
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
   const [consoleHeight, setConsoleHeight] = useState(82);
   const [pineApplied, setPineApplied] = useState(false);
@@ -586,46 +579,12 @@ export function TradingWorkspace() {
     event.preventDefault(); setConsoleHeight((height) => Math.max(20, Math.min(panelHeight - COLLAPSED_PANEL_HEIGHT - 43, height + (event.key === "ArrowUp" ? 16 : -16))));
   };
 
-  const analyzeMarket = async () => {
-    const question = aiQuestion.trim();
-    if (!question || !aiEndpoint.trim() || !aiModel.trim()) {
-      setAiError("Add a compatible endpoint and model ID, then enter a question.");
-      return;
-    }
-    setAiRunning(true); setAiError("");
-    setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "user", content: question }]);
-    try {
-      const response = await fetch("/api/ai/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          endpoint: aiEndpoint,
-          apiKey: aiKey,
-          model: aiModel,
-          question,
-          market: { symbol, venue: activeVenue, interval, derivativesVenue: derivativesExchange },
-          overlay: {
-            ema9Visible: showFast,
-            ema21Visible: showSlow,
-            customPine: { source: pine, plots: pinePlots.map((plot, index) => ({ title: plot.title || `Plot ${index + 1}`, recentValues: plot.data?.slice(-30) ?? [] })) },
-          },
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "AI analysis failed");
-      setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "assistant", content: payload.analysis }]);
-      setAiQuestion("");
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : "AI analysis failed");
-    } finally { setAiRunning(false); }
-  };
-
   return (
     <main className="studio-shell">
       <header className="topbar">
         <div className="brand"><span className="brand-mark">π</span><span>πlab</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>LAB</em></button></div>
+        <div className="top-actions"><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button></div>
       </header>
 
       <section className="workspace">
@@ -745,36 +704,47 @@ export function TradingWorkspace() {
         onClose={closeSymbolSearch}
         onSelectMarket={selectMarket}
       />
-      {aiOpen && <button className="ai-backdrop" aria-label="Close AI Analyst" onClick={() => setAiOpen(false)} />}
-      <aside className={`ai-drawer ${aiOpen ? "open" : ""}`} aria-hidden={!aiOpen} aria-label="πlab AI Analyst">
-        <div className="ai-header">
-          <div><span className="ai-orb">✦</span><strong>πlab AI Analyst</strong><small>Experimental · current chart context</small></div>
-          <button aria-label="Close AI Analyst" onClick={() => setAiOpen(false)}>×</button>
-        </div>
-        <div className="ai-context-strip">
-          <span>{symbol}</span><span>{INTERVALS.find((item) => item.value === interval)?.label}</span><span>{candles.length} candles</span><span>{pinePlots.length || 2} indicators</span>
-        </div>
-        <section className="ai-connection">
-          <div className="ai-section-title"><span>Model connection</span><code>OpenAI-compatible</code></div>
-          <label>Endpoint<input type="url" placeholder="https://your-host/v1/chat/completions" value={aiEndpoint} onChange={(event) => setAiEndpoint(event.target.value)} /></label>
-          <div className="ai-field-row">
-            <label>Model ID<input placeholder="your-model-id" value={aiModel} onChange={(event) => setAiModel(event.target.value)} /></label>
-            <label>API key<input type="password" autoComplete="off" placeholder="Session only" value={aiKey} onChange={(event) => setAiKey(event.target.value)} /></label>
-          </div>
-          <p>The key stays in this browser session and is sent only when you analyze.</p>
-        </section>
-        <div className="ai-messages" aria-live="polite">
-          {aiMessages.length === 0 && <div className="ai-empty"><span>✦</span><strong>Backend data packs are ready</strong><p>The model receives K-line, open-interest, and CVD series JSON from the studio APIs — not a screenshot or scroll-capture — so it can judge futures-versus-spot buy/sell force.</p></div>}
-          {aiMessages.map((message) => <article key={message.id} className={`ai-message ${message.role}`}><small>{message.role === "assistant" ? "πlab AI" : "You"}</small><div>{message.content}</div></article>)}
-          {aiRunning && <article className="ai-message assistant thinking"><small>πlab AI</small><div><i /><i /><i /> Analyzing chart context…</div></article>}
-        </div>
-        <div className="ai-composer">
-          <div className="ai-quick-prompts"><button onClick={() => setAiQuestion("What is the current trend, momentum, and likely invalidation level?")}>Trend</button><button onClick={() => setAiQuestion("Is current buy/sell force coming more from perps or spot, and does that favor entry or exit?")}>Futures vs spot</button><button onClick={() => setAiQuestion("Do funding, open interest, and CVD confirm or contradict the price move?")}>OI + CVD</button><button onClick={() => setAiQuestion("Explain the current Pine indicator outputs and any conflicts between them.")}>Indicators</button></div>
-          <textarea aria-label="Ask AI about the current chart" placeholder="Ask about this chart…" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") analyzeMarket(); }} />
-          {aiError && <div className="ai-error">{aiError}</div>}
-          <div className="ai-send-row"><span>⌘ Enter to send · analysis only</span><button onClick={analyzeMarket} disabled={aiRunning}>{aiRunning ? "Analyzing…" : "Analyze current chart"}</button></div>
-        </div>
-      </aside>
+      <AiAnalystDrawer
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        snapshot={{
+          symbol,
+          venue: activeVenue,
+          timeframe: INTERVALS.find((item) => item.value === interval)?.label ?? interval,
+          candles,
+          lastPrice: last?.close ?? null,
+          ema9Visible: showFast,
+          ema21Visible: showSlow,
+          pineSource: pine,
+          pinePlots,
+          derivatives: derivatives ? {
+            sourceExchange: derivativesExchange,
+            openInterestUsd: derivatives.openInterestValue,
+            openInterestBase: derivatives.openInterestAmount,
+            fundingRate: derivatives.fundingRate,
+            markPrice: derivatives.markPrice,
+            indexPrice: derivatives.indexPrice,
+            nextFundingTimestamp: derivatives.nextFundingTimestamp,
+          } : null,
+          cvd: cvd?.perp.available
+            ? {
+                last: cvd.perp.cvd,
+                recent: (cvd.perp.spark.length > 1 ? cvd.perp.spark : cvd.perp.bars).slice(-30).map((bar) => ({
+                  time: String(bar.time),
+                  value: bar.cvd,
+                })),
+              }
+            : cvd?.spot.available
+              ? {
+                  last: cvd.spot.cvd,
+                  recent: (cvd.spot.spark.length > 1 ? cvd.spot.spark : cvd.spot.bars).slice(-30).map((bar) => ({
+                    time: String(bar.time),
+                    value: bar.cvd,
+                  })),
+                }
+              : null,
+        }}
+      />
       <footer className="footer"><div className="status-group"><span className="tiny-dot" /><span>{venueLabel(activeVenue)} public feed</span><span>CCXT normalized</span><span>Pine v5 subset</span><span>AI context ready</span></div><span>UTC · Data for analysis only</span></footer>
     </main>
   );
