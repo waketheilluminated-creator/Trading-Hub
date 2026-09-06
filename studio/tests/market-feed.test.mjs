@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, toOkxSwapInstId, venueFallbackOrder } from "../lib/market-venues.ts";
+import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, toOkxSpotInstId, toOkxSwapInstId, venueFallbackOrder } from "../lib/market-venues.ts";
 import { fetchVenueKlines, parseVenueKlines, parseVenueMarkets } from "../lib/market-rest.ts";
 import { loadChartHistory, mergeLiveCandle, parseLiveKline } from "../lib/market-feed.ts";
 
@@ -25,6 +25,7 @@ test("classifies CloudFront and Binance geo blocks", () => {
 
 test("maps compact symbols onto OKX swap instruments", () => {
   assert.equal(toOkxSwapInstId("BTCUSDT"), "BTC-USDT-SWAP");
+  assert.equal(toOkxSpotInstId("BTCUSDT"), "BTC-USDT");
   assert.equal(compactSymbol("BTC/USDT:USDT"), "BTCUSDT");
   assert.equal(compactSymbol("BTC-USDT-SWAP"), "BTCUSDT");
 });

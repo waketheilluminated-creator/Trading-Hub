@@ -42,6 +42,10 @@ test("server-renders the πlab trading workspace", async () => {
   assert.match(html, /<title>πlab — Live crypto charting<\/title>/i);
   assert.match(html, /πlab/);
   assert.match(html, /Derivatives pulse/);
+  assert.match(html, /Order flow/);
+  assert.match(html, /Perp CVD/);
+  assert.match(html, /Spot CVD/);
+  assert.match(html, /Futures vs spot/);
   assert.match(html, /Pine Editor/);
   assert.match(html, /Open Pine editor in new tab/);
   assert.match(html, /Collapse bottom panel/);
@@ -98,6 +102,13 @@ test("derivatives API rejects unsupported exchanges", async () => {
   assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
 });
 
+test("CVD API rejects unsupported exchanges", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/cvd?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+});
+
 test("klines and markets APIs reject unsupported exchanges", async () => {
   const app = await worker();
   const klines = await app.fetch(new Request("http://localhost/api/klines?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
@@ -119,6 +130,22 @@ test("markets API can list all public catalogs without API keys", async () => {
   assert.ok(venues.has("okx"));
   assert.ok(venues.has("bitget"));
   assert.ok(payload.markets.some((market) => market.symbol === "BTCUSDT"));
+});
+
+test("CVD API can serve OKX public perp and spot trades without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/cvd?exchange=okx&symbol=BTCUSDT&interval=15"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.venue, "okx");
+  assert.equal(payload.symbol, "BTCUSDT");
+  assert.ok(payload.perp.available || payload.spot.available);
+  if (payload.perp.available && payload.spot.available) {
+    assert.equal(typeof payload.comparison.interpretation, "string");
+    assert.match(payload.comparison.interpretation, /perp|spot|Force|takers/i);
+  } else {
+    assert.equal(payload.comparison.available, false);
+  }
 });
 
 test("klines API can serve OKX public candles without API keys", async () => {

@@ -104,6 +104,17 @@ export function toOkxSwapInstId(symbol: string): string {
   throw new Error(`Unsupported OKX symbol ${symbol}`);
 }
 
+export function toOkxSpotInstId(symbol: string): string {
+  const compact = compactSymbol(symbol);
+  if (compact.endsWith("USDT")) return `${compact.slice(0, -4)}-USDT`;
+  if (compact.endsWith("USDC")) return `${compact.slice(0, -4)}-USDC`;
+  throw new Error(`Unsupported OKX symbol ${symbol}`);
+}
+
+export function intervalDurationMs(interval: ChartInterval): number {
+  return interval === "D" ? 86_400_000 : Number(interval) * 60_000;
+}
+
 export function toBinanceInterval(interval: ChartInterval): string {
   return BINANCE_INTERVAL[interval];
 }

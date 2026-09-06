@@ -1,3 +1,5 @@
+import { ANALYST_SYSTEM_PROMPT } from "@/lib/ai-context.ts";
+
 type AnalysisRequest = {
   endpoint?: string;
   apiKey?: string;
@@ -54,14 +56,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Market context is too large" }, { status: 413 });
   }
 
-  const system = [
-    "You are πlab AI Analyst, an experimental crypto market research assistant.",
-    "Analyze only the supplied market snapshot: OHLCV candles, indicator outputs, and derivatives metrics.",
-    "Separate observations from inference. Never invent missing values or claim certainty.",
-    "Respond in the same language as the user's question.",
-    "Use this compact structure: Market state, Indicator read, Derivatives read, Scenarios, Risks/invalidations.",
-    "This is analytical research, not personalized financial advice or an instruction to trade.",
-  ].join(" ");
+  const system = ANALYST_SYSTEM_PROMPT;
 
   try {
     const upstream = await fetch(target, {
