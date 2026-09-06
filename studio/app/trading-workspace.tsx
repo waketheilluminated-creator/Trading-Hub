@@ -179,8 +179,14 @@ export function TradingWorkspace() {
     window.open("/pine-editor", "_blank", "noopener,noreferrer");
   };
 
-  const selectMarket = (market: MarketOption) => {
+  const beginMarketLoad = () => {
     setLoading(true);
+    setMarketStatus({ phase: "loading", notice: null, error: null });
+    setConnected(false);
+  };
+
+  const selectMarket = (market: MarketOption) => {
+    beginMarketLoad();
     setSymbol(market.symbol);
     setSymbolSearchOpen(false);
     setSymbolQuery("");
@@ -316,8 +322,6 @@ export function TradingWorkspace() {
     let stream: { close(): void } | null = null;
     let pollTimer = 0;
     let liveOpened = false;
-    setMarketStatus({ phase: "loading", notice: null, error: null });
-    setConnected(false);
 
     const applyLiveCandle = (candle: MarketCandle) => {
       if (cancelled) return;
@@ -393,6 +397,7 @@ export function TradingWorkspace() {
       cancelled = true;
       if (pollTimer) window.clearInterval(pollTimer);
       stream?.close();
+      setConnected(false);
     };
   }, [symbol, interval, chartVenue]);
 
@@ -580,9 +585,9 @@ export function TradingWorkspace() {
           <div className="chart-toolbar">
             <div className="toolbar-cluster">
               <button className="toolbar-symbol-button" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><strong>{symbol.replace("USDT", " / USDT")}</strong><span>⌄</span></button><span className="toolbar-separator" />
-              {INTERVALS.map((item) => <button key={item.value} onClick={() => { setLoading(true); setInterval(item.value); }} className={`time-button ${interval === item.value ? "active" : ""}`}>{item.label}</button>)}
+              {INTERVALS.map((item) => <button key={item.value} onClick={() => { beginMarketLoad(); setInterval(item.value); }} className={`time-button ${interval === item.value ? "active" : ""}`}>{item.label}</button>)}
             </div>
-            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; setLoading(true); setChartVenue(venue); persistChartVenue(venue); }}><option value="bybit">Bybit</option><option value="binance">Binance</option><option value="okx">OKX</option></select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
+            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); persistChartVenue(venue); }}><option value="bybit">Bybit</option><option value="binance">Binance</option><option value="okx">OKX</option></select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
           </div>
 
           <div className="chart-region">
