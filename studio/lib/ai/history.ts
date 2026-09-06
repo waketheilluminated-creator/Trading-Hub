@@ -46,15 +46,20 @@ export function contextSource(): ContextSource {
   };
 }
 
-export function historyWindow(question = ""): HistoryWindow {
-  const lookback = detectHistoryLookback(question);
-  if (!lookback.requested || !lookback.phrase) {
+export function packHistoryRange(range: string): HistoryWindow {
+  const requested = String(range ?? "").trim();
+  if (!requested) {
     return { available: true, status: "current-window", window: "attached-chart-series" };
   }
   return {
     available: false,
     status: "deferred",
-    requested: lookback.phrase,
+    requested,
     reason: DEFERRED_HISTORY_REASON,
   };
+}
+
+export function historyWindow(question = ""): HistoryWindow {
+  const lookback = detectHistoryLookback(question);
+  return packHistoryRange(lookback.phrase ?? "");
 }

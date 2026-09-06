@@ -4,7 +4,7 @@ import { applyProviderPreset, providerFromEndpoint } from "../lib/ai/providers.t
 import { validatePublicHttpsEndpoint } from "../lib/ai/endpoint.ts";
 import { classifyNetworkError, classifyProviderStatus } from "../lib/ai/errors.ts";
 import { buildContextPack, summarizeContextPack } from "../lib/ai/context-pack.ts";
-import { CONTEXT_CAPTURE, DEFERRED_HISTORY_REASON, detectHistoryLookback } from "../lib/ai/history.ts";
+import { CONTEXT_CAPTURE, DEFERRED_HISTORY_REASON, detectHistoryLookback, packHistoryRange } from "../lib/ai/history.ts";
 import { buildSystemPrompt, buildUserPrompt } from "../lib/ai/prompt.ts";
 import { runAiProxy } from "../lib/ai/proxy.ts";
 import { containsSecret, redactSecrets } from "../lib/ai/secrets.ts";
@@ -137,6 +137,10 @@ test("history lookback is an arbitrary deferred backend hook, never screenshots"
   assert.equal(deferred.source.screenshots, false);
   assert.equal(deferred.source.capture, "never-screenshots");
   assert.doesNotMatch(JSON.stringify(deferred), /image\/png|data:image|scroll-and-screenshot/i);
+
+  assert.equal(packHistoryRange("47 hours").status, "deferred");
+  assert.equal(packHistoryRange("since listing").requested, "since listing");
+  assert.equal(packHistoryRange("").status, "current-window");
 });
 
 test("sessionStorage keeps settings and only writes the key when opted in", () => {
