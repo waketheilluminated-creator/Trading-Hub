@@ -88,6 +88,7 @@ function slimBook(book: CvdSnapshot["perp"]) {
     delta: book.delta,
     cvd: book.cvd,
     recentBars: book.bars.slice(-12),
+    recentSpark: book.spark.slice(-12),
     reason: book.reason,
   };
 }

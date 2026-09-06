@@ -698,13 +698,13 @@ export function TradingWorkspace() {
                 <span>Perp CVD</span>
                 <strong className={signedClass(cvd?.perp.available ? cvd.perp.cvd : null)}>{cvd?.perp.available ? formatSigned(cvd.perp.cvd) : "—"}</strong>
                 <small>{cvd?.perp.available ? summarizeCvdWindow(cvd.perp) : (cvd?.perp.reason || "No perp trades")}</small>
-                {cvd?.perp.available && <CvdSpark bars={cvd.perp.bars} />}
+                {cvd?.perp.available && <CvdSpark bars={cvd.perp.spark.length > 1 ? cvd.perp.spark : cvd.perp.bars} />}
               </div>
               <div className="metric-card">
                 <span>Spot CVD</span>
                 <strong className={signedClass(cvd?.spot.available ? cvd.spot.cvd : null)}>{cvd?.spot.available ? formatSigned(cvd.spot.cvd) : "—"}</strong>
                 <small>{cvd?.spot.available ? summarizeCvdWindow(cvd.spot) : (cvd?.spot.reason || "No spot trades")}</small>
-                {cvd?.spot.available && <CvdSpark bars={cvd.spot.bars} />}
+                {cvd?.spot.available && <CvdSpark bars={cvd.spot.spark.length > 1 ? cvd.spot.spark : cvd.spot.bars} />}
               </div>
               <div className="metric-card">
                 <span>Futures − spot</span>

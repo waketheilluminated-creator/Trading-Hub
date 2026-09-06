@@ -44,6 +44,7 @@ export type CvdBook = {
   delta: number;
   cvd: number;
   bars: CvdBar[];
+  spark: CvdBar[];
   reason: string | null;
 };
 
@@ -140,6 +141,7 @@ export function unavailableBook(market: OrderBookKind, reason: string, unit: Cvd
     delta: 0,
     cvd: 0,
     bars: [],
+    spark: [],
     reason,
   };
 }
@@ -156,28 +158,8 @@ export function computeCvdBook(
   }
 
   const multiplier = Number.isFinite(contractMultiplier) && contractMultiplier > 0 ? contractMultiplier : 1;
-  const bars = new Map<number, CvdBar>();
-  let buyVolume = 0;
-  let sellVolume = 0;
-
-  for (const trade of trades) {
-    const size = trade.size * multiplier;
-    if (trade.side === "buy") buyVolume += size;
-    else sellVolume += size;
-    const open = barOpenSeconds(trade.time, interval);
-    const bar = bars.get(open) ?? { time: open, buyVolume: 0, sellVolume: 0, delta: 0, cvd: 0 };
-    if (trade.side === "buy") bar.buyVolume += size;
-    else bar.sellVolume += size;
-    bars.set(open, bar);
-  }
-
-  let running = 0;
-  const series = [...bars.values()].sort((left, right) => left.time - right.time).map((bar) => {
-    bar.delta = bar.buyVolume - bar.sellVolume;
-    running += bar.delta;
-    bar.cvd = running;
-    return bar;
-  });
+  const series = accumulateBars(trades, interval, multiplier);
+  const spark = interval === "1" ? series : accumulateBars(trades, "1", multiplier);
 
   return {
     available: true,
@@ -186,13 +168,33 @@ export function computeCvdBook(
     tradeCount: trades.length,
     windowStart: trades[0].time,
     windowEnd: trades[trades.length - 1].time,
-    buyVolume,
-    sellVolume,
-    delta: buyVolume - sellVolume,
-    cvd: running,
+    buyVolume: series.reduce((sum, bar) => sum + bar.buyVolume, 0),
+    sellVolume: series.reduce((sum, bar) => sum + bar.sellVolume, 0),
+    delta: series.at(-1)?.cvd ?? 0,
+    cvd: series.at(-1)?.cvd ?? 0,
     bars: series,
+    spark,
     reason: null,
   };
+}
+
+function accumulateBars(trades: MarketTrade[], interval: ChartInterval, multiplier: number): CvdBar[] {
+  const bars = new Map<number, CvdBar>();
+  for (const trade of trades) {
+    const size = trade.size * multiplier;
+    const open = barOpenSeconds(trade.time, interval);
+    const bar = bars.get(open) ?? { time: open, buyVolume: 0, sellVolume: 0, delta: 0, cvd: 0 };
+    if (trade.side === "buy") bar.buyVolume += size;
+    else bar.sellVolume += size;
+    bars.set(open, bar);
+  }
+  let running = 0;
+  return [...bars.values()].sort((left, right) => left.time - right.time).map((bar) => {
+    bar.delta = bar.buyVolume - bar.sellVolume;
+    running += bar.delta;
+    bar.cvd = running;
+    return bar;
+  });
 }
 
 export function interpretForce(perp: CvdBook, spot: CvdBook): ForceReading {

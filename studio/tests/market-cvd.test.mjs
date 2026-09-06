@@ -78,6 +78,8 @@ test("computes bar-aligned CVD and does not invent a book from empty trades", ()
   assert.equal(book.bars.length, 2);
   assert.equal(book.bars[0].delta, 1.5);
   assert.equal(book.bars[1].cvd, 2.5);
+  assert.ok(book.spark.length >= book.bars.length);
+  assert.equal(book.spark.at(-1)?.cvd, book.cvd);
 
   const empty = computeCvdBook([], "15", "spot");
   assert.equal(empty.available, false);
