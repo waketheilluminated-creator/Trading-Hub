@@ -142,7 +142,15 @@ test("uses Binance spot public-mirror trades when official hosts fail", async ()
 
 test("does not invent CVD when both Binance trade hosts fail", async () => {
   const fetchImpl = async () => new Response("blocked", { status: 403 });
-  await assert.rejects(() => fetchVenueCvd("binance", "BTCUSDT", "15", fetchImpl), /blocked/i);
+  await assert.rejects(
+    () => fetchVenueCvd("binance", "BTCUSDT", "15", fetchImpl),
+    (error) => {
+      assert.equal(error.blocked, true);
+      assert.equal(error.venue, "binance");
+      assert.match(error.message, /blocked/i);
+      return true;
+    },
+  );
 });
 
 test("AI context includes CVD plus OI and steers futures-versus-spot force", () => {
