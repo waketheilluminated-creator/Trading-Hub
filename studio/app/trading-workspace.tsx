@@ -6,7 +6,6 @@ import {
   type CandlestickData, type IChartApi, type ISeriesApi,
   type LineData, type Time, type UTCTimestamp,
 } from "lightweight-charts";
-import { buildAnalystContext } from "@/lib/ai-context.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
@@ -596,20 +595,22 @@ export function TradingWorkspace() {
     setAiRunning(true); setAiError("");
     setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "user", content: question }]);
     try {
-      const ema9 = calculateEma(candles, 9);
-      const ema21 = calculateEma(candles, 21);
-      const context = buildAnalystContext({
-        capturedAt: new Date().toISOString(),
-        market: { symbol, venue: activeVenue, contract: "USDT perpetual", timeframe: INTERVALS.find((item) => item.value === interval)?.label, lastPrice: last?.close ?? null },
-        candles: candles.slice(-120).map((candle) => ({ time: new Date(Number(candle.time) * 1000).toISOString(), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume ?? null })),
-        indicators: {
-          builtIn: { ema9: ema9.at(-1)?.value ?? null, ema21: ema21.at(-1)?.value ?? null, ema9Visible: showFast, ema21Visible: showSlow },
-          customPine: { source: pine, plots: pinePlots.map((plot, index) => ({ title: plot.title || `Plot ${index + 1}`, recentValues: plot.data?.slice(-30) ?? [] })) },
-        },
-        derivatives: derivatives ? { sourceExchange: derivativesExchange, openInterestUsd: derivatives.openInterestValue, openInterestBase: derivatives.openInterestAmount, fundingRate: derivatives.fundingRate, markPrice: derivatives.markPrice, indexPrice: derivatives.indexPrice, nextFundingTimestamp: derivatives.nextFundingTimestamp } : null,
-        orderFlow: cvd,
+      const response = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          endpoint: aiEndpoint,
+          apiKey: aiKey,
+          model: aiModel,
+          question,
+          market: { symbol, venue: activeVenue, interval, derivativesVenue: derivativesExchange },
+          overlay: {
+            ema9Visible: showFast,
+            ema21Visible: showSlow,
+            customPine: { source: pine, plots: pinePlots.map((plot, index) => ({ title: plot.title || `Plot ${index + 1}`, recentValues: plot.data?.slice(-30) ?? [] })) },
+          },
+        }),
       });
-      const response = await fetch("/api/ai/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: aiEndpoint, apiKey: aiKey, model: aiModel, question, context }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "AI analysis failed");
       setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "assistant", content: payload.analysis }]);
@@ -763,7 +764,7 @@ export function TradingWorkspace() {
           <p>The key stays in this browser session and is sent only when you analyze.</p>
         </section>
         <div className="ai-messages" aria-live="polite">
-          {aiMessages.length === 0 && <div className="ai-empty"><span>✦</span><strong>Chart context is ready</strong><p>The model receives 120 recent OHLCV candles, EMA outputs, custom Pine plots, open interest, funding, and perp-versus-spot CVD so it can judge where buy/sell force is coming from.</p></div>}
+          {aiMessages.length === 0 && <div className="ai-empty"><span>✦</span><strong>Backend data packs are ready</strong><p>The model receives K-line, open-interest, and CVD series JSON from the studio APIs — not a screenshot or scroll-capture — so it can judge futures-versus-spot buy/sell force.</p></div>}
           {aiMessages.map((message) => <article key={message.id} className={`ai-message ${message.role}`}><small>{message.role === "assistant" ? "πlab AI" : "You"}</small><div>{message.content}</div></article>)}
           {aiRunning && <article className="ai-message assistant thinking"><small>πlab AI</small><div><i /><i /><i /> Analyzing chart context…</div></article>}
         </div>

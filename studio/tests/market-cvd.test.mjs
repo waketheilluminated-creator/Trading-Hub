@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { ANALYST_SYSTEM_PROMPT, buildAnalystContext, buildOrderFlowContext } from "../lib/ai-context.ts";
+import {
+  ANALYST_DATA_PACK_KIND,
+  ANALYST_SYSTEM_PROMPT,
+  assembleAnalystDataPack,
+  buildOrderFlowContext,
+  formatAnalystUserMessage,
+  parseAnalystMarketRef,
+} from "../lib/ai-context.ts";
 import {
   computeCvdBook,
   fetchVenueCvd,
@@ -155,55 +162,99 @@ test("does not invent CVD when both Binance trade hosts fail", async () => {
   );
 });
 
-test("AI context includes CVD plus OI and steers futures-versus-spot force", () => {
+test("AI prompt requires backend CVD/OI/K-line packs and forbids screenshots", () => {
+  assert.match(ANALYST_SYSTEM_PROMPT, /backend market data packs/);
+  assert.match(ANALYST_SYSTEM_PROMPT, /klines \(OHLCV series JSON\)/);
+  assert.match(ANALYST_SYSTEM_PROMPT, /openInterest/);
+  assert.match(ANALYST_SYSTEM_PROMPT, /cvd \(perp\/spot series JSON\)/);
+  assert.match(ANALYST_SYSTEM_PROMPT, /do not receive screenshots, scroll-captures/);
   assert.match(ANALYST_SYSTEM_PROMPT, /Futures-vs-spot force/);
   assert.match(ANALYST_SYSTEM_PROMPT, /entry versus exit/);
   assert.match(ANALYST_SYSTEM_PROMPT, /never invent CVD/i);
-
-  const orderFlow = {
-    venue: "okx",
-    symbol: "BTCUSDT",
-    interval: "15",
-    source: "official",
-    perp: computeCvdBook([{ time: 1, price: 1, size: 4, side: "buy" }], "15", "perp"),
-    spot: computeCvdBook([{ time: 1, price: 1, size: 1, side: "sell" }], "15", "spot"),
-    comparison: interpretForce(
-      computeCvdBook([{ time: 1, price: 1, size: 4, side: "buy" }], "15", "perp"),
-      computeCvdBook([{ time: 1, price: 1, size: 1, side: "sell" }], "15", "spot"),
-    ),
-    notice: null,
-    updatedAt: 1,
-  };
-  const context = buildAnalystContext({
-    capturedAt: "2026-09-06T00:00:00.000Z",
-    market: { symbol: "BTCUSDT", venue: "okx", contract: "USDT perpetual", timeframe: "15m", lastPrice: 1 },
-    candles: [],
-    indicators: { builtIn: { ema9: 1, ema21: 1, ema9Visible: true, ema21Visible: true }, customPine: { source: "", plots: [] } },
-    derivatives: {
-      sourceExchange: "okx",
-      openInterestUsd: 100,
-      openInterestBase: 2,
-      fundingRate: 0.0001,
-      markPrice: 1,
-      indexPrice: 1,
-      nextFundingTimestamp: null,
-    },
-    orderFlow,
-  });
-  assert.equal(context.orderFlow.venue, "okx");
-  assert.equal(context.orderFlow.perp.available, true);
-  assert.equal(context.derivatives.openInterestUsd, 100);
-  assert.match(context.orderFlow.comparison.interpretation, /buying/i);
-  assert.equal(buildOrderFlowContext(null), null);
 });
 
-test("workspace and analyze route wire CVD into the innate analyst", () => {
+test("assembleAnalystDataPack attaches backend series JSON, not client chart pixels", async () => {
+  const perp = computeCvdBook([{ time: 1_700_000_000_000, price: 1, size: 4, side: "buy" }], "15", "perp");
+  const spot = computeCvdBook([{ time: 1_700_000_000_000, price: 1, size: 1, side: "sell" }], "15", "spot");
+  const pack = await assembleAnalystDataPack(
+    { symbol: "BTCUSDT", venue: "okx", interval: "15", derivativesVenue: "okx" },
+    { ema9Visible: true, customPine: { source: "ema", plots: [] } },
+    {
+      fetchKlines: async () => ({
+        venue: "okx",
+        symbol: "BTCUSDT",
+        interval: "15",
+        source: "official",
+        candles: [
+          { time: 1_700_000_000, open: 1, high: 2, low: 1, close: 2, volume: 3 },
+          { time: 1_700_000_900, open: 2, high: 3, low: 2, close: 2.5, volume: 4 },
+        ],
+      }),
+      fetchCvd: async () => ({
+        venue: "okx",
+        symbol: "BTCUSDT",
+        interval: "15",
+        source: "official",
+        perp,
+        spot,
+        comparison: interpretForce(perp, spot),
+        notice: null,
+        updatedAt: 1,
+      }),
+      fetchDerivatives: async () => ({
+        exchange: "okx",
+        symbol: "BTC/USDT:USDT",
+        openInterestAmount: 2,
+        openInterestValue: 100,
+        fundingRate: 0.0001,
+        fundingInterval: "8h",
+        nextFundingTimestamp: null,
+        markPrice: 1,
+        indexPrice: 1,
+        updatedAt: 1,
+      }),
+    },
+  );
+
+  assert.equal(pack.kind, ANALYST_DATA_PACK_KIND);
+  assert.equal(pack.input, "backend-api");
+  assert.deepEqual(pack.media, { screenshots: false, scrollCapture: false, chartImages: false });
+  assert.equal(pack.packs.klines.pack, "klines");
+  assert.equal(pack.packs.klines.series.length, 2);
+  assert.equal(pack.packs.klines.series[1].c, 2.5);
+  assert.equal(pack.packs.klines.derived.last, 2.5);
+  assert.equal(pack.packs.openInterest.pack, "openInterest");
+  assert.equal(pack.packs.openInterest.openInterestUsd, 100);
+  assert.equal(pack.packs.cvd.pack, "cvd");
+  assert.equal(pack.packs.cvd.perp.available, true);
+  assert.equal(pack.packs.cvd.perp.series.at(-1)?.cvd, 4);
+  assert.match(pack.packs.cvd.comparison.interpretation, /buying/i);
+  const message = formatAnalystUserMessage("Force?", pack);
+  assert.match(message, /BACKEND MARKET DATA PACKS/);
+  assert.match(message, /not a screenshot/);
+  assert.match(message, /"pack":"klines"/);
+  assert.match(message, /"pack":"cvd"/);
+  assert.equal(buildOrderFlowContext(null).available, false);
+  assert.deepEqual(parseAnalystMarketRef({ symbol: "btc/usdt:usdt", venue: "bitget", interval: "5" }), {
+    symbol: "BTCUSDT",
+    venue: "bitget",
+    interval: "5",
+    derivativesVenue: "bitget",
+  });
+});
+
+test("workspace asks analyze to attach backend packs instead of posting client candles", () => {
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
   const analyze = readFileSync(fileURLToPath(new URL("../app/api/ai/analyze/route.ts", import.meta.url)), "utf8");
-  assert.match(workspace, /buildAnalystContext/);
+  const analyzeCall = workspace.slice(workspace.indexOf("const analyzeMarket"), workspace.indexOf("const response = await fetch(\"/api/ai/analyze\"") + 800);
+  assert.doesNotMatch(analyzeCall, /buildAnalystContext|candles\.slice|orderFlow: cvd|screenshot|scroll-capture/i);
+  assert.match(analyzeCall, /market: \{ symbol, venue: activeVenue, interval, derivativesVenue: derivativesExchange \}/);
   assert.match(workspace, /\/api\/cvd/);
   assert.match(workspace, /Futures vs spot/);
   assert.match(workspace, /Order flow/);
   assert.match(workspace, /cvd_perp/);
+  assert.match(workspace, /Backend data packs are ready/);
+  assert.match(analyze, /assembleAnalystDataPack/);
+  assert.match(analyze, /void body\.context/);
   assert.match(analyze, /ANALYST_SYSTEM_PROMPT/);
 });

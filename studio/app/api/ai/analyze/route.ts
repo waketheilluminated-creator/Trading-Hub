@@ -1,10 +1,19 @@
-import { ANALYST_SYSTEM_PROMPT } from "@/lib/ai-context.ts";
+import {
+  ANALYST_SYSTEM_PROMPT,
+  analystPackIsEmpty,
+  assembleAnalystDataPack,
+  formatAnalystUserMessage,
+  parseAnalystMarketRef,
+  type AnalystOverlay,
+} from "@/lib/ai-context.ts";
 
 type AnalysisRequest = {
   endpoint?: string;
   apiKey?: string;
   model?: string;
   question?: string;
+  market?: unknown;
+  overlay?: AnalystOverlay;
   context?: unknown;
 };
 
@@ -51,12 +60,19 @@ export async function POST(request: Request) {
     return Response.json({ error: "Only public HTTPS model endpoints are allowed" }, { status: 400 });
   }
 
-  const contextJson = JSON.stringify(body.context ?? {});
+  // Client-supplied context is ignored for market series. The model only sees
+  // backend klines / OI / CVD JSON packs assembled on this route.
+  void body.context;
+  const market = parseAnalystMarketRef(body.market);
+  const pack = await assembleAnalystDataPack(market, body.overlay ?? null);
+  if (analystPackIsEmpty(pack)) {
+    return Response.json({ error: "Backend CVD/OI/K-line data packs are unavailable" }, { status: 502 });
+  }
+
+  const contextJson = formatAnalystUserMessage(question, pack);
   if (contextJson.length > 180_000) {
     return Response.json({ error: "Market context is too large" }, { status: 413 });
   }
-
-  const system = ANALYST_SYSTEM_PROMPT;
 
   try {
     const upstream = await fetch(target, {
@@ -70,8 +86,8 @@ export async function POST(request: Request) {
         temperature: 0.2,
         max_tokens: 1000,
         messages: [
-          { role: "system", content: system },
-          { role: "user", content: `${question}\n\nCURRENT πlab MARKET CONTEXT\n${contextJson}` },
+          { role: "system", content: ANALYST_SYSTEM_PROMPT },
+          { role: "user", content: contextJson },
         ],
       }),
     });
@@ -85,7 +101,7 @@ export async function POST(request: Request) {
     }
     const analysis = responseText(payload);
     if (!analysis) return Response.json({ error: "The model returned no readable analysis" }, { status: 502 });
-    return Response.json({ analysis });
+    return Response.json({ analysis, pack: { kind: pack.kind, input: pack.input, media: pack.media, market: pack.market } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to reach the model endpoint" }, { status: 502 });
   }
