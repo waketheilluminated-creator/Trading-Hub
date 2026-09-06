@@ -1,3 +1,5 @@
+import { contextSource, historyWindow, type ContextSource, type HistoryWindow } from "./history.ts";
+
 export type ContextCandle = {
   time: number | string;
   open: number;
@@ -42,6 +44,8 @@ export type AnalystSnapshot = {
 
 export type ContextPack = {
   capturedAt: string;
+  source: ContextSource;
+  history: HistoryWindow;
   market: {
     symbol: string;
     venue: string;
@@ -87,7 +91,7 @@ function lastEma(candles: ContextCandle[], length: number): number | null {
   return ema;
 }
 
-export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Date().toISOString()): ContextPack {
+export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Date().toISOString(), question = ""): ContextPack {
   const candles = snapshot.candles.slice(-CANDLE_LIMIT).map((candle) => ({
     time: candleTime(candle.time),
     open: candle.open,
@@ -99,6 +103,8 @@ export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Dat
   const last = snapshot.candles.at(-1);
   return {
     capturedAt,
+    source: contextSource(),
+    history: historyWindow(question),
     market: {
       symbol: snapshot.symbol,
       venue: snapshot.venue,

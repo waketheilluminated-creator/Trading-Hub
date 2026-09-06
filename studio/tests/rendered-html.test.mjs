@@ -77,6 +77,9 @@ test("server-renders the πlab trading workspace", async () => {
   assert.match(html, /Bring your own key/);
   assert.match(html, /Session only/);
   assert.match(html, /AI provider preset/);
+  assert.match(html, /backend Context Pack/);
+  assert.match(html, /never from screenshots/);
+  assert.match(html, /Backend series/);
   assert.doesNotMatch(html, /πlab AI Analyst/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
 });

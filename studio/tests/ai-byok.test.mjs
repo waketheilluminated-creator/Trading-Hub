@@ -4,6 +4,7 @@ import { applyProviderPreset, providerFromEndpoint } from "../lib/ai/providers.t
 import { validatePublicHttpsEndpoint } from "../lib/ai/endpoint.ts";
 import { classifyNetworkError, classifyProviderStatus } from "../lib/ai/errors.ts";
 import { buildContextPack, summarizeContextPack } from "../lib/ai/context-pack.ts";
+import { CONTEXT_CAPTURE, DEFERRED_HISTORY_REASON, detectHistoryLookback } from "../lib/ai/history.ts";
 import { buildSystemPrompt, buildUserPrompt } from "../lib/ai/prompt.ts";
 import { runAiProxy } from "../lib/ai/proxy.ts";
 import { containsSecret, redactSecrets } from "../lib/ai/secrets.ts";
@@ -86,6 +87,9 @@ test("context pack attaches candles and derivatives and degrades missing CVD", (
     },
   }, "2026-09-06T00:00:00.000Z");
   assert.equal(pack.market.symbol, "BTCUSDT");
+  assert.equal(pack.source.kind, CONTEXT_CAPTURE);
+  assert.equal(pack.source.screenshots, false);
+  assert.equal(pack.history.status, "current-window");
   assert.equal(pack.candles.length, 2);
   assert.equal(pack.derivatives.available, true);
   assert.equal(pack.cvd.available, false);
@@ -109,7 +113,30 @@ test("system prompt uses Trading Hub research framing", () => {
   assert.doesNotMatch(prompt, /πlab/);
   assert.match(prompt, /not personalized financial advice/);
   assert.match(prompt, /same language as the user's question/);
+  assert.match(prompt, /Never request, infer from, or wait for chart screenshots/);
   assert.match(buildUserPrompt("趋势如何？", "{\"symbol\":\"BTCUSDT\"}"), /CURRENT TRADING HUB CONTEXT PACK/);
+});
+
+test("history lookback is an arbitrary deferred backend hook, never screenshots", () => {
+  assert.equal(detectHistoryLookback("What is the current trend?").requested, false);
+  assert.equal(detectHistoryLookback("Is funding paying longs today?").requested, false);
+  assert.equal(detectHistoryLookback("Summarize the last 3 months of OI and funding").requested, true);
+  assert.equal(detectHistoryLookback("How did this market trade over the past year?").requested, true);
+  assert.equal(detectHistoryLookback("对比近半年的持仓").requested, true);
+
+  const deferred = buildContextPack({
+    symbol: "BTCUSDT",
+    venue: "okx",
+    timeframe: "15m",
+    candles: [{ time: 1700000000, open: 1, high: 1, low: 1, close: 1 }],
+  }, "2026-09-06T00:00:00.000Z", "Show me the last 90 days of structure");
+  assert.equal(deferred.history.status, "deferred");
+  assert.equal(deferred.history.available, false);
+  assert.match(deferred.history.reason, /history APIs/);
+  assert.equal(deferred.history.reason, DEFERRED_HISTORY_REASON);
+  assert.equal(deferred.source.screenshots, false);
+  assert.equal(deferred.source.capture, "never-screenshots");
+  assert.doesNotMatch(JSON.stringify(deferred), /image\/png|data:image|scroll-and-screenshot/i);
 });
 
 test("sessionStorage keeps settings and only writes the key when opted in", () => {

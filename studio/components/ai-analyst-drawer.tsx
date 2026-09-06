@@ -82,7 +82,7 @@ export function AiAnalystDrawer({
           apiKey,
           model,
           question: mode === "analyze" ? nextQuestion : undefined,
-          context: mode === "analyze" ? pack : undefined,
+          context: mode === "analyze" ? buildContextPack(snapshot, undefined, nextQuestion) : undefined,
         }),
       });
       const payload = await response.json() as { analysis?: string; error?: string; ok?: boolean };
@@ -111,7 +111,7 @@ export function AiAnalystDrawer({
           <div>
             <span className="ai-orb">✦</span>
             <strong>Trading Hub AI Analyst</strong>
-            <small>BYOK · current chart Context Pack</small>
+            <small>BYOK · backend Context Pack</small>
           </div>
           <button aria-label="Close AI Analyst" onClick={onClose}>×</button>
         </div>
@@ -122,6 +122,7 @@ export function AiAnalystDrawer({
           <span>{summary.indicators} indicators</span>
           <span>{summary.hasDerivatives ? "OI / funding" : "Derivatives unavailable"}</span>
           <span>{summary.hasCvd ? "CVD" : "CVD unavailable"}</span>
+          <span>Backend series</span>
         </div>
         <section className="ai-connection">
           <div className="ai-section-title"><span>Bring your own key</span><code>OpenAI-compatible</code></div>
@@ -160,7 +161,7 @@ export function AiAnalystDrawer({
             <div className="ai-empty">
               <span>✦</span>
               <strong>Context Pack is attached on every ask</strong>
-              <p>Each question includes recent OHLCV candles, EMA and Pine outputs, open interest, funding, and CVD when that series is on the chart.</p>
+              <p>Each ask sends backend market series — OHLCV, EMA and Pine outputs, open interest, funding, and CVD when that series exists. Longer lookbacks will be packed from history APIs, never from screenshots.</p>
             </div>
           )}
           {messages.map((message) => (
@@ -169,7 +170,7 @@ export function AiAnalystDrawer({
               <div>{message.content}</div>
             </article>
           ))}
-          {running && <article className="ai-message assistant thinking"><small>Trading Hub AI</small><div><i /><i /><i /> Analyzing chart context…</div></article>}
+          {running && <article className="ai-message assistant thinking"><small>Trading Hub AI</small><div><i /><i /><i /> Analyzing market context…</div></article>}
         </div>
         <div className="ai-composer">
           <div className="ai-quick-prompts">
