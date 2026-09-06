@@ -182,12 +182,16 @@ export function TradingWorkspace() {
     setConnected(false);
   };
 
+  const closeSymbolSearch = () => {
+    setSourcesSheetOpen(false);
+    setSymbolSearchOpen(false);
+  };
+
   const selectMarket = (market: MarketOption) => {
     beginMarketLoad();
     setChartVenue(market.venue);
     setSymbol(market.symbol);
-    setSymbolSearchOpen(false);
-    setSourcesSheetOpen(false);
+    closeSymbolSearch();
     setRecentSymbols((current) => {
       const next = nextRecentSymbols(current, formatMarketId(market.venue, market.symbol));
       try {
@@ -208,10 +212,6 @@ export function TradingWorkspace() {
       .catch(() => { /* The fallback catalog remains usable offline. */ });
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    if (!symbolSearchOpen) setSourcesSheetOpen(false);
-  }, [symbolSearchOpen]);
 
   useEffect(() => {
     if (!chartHost.current) return;
@@ -467,10 +467,7 @@ export function TradingWorkspace() {
           sourcesOpen: sourcesSheetOpen,
           event,
           closeSources: () => setSourcesSheetOpen(false),
-          closeSearch: () => {
-            setSourcesSheetOpen(false);
-            setSymbolSearchOpen(false);
-          },
+          closeSearch: closeSymbolSearch,
           cancelDrawing: () => {
             drawingControllerRef.current?.cancel();
             if (!drawingControllerRef.current) clearDrawingTextEntry();
@@ -663,7 +660,7 @@ export function TradingWorkspace() {
         catalog={marketCatalog}
         recentMarkets={recentMarkets}
         onSourcesOpenChange={setSourcesSheetOpen}
-        onClose={() => setSymbolSearchOpen(false)}
+        onClose={closeSymbolSearch}
         onSelectMarket={selectMarket}
       />
       {aiOpen && <button className="ai-backdrop" aria-label="Close AI Analyst" onClick={() => setAiOpen(false)} />}

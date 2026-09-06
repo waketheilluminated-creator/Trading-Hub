@@ -122,6 +122,13 @@ export function SymbolSearchDialog({
   const [activeSymbolIndex, setActiveSymbolIndex] = useState(0);
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
   const [openMenu, setOpenMenu] = useState<FilterMenu>(null);
+  const [sheetSession, setSheetSession] = useState(open);
+  if (sheetSession !== open) {
+    setSheetSession(open);
+    setSourceQuery("");
+    setOpenMenu(null);
+    setActiveSourceIndex(0);
+  }
 
   const resolvedSource = resolveSourceFilter(assetType, sourceFilter);
   const availableSources = useMemo(() => sourcesForAssetType(assetType), [assetType]);
@@ -139,11 +146,7 @@ export function SymbolSearchDialog({
   const sourcesEmpty = sourcesEmptyCopy(assetType);
 
   useEffect(() => {
-    if (!open) {
-      setSourceQuery("");
-      setOpenMenu(null);
-      return;
-    }
+    if (!open) return;
     const timer = window.setTimeout(() => {
       if (sourcesOpen) sourcesSearchRef.current?.focus();
       else symbolSearchRef.current?.focus();

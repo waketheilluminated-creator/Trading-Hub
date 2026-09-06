@@ -43,10 +43,12 @@ test("Sources sheet search matches exchange names without inventing venues", asy
 
 test("Sources sheet UI lists live crypto venues and no invented stock tickers", () => {
   const dialog = readFileSync(fileURLToPath(new URL("../components/symbol-search-dialog.tsx", import.meta.url)), "utf8");
-  assert.match(dialog, /CRYPTOCURRENCY|sources-category/);
-  assert.match(dialog, /Binance, Bybit, OKX, and Bitget/);
-  assert.match(dialog, /coming soon/i);
+  const nav = readFileSync(fileURLToPath(new URL("../lib/symbol-search-nav.ts", import.meta.url)), "utf8");
+  assert.match(dialog, /sources-category/);
+  assert.match(dialog, /Coming soon/);
+  assert.match(nav, /Binance, Bybit, OKX, and Bitget/);
   assert.doesNotMatch(dialog, /AAPL|NASDAQ|NYSE|SPY/);
+  assert.doesNotMatch(nav, /AAPL|NASDAQ|NYSE|SPY/);
 });
 
 test("spot and DEX filters stay empty instead of faking catalogs", async () => {
