@@ -5,7 +5,7 @@ import { loadDrawings, saveDrawings } from "../lib/drawings/store.ts";
 
 const shortcuts = await import("../lib/drawings/workspace-shortcuts.ts").catch(() => ({}));
 
-function escapeHarness(searchOpen) {
+function escapeHarness({ searchOpen = false, sourcesOpen = false } = {}) {
   const calls = [];
   const event = {
     preventDefault: () => calls.push("prevent"),
@@ -13,7 +13,9 @@ function escapeHarness(searchOpen) {
   };
   shortcuts.handleWorkspaceEscape?.({
     searchOpen,
+    sourcesOpen,
     event,
+    closeSources: () => calls.push("close-sources"),
     closeSearch: () => calls.push("close-search"),
     cancelDrawing: () => calls.push("cancel-drawing"),
   });
@@ -22,12 +24,17 @@ function escapeHarness(searchOpen) {
 
 test("first Escape consumes symbol search closure before drawing cancellation", () => {
   assert.equal(typeof shortcuts.handleWorkspaceEscape, "function");
-  assert.deepEqual(escapeHarness(true), ["prevent", "stop", "close-search"]);
+  assert.deepEqual(escapeHarness({ searchOpen: true }), ["prevent", "stop", "close-search"]);
+});
+
+test("Escape closes the Sources sheet before leaving Symbol search", () => {
+  assert.equal(typeof shortcuts.handleWorkspaceEscape, "function");
+  assert.deepEqual(escapeHarness({ searchOpen: true, sourcesOpen: true }), ["prevent", "stop", "close-sources"]);
 });
 
 test("Escape cancels drawing state when symbol search is already closed", () => {
   assert.equal(typeof shortcuts.handleWorkspaceEscape, "function");
-  assert.deepEqual(escapeHarness(false), ["prevent", "stop", "cancel-drawing"]);
+  assert.deepEqual(escapeHarness({ searchOpen: false }), ["prevent", "stop", "cancel-drawing"]);
 });
 
 test("derivatives venue changes do not change the Bybit chart drawing collection", () => {

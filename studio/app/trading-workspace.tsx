@@ -7,8 +7,8 @@ import {
   type LineData, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
-import { fallbackCatalog, filterSymbolSearch, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
-import { isMarketVenue, MARKET_VENUES, venueCode, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
+import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
+import { isMarketVenue, MARKET_VENUES, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
 import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
@@ -17,6 +17,7 @@ import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts
 import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
+import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { savePineSource, usePineSource } from "./pine-source";
 
 type Candle = CandlestickData<Time> & { volume?: number };
@@ -29,7 +30,7 @@ type Derivatives = {
 };
 type PinePlot = { title?: string; data?: (number | null)[] };
 type AIMessage = { id: number; role: "user" | "assistant"; content: string };
-type MarketOption = { symbol: string; base: string; quote: string; venue: MarketVenue; kind?: string };
+type MarketOption = SymbolSearchMarket;
 
 function venueOptions() {
   return MARKET_VENUES.map((venue) => <option key={venue} value={venue}>{venueLabel(venue)}</option>);
@@ -72,7 +73,6 @@ export function TradingWorkspace() {
   const chartHost = useRef<HTMLDivElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
   const lastExpandedPanelHeightRef = useRef(DEFAULT_PANEL_HEIGHT);
-  const symbolSearchRef = useRef<HTMLInputElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const fastSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -88,10 +88,7 @@ export function TradingWorkspace() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [marketCatalog, setMarketCatalog] = useState<MarketOption[]>(() => fallbackCatalog() as MarketOption[]);
   const [symbolSearchOpen, setSymbolSearchOpen] = useState(false);
-  const [symbolQuery, setSymbolQuery] = useState("");
-  const [symbolTab, setSymbolTab] = useState<"all" | "perpetual">("all");
-  const [symbolVenueFilter, setSymbolVenueFilter] = useState<"all" | MarketVenue>("all");
-  const [activeSymbolIndex, setActiveSymbolIndex] = useState(0);
+  const [sourcesSheetOpen, setSourcesSheetOpen] = useState(false);
   const [recentSymbols, setRecentSymbols] = useState<string[]>(() => {
     if (typeof window === "undefined") return ["BYBIT:BTCUSDT", "BYBIT:ETHUSDT"];
     try {
@@ -164,10 +161,6 @@ export function TradingWorkspace() {
   const first = candles.at(0);
   const change = last && first ? ((last.close - first.open) / first.open) * 100 : 0;
   const lineCount = useMemo(() => pine.split("\n").map((_, i) => i + 1).join("\n"), [pine]);
-  const symbolResults = useMemo(
-    () => filterSymbolSearch(marketCatalog, { query: symbolQuery, venue: symbolVenueFilter === "all" ? "" : symbolVenueFilter, tab: symbolTab }).slice(0, 100) as MarketOption[],
-    [marketCatalog, symbolQuery, symbolTab, symbolVenueFilter],
-  );
   const recentMarkets = useMemo(
     () => recentSymbols.map((recent) => resolveRecentMarket(recent, marketCatalog) as MarketOption),
     [marketCatalog, recentSymbols],
@@ -194,8 +187,7 @@ export function TradingWorkspace() {
     setChartVenue(market.venue);
     setSymbol(market.symbol);
     setSymbolSearchOpen(false);
-    setSymbolQuery("");
-    setActiveSymbolIndex(0);
+    setSourcesSheetOpen(false);
     setRecentSymbols((current) => {
       const next = nextRecentSymbols(current, formatMarketId(market.venue, market.symbol));
       try {
@@ -218,9 +210,7 @@ export function TradingWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!symbolSearchOpen) return;
-    const timer = window.setTimeout(() => symbolSearchRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
+    if (!symbolSearchOpen) setSourcesSheetOpen(false);
   }, [symbolSearchOpen]);
 
   useEffect(() => {
@@ -474,8 +464,13 @@ export function TradingWorkspace() {
       if (event.key === "Escape") {
         handleWorkspaceEscape({
           searchOpen: symbolSearchOpen,
+          sourcesOpen: sourcesSheetOpen,
           event,
-          closeSearch: () => setSymbolSearchOpen(false),
+          closeSources: () => setSourcesSheetOpen(false),
+          closeSearch: () => {
+            setSourcesSheetOpen(false);
+            setSymbolSearchOpen(false);
+          },
           cancelDrawing: () => {
             drawingControllerRef.current?.cancel();
             if (!drawingControllerRef.current) clearDrawingTextEntry();
@@ -489,7 +484,7 @@ export function TradingWorkspace() {
     };
     window.addEventListener("keydown", handleWorkspaceShortcut, true);
     return () => window.removeEventListener("keydown", handleWorkspaceShortcut, true);
-  }, [clearDrawingTextEntry, runPine, symbolSearchOpen]);
+  }, [clearDrawingTextEntry, runPine, sourcesSheetOpen, symbolSearchOpen]);
 
   const commitDrawingText = (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -662,26 +657,15 @@ export function TradingWorkspace() {
           </section>
         </aside>
       </section>
-      {symbolSearchOpen && <>
-        <button className="symbol-search-backdrop" aria-label="Close symbol search" onClick={() => setSymbolSearchOpen(false)} />
-        <section className="symbol-search-dialog" role="dialog" aria-modal="true" aria-labelledby="symbol-search-title">
-          <header className="symbol-search-header"><div><h2 id="symbol-search-title">Symbol Search</h2><span>{symbolVenueFilter === "all" ? "All exchanges" : `${venueLabel(symbolVenueFilter)} markets`}</span></div><button aria-label="Close symbol search" onClick={() => setSymbolSearchOpen(false)}>×</button></header>
-          <div className="symbol-search-input-wrap"><span aria-hidden="true">⌕</span><input ref={symbolSearchRef} aria-label="Search symbols or exchanges" placeholder="Search symbol or exchange, e.g. BTCUSDT or OKX" value={symbolQuery} onChange={(event) => { setSymbolQuery(event.target.value.toUpperCase()); setActiveSymbolIndex(0); }} onKeyDown={(event) => {
-            if (event.key === "ArrowDown") { event.preventDefault(); setActiveSymbolIndex((index) => Math.min(symbolResults.length - 1, index + 1)); }
-            if (event.key === "ArrowUp") { event.preventDefault(); setActiveSymbolIndex((index) => Math.max(0, index - 1)); }
-            if (event.key === "Enter" && symbolResults[activeSymbolIndex]) { event.preventDefault(); selectMarket(symbolResults[activeSymbolIndex]); }
-            if (event.key === "Escape") { event.preventDefault(); setSymbolSearchOpen(false); }
-          }} /><kbd>⌘ K</kbd></div>
-          <div className="symbol-search-filters"><div className="symbol-tabs"><button className={symbolTab === "all" ? "active" : ""} onClick={() => { setSymbolTab("all"); setActiveSymbolIndex(0); }}>All</button><button className={symbolTab === "perpetual" ? "active" : ""} onClick={() => { setSymbolTab("perpetual"); setActiveSymbolIndex(0); }}>Perpetual</button></div><div className="symbol-filter-pills" role="group" aria-label="Filter by exchange"><span>Crypto</span><button type="button" className={symbolVenueFilter === "all" ? "active" : ""} aria-pressed={symbolVenueFilter === "all"} onClick={() => { setSymbolVenueFilter("all"); setActiveSymbolIndex(0); }}>ALL</button>{MARKET_VENUES.map((venue) => <button type="button" key={venue} className={symbolVenueFilter === venue ? "active" : ""} aria-pressed={symbolVenueFilter === venue} onClick={() => { setSymbolVenueFilter(venue); setActiveSymbolIndex(0); }}>{venueCode(venue)}</button>)}</div></div>
-          {symbolTab === "all" && !symbolQuery && recentMarkets.length > 0 && <div className="recent-symbols"><span>Recent</span><div>{recentMarkets.map((market) => <button key={formatMarketId(market.venue, market.symbol)} onClick={() => selectMarket(market)}>{market.base}<small>/{market.quote} · {venueCode(market.venue)}</small></button>)}</div></div>}
-          <div className="symbol-results-head"><span>Symbol</span><span>{symbolResults.length} markets</span></div>
-          <div className="symbol-results" role="listbox" aria-label="Symbols across exchanges">
-            {symbolResults.map((market, index) => <button key={formatMarketId(market.venue, market.symbol)} role="option" aria-selected={index === activeSymbolIndex} className={`symbol-result ${index === activeSymbolIndex ? "active" : ""}`} onMouseEnter={() => setActiveSymbolIndex(index)} onClick={() => selectMarket(market)}><span className={`symbol-avatar venue-${market.venue}`}>{market.symbol === "BTCUSDT" ? "₿" : market.base.slice(0, 2)}</span><span className="symbol-result-copy"><strong>{market.symbol}</strong><small>{formatMarketId(market.venue, market.symbol)} · {market.base} / TetherUS Perpetual</small></span><span className="symbol-kind">PERP</span><span className={`symbol-exchange venue-${market.venue}`}>{venueCode(market.venue)}</span></button>)}
-            {symbolResults.length === 0 && <div className="symbol-empty"><strong>No symbols found</strong><span>Try another ticker, coin, or exchange name.</span></div>}
-          </div>
-          <footer className="symbol-search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Esc</kbd> Close</span></footer>
-        </section>
-      </>}
+      <SymbolSearchDialog
+        open={symbolSearchOpen}
+        sourcesOpen={sourcesSheetOpen}
+        catalog={marketCatalog}
+        recentMarkets={recentMarkets}
+        onSourcesOpenChange={setSourcesSheetOpen}
+        onClose={() => setSymbolSearchOpen(false)}
+        onSelectMarket={selectMarket}
+      />
       {aiOpen && <button className="ai-backdrop" aria-label="Close AI Analyst" onClick={() => setAiOpen(false)} />}
       <aside className={`ai-drawer ${aiOpen ? "open" : ""}`} aria-hidden={!aiOpen} aria-label="πlab AI Analyst">
         <div className="ai-header">
