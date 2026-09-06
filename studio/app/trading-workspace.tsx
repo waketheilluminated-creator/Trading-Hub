@@ -49,9 +49,6 @@ function toChartCandle(candle: MarketCandle): Candle {
   return { time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume };
 }
 
-function persistChartVenue(venue: MarketVenue) {
-  try { window.localStorage.setItem("pilab-chart-venue", venue); } catch { /* Session state still holds the working venue. */ }
-}
 function calculateEma(candles: Candle[], length: number): LineData<Time>[] {
   if (!candles.length) return [];
   const multiplier = 2 / (length + 1);
@@ -109,16 +106,10 @@ export function TradingWorkspace() {
   const [consoleKind, setConsoleKind] = useState<"normal" | "success" | "error">("normal");
   const [running, setRunning] = useState(false);
   const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
-  const [chartVenue, setChartVenue] = useState<MarketVenue>(() => {
-    if (typeof window === "undefined") return "bybit";
-    try {
-      const stored = window.localStorage.getItem("pilab-chart-venue");
-      return isMarketVenue(stored) ? stored : "bybit";
-    } catch { return "bybit"; }
-  });
-  const [activeVenue, setActiveVenue] = useState<MarketVenue>(chartVenue);
+  const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
+  const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
-  const [derivativesExchange, setDerivativesExchange] = useState<MarketVenue>(chartVenue);
+  const [derivativesExchange, setDerivativesExchange] = useState<MarketVenue>("bybit");
   const [alerts, setAlerts] = useState<{ id: number; direction: "above" | "below"; price: number; triggered: boolean }[]>([]);
   const [showAlertForm, setShowAlertForm] = useState(false);
   const [alertDirection, setAlertDirection] = useState<"above" | "below">("above");
@@ -352,7 +343,6 @@ export function TradingWorkspace() {
       .then((result) => {
         if (cancelled) return;
         setActiveVenue(result.venue);
-        persistChartVenue(result.venue);
         setDerivativesExchange(result.venue);
         setCandles(result.candles.map(toChartCandle));
         setLoading(false);
@@ -587,7 +577,7 @@ export function TradingWorkspace() {
               <button className="toolbar-symbol-button" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><strong>{symbol.replace("USDT", " / USDT")}</strong><span>⌄</span></button><span className="toolbar-separator" />
               {INTERVALS.map((item) => <button key={item.value} onClick={() => { beginMarketLoad(); setInterval(item.value); }} className={`time-button ${interval === item.value ? "active" : ""}`}>{item.label}</button>)}
             </div>
-            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); persistChartVenue(venue); }}><option value="bybit">Bybit</option><option value="binance">Binance</option><option value="okx">OKX</option></select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
+            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}><option value="bybit">Bybit</option><option value="binance">Binance</option><option value="okx">OKX</option></select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
           </div>
 
           <div className="chart-region">
