@@ -33,14 +33,15 @@ test("renders drawing tools between the chart toolbar and editor", async () => {
   assert.ok(chartStage < bottomPanel);
 });
 
-test("server-renders the πlab trading workspace", async () => {
+test("server-renders the Trading Hub trading workspace", async () => {
   const app = await worker();
   const response = await app.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), env, context);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>πlab — Live crypto charting<\/title>/i);
-  assert.match(html, /πlab/);
+  assert.match(html, /<title>Trading Hub — Live crypto charting<\/title>/i);
+  assert.match(html, /Trading Hub/);
+  assert.doesNotMatch(html, /πlab|pi lab|Pine Studio/i);
   assert.match(html, /Derivatives pulse/);
   assert.match(html, /Order flow/);
   assert.match(html, /Perp CVD/);
@@ -89,9 +90,10 @@ test("server-renders the synchronized Pine editor tab", async () => {
   const response = await app.fetch(new Request("http://localhost/pine-editor", { headers: { accept: "text/html" } }), env, context);
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /<title>Pine Editor — πlab<\/title>/i);
-  assert.match(html, /Changes sync automatically/);
+  assert.match(html, /<title>Pine Editor — Trading Hub<\/title>/i);
+  assert.match(html, /Changes sync automatically with every open Trading Hub tab/);
   assert.match(html, /Return to chart/);
+  assert.doesNotMatch(html, /πlab|pi lab|Pine Studio/i);
 });
 
 test("AI route validates model connection details before forwarding data", async () => {

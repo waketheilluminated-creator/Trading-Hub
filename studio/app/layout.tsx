@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "πlab",
+  title: "Trading Hub",
   description: "A focused crypto charting, Pine indicator, and experimental AI analysis workspace.",
 };
 

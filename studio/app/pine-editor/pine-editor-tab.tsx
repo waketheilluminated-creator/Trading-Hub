@@ -11,12 +11,12 @@ export function PineEditorTab() {
   return (
     <main className="pine-popout-shell">
       <header className="pine-popout-header">
-        <div className="brand"><span className="brand-mark">π</span><span>πlab</span><small>Pine Editor</small></div>
+        <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>Pine Editor</small></div>
         <div className="pine-popout-actions"><span><i /> Synced live</span><Link href="/">Return to chart</Link></div>
       </header>
       <section className="pine-popout-toolbar">
         <div><strong>Custom indicator</strong><span>Pine Script v5 subset</span></div>
-        <p>Changes sync automatically with every open πlab tab.</p>
+        <p>Changes sync automatically with every open Trading Hub tab.</p>
       </section>
       <section className="pine-popout-editor">
         <pre className="line-numbers" aria-hidden="true">{lineCount}</pre>
