@@ -45,7 +45,7 @@ export const CRYPTO_SOURCES: MarketSource[] = MARKET_VENUES
   .map((venue) => ({
     id: venue,
     label: venueLabel(venue),
-    subtitle: venueLabel(venue),
+    subtitle: "USDT perpetuals",
     category: "CRYPTOCURRENCY",
   }))
   .sort((left, right) => left.label.localeCompare(right.label));
