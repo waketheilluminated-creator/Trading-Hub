@@ -1,5 +1,5 @@
 import { fetchVenueCvd } from "@/lib/market-cvd.ts";
-import { compactSymbol, isChartInterval, isMarketVenue, supportedExchangesMessage } from "@/lib/market-venues.ts";
+import { classifyMarketFailure, compactSymbol, isChartInterval, isMarketVenue, sanitizeMarketCopy, supportedExchangesMessage } from "@/lib/market-venues.ts";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -20,22 +20,29 @@ export async function GET(request: Request) {
   try {
     const snapshot = await fetchVenueCvd(exchange, symbol, interval);
     if (!snapshot.perp.available && !snapshot.spot.available) {
+      const classified = classifyMarketFailure(exchange, 502, snapshot.notice || `${exchange} returned no public trades`);
       return Response.json({
-        error: snapshot.notice || `${exchange} returned no public trades`,
+        error: classified.message,
         exchange,
         symbol,
         interval,
-      }, { status: 502 });
+        blocked: classified.blocked,
+      }, { status: classified.blocked ? 403 : 502 });
     }
     return Response.json(snapshot, { headers: { "Cache-Control": "public, max-age=8, s-maxage=8" } });
   } catch (error) {
     const failure = error && typeof error === "object" ? error as { message?: string; blocked?: boolean; status?: number; venue?: string } : {};
+    const classified = classifyMarketFailure(
+      exchange,
+      failure.blocked ? 403 : (failure.status || 502),
+      failure.message || (error instanceof Error ? error.message : "Exchange trade request failed"),
+    );
     return Response.json({
-      error: failure.message || (error instanceof Error ? error.message : "Exchange trade request failed"),
+      error: sanitizeMarketCopy(classified.message, exchange) || classified.message,
       exchange: failure.venue || exchange,
       symbol,
       interval,
-      blocked: Boolean(failure.blocked),
-    }, { status: failure.blocked ? 403 : 502 });
+      blocked: Boolean(failure.blocked || classified.blocked),
+    }, { status: (failure.blocked || classified.blocked) ? 403 : 502 });
   }
 }

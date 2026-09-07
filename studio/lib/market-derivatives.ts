@@ -1,5 +1,5 @@
 import { binance, bitget, bybit, okx, type Exchange } from "ccxt";
-import { isMarketVenue, toUnifiedSwapSymbol, type MarketVenue } from "./market-venues.ts";
+import { isMarketVenue, toOkxSpotInstId, toUnifiedSwapSymbol, type MarketVenue } from "./market-venues.ts";
 
 export type DerivativesSnapshot = {
   exchange: MarketVenue;
@@ -40,6 +40,37 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+async function fillMarkIndex(
+  exchange: Exchange,
+  venue: MarketVenue,
+  unified: string,
+  symbol: string,
+): Promise<{ markPrice: number | null; indexPrice: number | null }> {
+  let markPrice: number | null = null;
+  let indexPrice: number | null = null;
+  if (exchange.has.fetchMarkPrice) {
+    try {
+      const mark = await exchange.fetchMarkPrice(unified);
+      markPrice = numeric(mark.markPrice) ?? numeric((mark.info as { markPx?: unknown } | undefined)?.markPx);
+      indexPrice = numeric(mark.indexPrice) ?? numeric((mark.info as { idxPx?: unknown } | undefined)?.idxPx);
+    } catch {
+      // Funding already returned whatever this venue exposes.
+    }
+  }
+  if (indexPrice == null && venue === "okx") {
+    try {
+      const response = await globalThis.fetch(
+        `https://www.okx.com/api/v5/market/index-tickers?instId=${encodeURIComponent(toOkxSpotInstId(symbol))}`,
+      );
+      const payload = await response.json() as { data?: { idxPx?: unknown }[] };
+      indexPrice = numeric(payload.data?.[0]?.idxPx);
+    } catch {
+      // Basis stays blank when the index ticker is unavailable.
+    }
+  }
+  return { markPrice, indexPrice };
+}
+
 export async function fetchDerivativesSnapshot(
   venue: MarketVenue,
   symbol: string,
@@ -56,7 +87,13 @@ export async function fetchDerivativesSnapshot(
     exchange.fetchOpenInterest(unified),
     exchange.fetchFundingRate(unified),
   ]);
-  const markPrice = numeric(funding.markPrice);
+  let markPrice = numeric(funding.markPrice);
+  let indexPrice = numeric(funding.indexPrice);
+  if (markPrice == null || indexPrice == null) {
+    const extras = await fillMarkIndex(exchange, venue, unified, symbol);
+    markPrice = markPrice ?? extras.markPrice;
+    indexPrice = indexPrice ?? extras.indexPrice;
+  }
   const openInterestAmount = numeric(openInterest.openInterestAmount);
   const reportedValue = numeric(openInterest.openInterestValue);
 
@@ -69,7 +106,7 @@ export async function fetchDerivativesSnapshot(
     fundingInterval: funding.interval || null,
     nextFundingTimestamp: numeric(funding.nextFundingTimestamp ?? funding.fundingTimestamp),
     markPrice,
-    indexPrice: numeric(funding.indexPrice),
+    indexPrice,
     updatedAt: Date.now(),
   };
 }

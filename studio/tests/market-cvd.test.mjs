@@ -117,16 +117,16 @@ test("interprets futures-versus-spot force and degrades when a book is missing",
   assert.equal(both.perpAggression, "buy");
   assert.equal(both.spotAggression, "sell");
   assert.ok(both.perpMinusSpotDelta != null && both.perpMinusSpotDelta > 0);
-  assert.match(both.interpretation, /Perpetual takers are buying/i);
+  assert.match(both.interpretation, /Perp buying leads spot selling/i);
 
   const spotOnly = interpretForce(unavailableBook("perp", "blocked"), spotSell);
   assert.equal(spotOnly.available, false);
   assert.equal(spotOnly.dominantBook, "spot");
-  assert.match(spotOnly.interpretation, /Perpetual CVD is unavailable/i);
+  assert.match(spotOnly.interpretation, /Perp CVD unavailable/i);
 
   const none = interpretForce(unavailableBook("perp", "none"), unavailableBook("spot", "none"));
   assert.equal(none.available, false);
-  assert.match(none.interpretation, /cannot be attributed/);
+  assert.match(none.interpretation, /CVD unavailable/i);
 });
 
 test("uses Binance spot public-mirror trades when official hosts fail", async () => {
@@ -145,7 +145,10 @@ test("uses Binance spot public-mirror trades when official hosts fail", async ()
   assert.equal(snapshot.spot.cvd, 3);
   assert.equal(snapshot.source, "public-mirror");
   assert.equal(snapshot.comparison.available, false);
-  assert.match(snapshot.notice ?? "", /Perp trades unavailable/i);
+  assert.match(snapshot.notice ?? "", /blocked here/i);
+  assert.match(snapshot.notice ?? "", /public mirror/i);
+  assert.doesNotMatch(snapshot.notice ?? "", /eligibility|https?:\/\/www\.binance\.com/i);
+  assert.doesNotMatch(snapshot.perp.reason ?? "", /eligibility|https?:\/\/www\.binance\.com/i);
   assert.ok(calls.some((url) => url.includes("data-api.binance.vision")));
 });
 
@@ -254,10 +257,16 @@ test("workspace asks analyze to attach backend packs instead of posting client c
   assert.doesNotMatch(drawer, /image\/png|data:image|scroll-and-screenshot|orderFlow: cvd/i);
   assert.match(workspace, /interval,/);
   assert.match(workspace, /derivativesVenue: derivativesExchange/);
-  assert.match(workspace, /\/api\/cvd/);
+  assert.match(workspace, /loadOrderFlowCvd/);
+  assert.match(workspace, /loadDerivativesPulse/);
   assert.match(workspace, /Futures vs spot|Futures − spot/);
   assert.match(workspace, /Order flow/);
+  assert.match(workspace, /section-toggle/);
+  assert.match(workspace, /th-section-derivatives-open/);
+  assert.match(workspace, /th-section-order-flow-open/);
+  assert.match(workspace, /sanitizeMarketCopy/);
   assert.match(workspace, /cvd_perp/);
+  assert.match(readFileSync(fileURLToPath(new URL("../lib/market-pulse.ts", import.meta.url)), "utf8"), /\/api\/cvd/);
   assert.match(drawer, /Backend data packs are ready/);
   assert.match(analyze, /enrichAnalyzeRequest/);
   assert.match(analyze, /Client-supplied candles are not treated as historical/);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   CandlestickSeries, ColorType, createChart, LineSeries,
   type CandlestickData, type IChartApi, type ISeriesApi,
@@ -8,8 +8,9 @@ import {
 } from "lightweight-charts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
+import { loadDerivativesPulse, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
-import { isMarketVenue, MARKET_VENUES, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
+import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
 import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
@@ -101,6 +102,57 @@ function isTextEditingElement(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 }
 
+const DERIVATIVES_SECTION_KEY = "th-section-derivatives-open";
+const ORDER_FLOW_SECTION_KEY = "th-section-order-flow-open";
+
+function readSectionOpen(key: string, fallback = true): boolean {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const stored = window.localStorage.getItem(key);
+    if (stored === "0") return false;
+    if (stored === "1") return true;
+  } catch {
+    return fallback;
+  }
+  return fallback;
+}
+
+function shortCopy(value: string | null | undefined, fallback = ""): string {
+  return sanitizeMarketCopy(value) || fallback;
+}
+
+function SideSection({
+  title,
+  storageKey,
+  extra,
+  children,
+}: {
+  title: string;
+  storageKey: string;
+  extra?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(() => readSectionOpen(storageKey, true));
+  useEffect(() => {
+    try { window.localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore quota / private mode */ }
+  }, [open, storageKey]);
+  const panelId = `${storageKey}-body`;
+  return (
+    <section className={`side-section${open ? "" : " collapsed"}`}>
+      <div className="section-title-row">
+        <h2 className="section-kicker">
+          <button type="button" className="section-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
+            <span className={`section-chevron${open ? " open" : ""}`} aria-hidden="true">›</span>
+            {title}
+          </button>
+        </h2>
+        {extra}
+      </div>
+      <div id={panelId} hidden={!open}>{children}</div>
+    </section>
+  );
+}
+
 export function TradingWorkspace() {
   const chartHost = useRef<HTMLDivElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
@@ -142,7 +194,9 @@ export function TradingWorkspace() {
   const [consoleKind, setConsoleKind] = useState<"normal" | "success" | "error">("normal");
   const [running, setRunning] = useState(false);
   const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
+  const [derivativesNotice, setDerivativesNotice] = useState<string | null>(null);
   const [cvd, setCvd] = useState<CvdSnapshot | null>(null);
+  const [cvdError, setCvdError] = useState<string | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -423,20 +477,38 @@ export function TradingWorkspace() {
 
   useEffect(() => {
     let active = true;
-    const load = () => fetch(`/api/derivatives?exchange=${derivativesExchange}&symbol=${encodeURIComponent(symbol.replace("USDT", "/USDT:USDT"))}`)
-      .then((r) => r.ok ? r.json() : Promise.reject(new Error("Derivatives feed unavailable")))
-      .then((data) => { if (active) setDerivatives(data); })
-      .catch(() => { if (active) setDerivatives(null); });
+    let retryPreferred = true;
+    const load = () => loadDerivativesPulse(derivativesExchange, symbol, fetch, { retryPreferred })
+      .then((result) => {
+        retryPreferred = false;
+        if (!active) return;
+        setDerivatives(result.snapshot);
+        setDerivativesNotice(result.notice);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDerivatives(null);
+        setDerivativesNotice(shortCopy(error instanceof Error ? error.message : "Open interest unavailable.", "Open interest unavailable."));
+      });
     load(); const timer = window.setInterval(load, 30000);
     return () => { active = false; clearInterval(timer); };
   }, [symbol, derivativesExchange]);
 
   useEffect(() => {
     let active = true;
-    const load = () => fetch(`/api/cvd?exchange=${derivativesExchange}&symbol=${encodeURIComponent(symbol)}&interval=${interval}`)
-      .then((r) => r.ok ? r.json() : Promise.reject(new Error("CVD feed unavailable")))
-      .then((data) => { if (active) setCvd(data); })
-      .catch(() => { if (active) setCvd(null); });
+    let retryPreferred = true;
+    const load = () => loadOrderFlowCvd(derivativesExchange, symbol, interval, fetch, { retryPreferred })
+      .then((result) => {
+        retryPreferred = false;
+        if (!active) return;
+        setCvd(result.snapshot);
+        setCvdError(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setCvd(null);
+        setCvdError(shortCopy(error instanceof Error ? error.message : "Order flow unavailable.", "Order flow unavailable."));
+      });
     load(); const timer = window.setInterval(load, 15000);
     return () => { active = false; clearInterval(timer); };
   }, [symbol, interval, derivativesExchange]);
@@ -641,29 +713,31 @@ export function TradingWorkspace() {
         </section>
 
         <aside className="right-panel">
-          <section className="side-section">
-            <div className="section-title-row"><h2 className="section-kicker">Derivatives pulse</h2><select aria-label="Derivatives exchange" value={derivativesExchange} onChange={(event) => { const venue = event.target.value; if (isMarketVenue(venue)) setDerivativesExchange(venue); }}>{venueOptions()}</select></div>
+          <SideSection
+            title="Derivatives pulse"
+            storageKey={DERIVATIVES_SECTION_KEY}
+            extra={<select aria-label="Derivatives exchange" value={derivativesExchange} onChange={(event) => { const venue = event.target.value; if (isMarketVenue(venue)) setDerivativesExchange(venue); }}>{venueOptions()}</select>}
+          >
             <div className="metric-grid">
               <div className="metric-card"><span>Open interest</span><strong>${formatCompact(derivatives?.openInterestValue ?? null)}</strong><small>{formatCompact(derivatives?.openInterestAmount ?? null)} {symbol.replace("USDT", "")}</small></div>
               <div className="metric-card"><span>Funding / 8h</span><strong className={(derivatives?.fundingRate ?? 0) >= 0 ? "positive" : "negative"}>{derivatives?.fundingRate == null ? "—" : `${(derivatives.fundingRate * 100).toFixed(4)}%`}</strong><small>{derivatives?.nextFundingTimestamp ? `Next ${new Date(derivatives.nextFundingTimestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Current rate"}</small></div>
               <div className="metric-card"><span>Mark price</span><strong>{formatPrice(derivatives?.markPrice ?? null)}</strong><small>Fair price</small></div>
               <div className="metric-card"><span>Basis</span><strong className={((derivatives?.markPrice ?? 0) - (derivatives?.indexPrice ?? 0)) >= 0 ? "positive" : "negative"}>{derivatives?.markPrice && derivatives?.indexPrice ? `${(((derivatives.markPrice - derivatives.indexPrice) / derivatives.indexPrice) * 100).toFixed(3)}%` : "—"}</strong><small>Mark vs index</small></div>
             </div>
-            <div className="data-source"><span>Pine: open_interest · funding_rate · cvd_perp</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
-          </section>
-          <section className="side-section">
-            <h2 className="section-kicker">Order flow</h2>
+            <div className="data-source"><span>{derivativesNotice || "Pine: open_interest · funding_rate · cvd_perp"}</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
+          </SideSection>
+          <SideSection title="Order flow" storageKey={ORDER_FLOW_SECTION_KEY}>
             <div className="metric-grid">
               <div className="metric-card">
                 <span>Perp CVD</span>
                 <strong className={signedClass(cvd?.perp.available ? cvd.perp.cvd : null)}>{cvd?.perp.available ? formatSigned(cvd.perp.cvd) : "—"}</strong>
-                <small>{cvd?.perp.available ? summarizeCvdWindow(cvd.perp) : (cvd?.perp.reason || "No perp trades")}</small>
+                <small>{cvd?.perp.available ? summarizeCvdWindow(cvd.perp) : shortCopy(cvd?.perp.reason, "No perp trades")}</small>
                 {cvd?.perp.available && <CvdSpark bars={cvd.perp.spark.length > 1 ? cvd.perp.spark : cvd.perp.bars} />}
               </div>
               <div className="metric-card">
                 <span>Spot CVD</span>
                 <strong className={signedClass(cvd?.spot.available ? cvd.spot.cvd : null)}>{cvd?.spot.available ? formatSigned(cvd.spot.cvd) : "—"}</strong>
-                <small>{cvd?.spot.available ? summarizeCvdWindow(cvd.spot) : (cvd?.spot.reason || "No spot trades")}</small>
+                <small>{cvd?.spot.available ? summarizeCvdWindow(cvd.spot) : shortCopy(cvd?.spot.reason, "No spot trades")}</small>
                 {cvd?.spot.available && <CvdSpark bars={cvd.spot.spark.length > 1 ? cvd.spot.spark : cvd.spot.bars} />}
               </div>
               <div className="metric-card">
@@ -677,10 +751,10 @@ export function TradingWorkspace() {
                 <small>Perp {cvd?.comparison.perpAggression ?? "—"} · spot {cvd?.comparison.spotAggression ?? "—"}</small>
               </div>
             </div>
-            <p className="force-read">{cvd?.comparison.interpretation || "Waiting for public trades to measure futures-versus-spot force."}</p>
-            {cvd?.notice && <p className="force-read muted">{cvd.notice}</p>}
+            <p className="force-read">{shortCopy(cvd?.comparison.interpretation, cvd ? "Waiting for public trades." : (cvdError || "Waiting for public trades."))}</p>
+            {cvd?.notice ? <p className="force-read muted">{shortCopy(cvd.notice)}</p> : null}
             <div className="data-source"><span>CVD from public trades</span><code>{venueLabel(cvd?.venue || derivativesExchange)} · {INTERVALS.find((item) => item.value === interval)?.label}</code></div>
-          </section>
+          </SideSection>
           <section className="side-section">
             <h2 className="section-kicker">Indicators</h2>
             <div className="indicator-row"><div className="indicator-copy"><strong>EMA 9</strong><span>Built-in · close</span></div><button aria-label="Toggle EMA 9" className={`metric-toggle ${showFast ? "active" : ""}`} onClick={() => setShowFast(!showFast)} /></div>
