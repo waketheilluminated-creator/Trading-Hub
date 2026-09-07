@@ -139,7 +139,7 @@ export function AiAnalystDrawer({
           <span>{summary.indicators} indicators</span>
           <span>{summary.hasDerivatives ? "OI / funding" : "Derivatives unavailable"}</span>
           <span>{summary.hasCvd ? "CVD" : "CVD unavailable"}</span>
-          <span>{summary.history === "current-window" ? "Live window" : `History ${summary.history}`}</span>
+          <span>{pack.history.status === "current-window" ? "Live window" : pack.history.requested ? `Lookback ${pack.history.requested}` : `History ${summary.history}`}</span>
           <span>Backend series</span>
         </div>
         <section className="ai-connection">
