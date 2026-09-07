@@ -121,8 +121,8 @@ test("sanitizeCvdSnapshot never leaves a legal wall in card copy", () => {
     notice: LEGAL_WALL,
     updatedAt: 1,
   });
-  assert.equal(snapshot.perp.reason, "Binance blocked here — try OKX");
-  assert.equal(snapshot.notice, "Binance blocked here — try OKX");
-  assert.equal(snapshot.comparison.interpretation, "Binance blocked here — try OKX");
+  assert.equal(snapshot.perp.reason, "Binance blocked here — try OKX.");
+  assert.equal(snapshot.notice, "Binance blocked here — try OKX.");
+  assert.equal(snapshot.comparison.interpretation, "Binance blocked here — try OKX.");
   assert.doesNotMatch(JSON.stringify(snapshot), /eligibility|https?:\/\/www\.binance\.com/i);
 });

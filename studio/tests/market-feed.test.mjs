@@ -14,23 +14,23 @@ test("falls back from Bybit to OKX before Bitget and Binance", () => {
 test("classifies CloudFront and Binance geo blocks", () => {
   const bybit = classifyMarketFailure("bybit", 403, "{ error: The Amazon CloudFront distribution is configured to block access from your country }");
   assert.equal(bybit.blocked, true);
-  assert.equal(bybit.message, "Bybit blocked here — try OKX");
+  assert.equal(bybit.message, "Bybit blocked here — try OKX.");
 
   const binance = classifyMarketFailure("binance", 451, JSON.stringify({
     msg: "Service unavailable from a restricted location according to 'b. Eligibility'",
   }));
   assert.equal(binance.blocked, true);
-  assert.equal(binance.message, "Binance blocked here — try OKX");
+  assert.equal(binance.message, "Binance blocked here — try OKX.");
   assert.doesNotMatch(binance.message, /eligibility|https?:\/\//i);
 
   const wall = classifyMarketFailure("binance", 451, "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).");
-  assert.equal(wall.message, "Binance blocked here — try OKX");
+  assert.equal(wall.message, "Binance blocked here — try OKX.");
   assert.doesNotMatch(wall.message, /eligibility|customer service|https?:\/\//i);
 });
 
 test("strips exchange legal walls before UI copy", () => {
   const legal = "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).";
-  assert.equal(sanitizeMarketCopy(legal), "Binance blocked here — try OKX");
+  assert.equal(sanitizeMarketCopy(legal), "Binance blocked here — try OKX.");
   assert.doesNotMatch(sanitizeMarketCopy(legal), /eligibility|https?:\/\//i);
   assert.equal(sanitizeMarketCopy("Bybit blocked here — using OKX."), "Bybit blocked here — using OKX.");
 });

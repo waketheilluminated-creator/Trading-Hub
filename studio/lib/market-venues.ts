@@ -122,7 +122,7 @@ export function looksGeoBlocked(status: number, body: string): boolean {
 }
 
 export function shortBlockedMessage(venue: MarketVenue, next: MarketVenue = suggestedFallbackVenue(venue)): string {
-  return `${venueLabel(venue)} blocked here — try ${venueLabel(next)}`;
+  return `${venueLabel(venue)} blocked here — try ${venueLabel(next)}.`;
 }
 
 export function sanitizeMarketCopy(value: string | null | undefined, venue?: MarketVenue): string {
