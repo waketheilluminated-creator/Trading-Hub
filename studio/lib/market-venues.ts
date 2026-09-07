@@ -101,6 +101,45 @@ export function venueFallbackOrder(preferred: MarketVenue): MarketVenue[] {
   return [preferred, ...CANADA_FRIENDLY_FALLBACK.filter((venue) => venue !== preferred)];
 }
 
+export function suggestedFallbackVenue(blocked: MarketVenue): MarketVenue {
+  return CANADA_FRIENDLY_FALLBACK.find((venue) => venue !== blocked) ?? "okx";
+}
+
+export const MAX_MARKET_ERROR_LENGTH = 96;
+
+export function looksGeoBlocked(status: number, body: string): boolean {
+  const lower = body.toLowerCase();
+  return status === 403
+    || status === 451
+    || lower.includes("cloudfront")
+    || lower.includes("block access from your country")
+    || lower.includes("restricted location")
+    || lower.includes("b. eligibility")
+    || lower.includes("not available in your region")
+    || lower.includes("not available in your country")
+    || lower.includes("unavailable in your country")
+    || lower.includes("binance.com/en/terms");
+}
+
+export function shortBlockedMessage(venue: MarketVenue, next: MarketVenue = suggestedFallbackVenue(venue)): string {
+  return `${venueLabel(venue)} blocked here — try ${venueLabel(next)}`;
+}
+
+export function sanitizeMarketCopy(value: string | null | undefined, venue?: MarketVenue): string {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (isLegalWall(text) || (looksGeoBlocked(0, text) && (text.length > MAX_MARKET_ERROR_LENGTH || /https?:\/\//i.test(text)))) {
+    const named = MARKET_VENUES.find((item) => {
+      const haystack = text.toLowerCase();
+      return haystack.includes(item) || haystack.includes(VENUE_LABELS[item].toLowerCase());
+    });
+    return shortBlockedMessage(venue ?? named ?? "binance");
+  }
+  const withoutUrls = text.replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim();
+  if (withoutUrls.length <= MAX_MARKET_ERROR_LENGTH) return withoutUrls;
+  return `${withoutUrls.slice(0, MAX_MARKET_ERROR_LENGTH - 1).trim()}…`;
+}
+
 export function formatMarketId(venue: MarketVenue, symbol: string): string {
   return `${venueCode(venue)}:${compactSymbol(symbol)}`;
 }
@@ -157,29 +196,31 @@ export function toBitgetBar(interval: ChartInterval): string {
 
 export function classifyMarketFailure(venue: MarketVenue, status: number, body: string): MarketRequestFailure {
   const text = body.replace(/\s+/g, " ").trim();
-  const lower = text.toLowerCase();
-  const blocked = status === 403
-    || status === 451
-    || lower.includes("cloudfront")
-    || lower.includes("block access from your country")
-    || lower.includes("restricted location")
-    || lower.includes("service unavailable from a restricted location");
+  const blocked = looksGeoBlocked(status, text);
   const detail = extractFailureDetail(text);
   return {
     venue,
     status,
     blocked,
     message: blocked
-      ? `${venueLabel(venue)} is blocked in this region${detail ? ` (${detail})` : ""}.`
-      : detail || `${venueLabel(venue)} market request failed (${status || "network"}).`,
+      ? shortBlockedMessage(venue)
+      : sanitizeMarketCopy(detail) || `${venueLabel(venue)} market request failed (${status || "network"}).`,
   };
 }
 
 export function formatVenueFallbackNotice(from: MarketVenue, to: MarketVenue, blocked: boolean): string {
   if (from === to) return "";
   return blocked
-    ? `${venueLabel(from)} is blocked in this region. Using ${venueLabel(to)}.`
-    : `${venueLabel(from)} is unavailable. Using ${venueLabel(to)}.`;
+    ? `${venueLabel(from)} blocked here — using ${venueLabel(to)}.`
+    : `${venueLabel(from)} unavailable — using ${venueLabel(to)}.`;
+}
+
+function isLegalWall(text: string): boolean {
+  const lower = text.toLowerCase();
+  return lower.includes("eligibility")
+    || lower.includes("please contact customer service")
+    || lower.includes("binance.com/en/terms")
+    || (looksGeoBlocked(0, text) && (lower.includes("http") || lower.includes("terms") || text.length > 140));
 }
 
 function extractFailureDetail(body: string): string {

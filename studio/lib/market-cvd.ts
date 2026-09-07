@@ -207,7 +207,7 @@ export function interpretForce(perp: CvdBook, spot: CvdBook): ForceReading {
       spotAggression,
       dominantBook: "unknown",
       perpMinusSpotDelta: null,
-      interpretation: "CVD is unavailable. Public trades were not returned for perpetual or spot, so buy/sell force cannot be attributed.",
+      interpretation: "CVD unavailable.",
     };
   }
   if (perp.available && perp.unit === "contracts") {
@@ -217,19 +217,19 @@ export function interpretForce(perp: CvdBook, spot: CvdBook): ForceReading {
       spotAggression,
       dominantBook: "unknown",
       perpMinusSpotDelta: null,
-      interpretation: "Perp CVD is in contracts, not base size, so it is not compared with spot. Treat the perpetual book on its own.",
+      interpretation: "Perp CVD is in contracts, not base size.",
     };
   }
   if (perp.available !== spot.available) {
     const present = perp.available ? perp : spot;
-    const missing = perp.available ? "spot" : "perpetual";
+    const missing = perp.available ? "Spot" : "Perp";
     return {
       available: false,
       perpAggression,
       spotAggression,
       dominantBook: perp.available ? "perp" : "spot",
       perpMinusSpotDelta: null,
-      interpretation: `${labelBook(present.market)} takers are ${aggressionPhrase(aggressionOf(present))} over the latest public trades. ${missing === "spot" ? "Spot" : "Perpetual"} CVD is unavailable, so futures-versus-spot attribution is incomplete.`,
+      interpretation: `${present.market === "perp" ? "Perp" : "Spot"} ${aggressionPhrase(aggressionOf(present))}. ${missing} CVD unavailable.`,
     };
   }
 
@@ -241,7 +241,7 @@ export function interpretForce(perp: CvdBook, spot: CvdBook): ForceReading {
     spotAggression,
     dominantBook,
     perpMinusSpotDelta: spread,
-    interpretation: forceSentence(perpAggression, spotAggression, dominantBook, spread),
+    interpretation: forceSentence(perpAggression, spotAggression, dominantBook),
   };
 }
 
@@ -302,9 +302,9 @@ export async function fetchVenueCvd(
     : unavailableBook("spot", failureReason(spotResult.reason, venue));
 
   const notices = [
-    perpResult.status === "rejected" ? `Perp trades unavailable: ${failureReason(perpResult.reason, venue)}` : null,
-    spotResult.status === "rejected" ? `Spot trades unavailable: ${failureReason(spotResult.reason, venue)}` : null,
-    perp.available && perp.unit === "contracts" ? "OKX contract multiplier was unavailable; perp CVD is not compared with spot." : null,
+    perpResult.status === "rejected" ? bookFailureNotice("Perp", perpResult.reason, venue) : null,
+    spotResult.status === "rejected" ? bookFailureNotice("Spot", spotResult.reason, venue) : null,
+    perp.available && perp.unit === "contracts" ? "OKX contract multiplier unavailable." : null,
   ].filter(Boolean);
 
   return buildCvdSnapshot({
@@ -347,9 +347,9 @@ async function fetchBinanceCvd(
     : unavailableBook("spot", failureReason(spotResult.reason, "binance"));
 
   const notices = [
-    perpResult.status === "rejected" ? `Perp trades unavailable: ${failureReason(perpResult.reason, "binance")}` : null,
-    spotResult.status === "rejected" ? `Spot trades unavailable: ${failureReason(spotResult.reason, "binance")}` : null,
-    spotSource === "public-mirror" ? "Binance spot CVD is from the public data mirror." : null,
+    perpResult.status === "rejected" ? bookFailureNotice("Perp", perpResult.reason, "binance") : null,
+    spotResult.status === "rejected" ? bookFailureNotice("Spot", spotResult.reason, "binance") : null,
+    spotSource === "public-mirror" ? "Spot via public mirror." : null,
   ].filter(Boolean);
 
   return buildCvdSnapshot({
@@ -530,16 +530,14 @@ function forceSentence(
   perpAggression: Aggression,
   spotAggression: Aggression,
   dominantBook: DominantBook,
-  spread: number,
 ): string {
-  const spreadWord = spread > 0 ? "futures-led buying versus spot" : spread < 0 ? "futures-led selling versus spot" : "no net futures-versus-spot gap";
   if (dominantBook === "perp") {
-    return `Perpetual takers are ${aggressionPhrase(perpAggression)} more than spot (${aggressionPhrase(spotAggression)}). Force looks ${spreadWord}; that favors following the perp side for entry and fading it only if open interest or funding disagree.`;
+    return `Perp ${aggressionPhrase(perpAggression)} leads spot ${aggressionPhrase(spotAggression)}.`;
   }
   if (dominantBook === "spot") {
-    return `Spot takers are ${aggressionPhrase(spotAggression)} more than perps (${aggressionPhrase(perpAggression)}). Force looks spot-led; a perp entry is weaker unless open interest confirms the same side.`;
+    return `Spot ${aggressionPhrase(spotAggression)} leads perp ${aggressionPhrase(perpAggression)}.`;
   }
-  return `Perp and spot aggression are similar (perp ${perpAggression}, spot ${spotAggression}). Force is not clearly futures- or spot-led in this trade window; wait for CVD or open interest to diverge before adding conviction.`;
+  return `Perp and spot are aligned (${perpAggression}/${spotAggression}).`;
 }
 
 function aggressionPhrase(value: Aggression): string {
@@ -549,12 +547,13 @@ function aggressionPhrase(value: Aggression): string {
   return "unknown";
 }
 
-function labelBook(market: OrderBookKind): string {
-  return market === "perp" ? "Perpetual" : "Spot";
-}
-
 function failureReason(error: unknown, venue: MarketVenue): string {
   return asFailure(error, venue).message;
+}
+
+function bookFailureNotice(kind: "Perp" | "Spot", error: unknown, venue: MarketVenue): string {
+  const failure = asFailure(error, venue);
+  return failure.blocked ? failure.message : `${kind} trades unavailable.`;
 }
 
 function asFailure(error: unknown, venue: MarketVenue): MarketRequestFailure {

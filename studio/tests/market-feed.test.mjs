@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, toOkxSpotInstId, toOkxSwapInstId, toUnifiedSwapSymbol, venueFallbackOrder } from "../lib/market-venues.ts";
+import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, sanitizeMarketCopy, toOkxSpotInstId, toOkxSwapInstId, toUnifiedSwapSymbol, venueFallbackOrder } from "../lib/market-venues.ts";
 import { fetchVenueKlines, parseVenueKlines, parseVenueMarkets } from "../lib/market-rest.ts";
 import { loadChartHistory, mergeLiveCandle, parseLiveKline } from "../lib/market-feed.ts";
 
@@ -14,13 +14,25 @@ test("falls back from Bybit to OKX before Bitget and Binance", () => {
 test("classifies CloudFront and Binance geo blocks", () => {
   const bybit = classifyMarketFailure("bybit", 403, "{ error: The Amazon CloudFront distribution is configured to block access from your country }");
   assert.equal(bybit.blocked, true);
-  assert.match(bybit.message, /Bybit is blocked/i);
+  assert.equal(bybit.message, "Bybit blocked here — try OKX");
 
   const binance = classifyMarketFailure("binance", 451, JSON.stringify({
     msg: "Service unavailable from a restricted location according to 'b. Eligibility'",
   }));
   assert.equal(binance.blocked, true);
-  assert.match(binance.message, /Binance is blocked/i);
+  assert.equal(binance.message, "Binance blocked here — try OKX");
+  assert.doesNotMatch(binance.message, /eligibility|https?:\/\//i);
+
+  const wall = classifyMarketFailure("binance", 451, "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).");
+  assert.equal(wall.message, "Binance blocked here — try OKX");
+  assert.doesNotMatch(wall.message, /eligibility|customer service|https?:\/\//i);
+});
+
+test("strips exchange legal walls before UI copy", () => {
+  const legal = "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).";
+  assert.equal(sanitizeMarketCopy(legal), "Binance blocked here — try OKX");
+  assert.doesNotMatch(sanitizeMarketCopy(legal), /eligibility|https?:\/\//i);
+  assert.equal(sanitizeMarketCopy("Bybit blocked here — using OKX."), "Bybit blocked here — using OKX.");
 });
 
 test("maps compact symbols onto OKX swap instruments", () => {
