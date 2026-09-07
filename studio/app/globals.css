@@ -16,7 +16,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .topbar { display: grid; grid-template-columns: minmax(340px, 1fr) auto minmax(340px, 1fr); align-items: center; padding: 0 14px; border-bottom: 1px solid var(--line); background: rgba(12, 17, 24, .96); }
 .brand, .row, .top-actions, .market-head, .tabs, .metric-head, .status-group { display: flex; align-items: center; }
 .brand { gap: 10px; font-weight: 680; letter-spacing: -.02em; }
-.brand-mark { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid rgba(118,231,164,.45); border-radius: 7px; color: var(--accent); background: rgba(118,231,164,.07); font: 700 12px var(--font-geist-mono); }
+.brand-mark { width: 28px; height: 24px; display: grid; place-items: center; border: 1px solid rgba(118,231,164,.45); border-radius: 7px; color: var(--accent); background: rgba(118,231,164,.07); font: 700 10px var(--font-geist-mono); letter-spacing: .04em; }
 .brand small { color: var(--faint); font-weight: 500; letter-spacing: 0; }
 .market-switcher { justify-self: center; display: flex; align-items: center; gap: 10px; padding: 5px 10px; color:var(--ink); background:#0d131b; border:1px solid var(--line); border-radius:8px; cursor:pointer; text-align:left; }
 .market-switcher:hover { border-color:#3c485a; background:#121923; }

@@ -582,7 +582,7 @@ export function TradingWorkspace() {
   return (
     <main className="studio-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">π</span><span>πlab</span><small>crypto workspace</small></div>
+        <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
         <div className="top-actions"><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button></div>
       </header>

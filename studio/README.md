@@ -1,4 +1,4 @@
-# πlab
+# Trading Hub
 
 A focused TradingView-style crypto analysis workspace built on the Pine-A-Script transpiler.
 
