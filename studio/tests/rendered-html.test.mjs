@@ -72,6 +72,15 @@ test("server-renders the πlab trading workspace", async () => {
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /Create alert/);
   assert.match(html, /AI Analyst/);
+  assert.match(html, /Trading Hub AI Analyst/);
+  assert.match(html, /Test connection/);
+  assert.match(html, /Bring your own key/);
+  assert.match(html, /Session only/);
+  assert.match(html, /AI provider preset/);
+  assert.match(html, /backend Context Pack/);
+  assert.match(html, /never from screenshots/);
+  assert.match(html, /Backend series/);
+  assert.doesNotMatch(html, /πlab AI Analyst/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
 });
 
@@ -93,7 +102,20 @@ test("AI route validates model connection details before forwarding data", async
     body: JSON.stringify({ endpoint: "http://localhost:11434/v1/chat/completions", model: "test", question: "Analyze" }),
   }), env, context);
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "Only public HTTPS model endpoints are allowed" });
+  assert.deepEqual(await response.json(), { error: "Only public HTTPS model endpoints are allowed." });
+});
+
+test("AI test-connection mode still blocks private hosts", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/ai/analyze", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "test", endpoint: "https://127.0.0.1/v1/chat/completions", model: "test", apiKey: "sk-proj-not-a-real-key" }),
+  }), env, context);
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.error, "Only public HTTPS model endpoints are allowed.");
+  assert.doesNotMatch(JSON.stringify(payload), /sk-proj-not-a-real-key/);
 });
 
 test("derivatives API rejects unsupported exchanges", async () => {
