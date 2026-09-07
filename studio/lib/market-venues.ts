@@ -76,7 +76,7 @@ export function parseChartInterval(value: unknown, fallback: ChartInterval = "15
   return fallback;
 }
 
-export function pickSummaryInterval(base: ChartInterval, remainingMs: number, maxBars = 180): ChartInterval {
+export function pickSummaryInterval(base: ChartInterval, remainingMs: number, maxBars = 200): ChartInterval {
   const start = CHART_INTERVALS.indexOf(base);
   for (let index = Math.max(0, start); index < CHART_INTERVALS.length; index += 1) {
     const interval = CHART_INTERVALS[index];

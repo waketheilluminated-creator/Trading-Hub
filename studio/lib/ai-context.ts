@@ -138,7 +138,7 @@ export type AssemblePackOptions = {
 
 const LIVE_KLINE_LIMIT = 120;
 const HISTORY_SINGLE_FETCH_CAP = 200;
-const HISTORY_SUMMARY_CAP = 180;
+const HISTORY_SUMMARY_CAP = 200;
 
 export function parseAnalystMarketRef(input: unknown): AnalystMarketRef {
   const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};

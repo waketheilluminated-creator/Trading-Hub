@@ -255,7 +255,7 @@ test("workspace asks analyze to attach backend packs instead of posting client c
   assert.match(workspace, /interval,/);
   assert.match(workspace, /derivativesVenue: derivativesExchange/);
   assert.match(workspace, /\/api\/cvd/);
-  assert.match(workspace, /Futures [−\-] spot|Futures vs spot/);
+  assert.match(workspace, /Futures vs spot|Futures − spot/);
   assert.match(workspace, /Order flow/);
   assert.match(workspace, /cvd_perp/);
   assert.match(drawer, /Backend data packs are ready/);
