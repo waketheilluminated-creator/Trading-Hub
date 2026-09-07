@@ -259,6 +259,6 @@ test("workspace asks analyze to attach backend packs instead of posting client c
   assert.match(workspace, /Order flow/);
   assert.match(workspace, /cvd_perp/);
   assert.match(drawer, /Backend data packs are ready/);
-  assert.match(analyze, /assembleAnalystDataPack/);
+  assert.match(analyze, /enrichAnalyzeRequest/);
   assert.match(analyze, /Client-supplied candles are not treated as historical/);
 });
