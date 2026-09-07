@@ -30,6 +30,8 @@ export type AnalystSnapshot = {
   symbol: string;
   venue: string;
   timeframe: string;
+  interval?: string;
+  derivativesVenue?: string;
   candles: ContextCandle[];
   lastPrice?: number | null;
   ema9?: number | null;
@@ -91,7 +93,7 @@ function lastEma(candles: ContextCandle[], length: number): number | null {
   return ema;
 }
 
-export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Date().toISOString(), question = ""): ContextPack {
+export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Date().toISOString(), question = "", range?: unknown): ContextPack {
   const candles = snapshot.candles.slice(-CANDLE_LIMIT).map((candle) => ({
     time: candleTime(candle.time),
     open: candle.open,
@@ -104,7 +106,7 @@ export function buildContextPack(snapshot: AnalystSnapshot, capturedAt = new Dat
   return {
     capturedAt,
     source: contextSource(),
-    history: historyWindow(question),
+    history: historyWindow(question, range),
     market: {
       symbol: snapshot.symbol,
       venue: snapshot.venue,
@@ -142,6 +144,7 @@ export function summarizeContextPack(pack: ContextPack) {
     candles: pack.candles.length,
     hasDerivatives: pack.derivatives.available,
     hasCvd: pack.cvd.available,
+    history: pack.history.status,
     indicators: (pack.indicators.builtIn.ema9Visible ? 1 : 0) + (pack.indicators.builtIn.ema21Visible ? 1 : 0) + pack.indicators.customPine.plots.length,
   };
 }

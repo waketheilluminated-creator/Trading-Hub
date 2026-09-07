@@ -1,10 +1,22 @@
+import {
+  packHistoryRange,
+  resolveLookback,
+  unavailableHistory,
+  formatLookbackDuration,
+  maxLookbackMs,
+  type HistoryBar,
+  type HistoryWindow,
+} from "./ai/history.ts";
 import { fetchVenueCvd, type CvdBook, type CvdSnapshot, type ForceReading } from "./market-cvd.ts";
 import { fetchDerivativesSnapshot, type DerivativesSnapshot } from "./market-derivatives.ts";
 import { fetchVenueKlines, type RestKlineResult } from "./market-rest.ts";
 import {
   compactSymbol,
-  isChartInterval,
+  intervalDurationMs,
   isMarketVenue,
+  parseChartInterval,
+  pickSummaryInterval,
+  venueFallbackOrder,
   type ChartInterval,
   type MarketCandle,
   type MarketVenue,
@@ -14,8 +26,9 @@ export const ANALYST_DATA_PACK_KIND = "pilab.market-datapack/v1";
 
 export const ANALYST_SYSTEM_PROMPT = [
   "You are πlab AI Analyst, an experimental crypto market research assistant.",
-  "Analyze only the attached backend market data packs: klines (OHLCV series JSON), openInterest (OI/funding snapshot JSON), and cvd (perp/spot series JSON).",
+  "Analyze only the attached backend market data packs: klines (OHLCV series JSON), openInterest (OI/funding snapshot JSON), cvd (perp/spot series JSON), and history (lookback OHLCV plus summaries).",
   "These packs are assembled by the server from public market APIs. You do not receive screenshots, scroll-captures, chart images, or pixel data. Never ask for a picture of the chart.",
+  "If history.status is packed or partial, use that lookback pack. If it is unavailable, say why. If it is current-window, use the short live kline series.",
   "CVD is computed from the latest public trades, not the full chart history. If a pack or book is unavailable, say so — never invent CVD, OI, or candle values.",
   "When both perpetual and spot CVD series are present, interpret whether current buy/sell aggression is coming more from futures (perp) or spot, and how that should affect entry versus exit conviction.",
   "Combine CVD with open interest and funding: rising OI plus futures-led buying supports continuation; falling OI with futures-led selling suggests long liquidation or exit pressure; funding extremes can make a futures-led move crowded.",
@@ -99,6 +112,7 @@ export type AnalystDataPack = {
     klines: KlineDataPack;
     openInterest: OpenInterestDataPack;
     cvd: CvdDataPack;
+    history: HistoryWindow;
   };
   overlay: AnalystOverlay | null;
 };
@@ -116,13 +130,72 @@ export type DataPackLoaders = {
   fetchDerivatives?: typeof fetchDerivativesSnapshot;
 };
 
+export type AssemblePackOptions = {
+  question?: string;
+  range?: unknown;
+  now?: number;
+};
+
+const LIVE_KLINE_LIMIT = 120;
+const HISTORY_SINGLE_FETCH_CAP = 200;
+const HISTORY_SUMMARY_CAP = 200;
+
 export function parseAnalystMarketRef(input: unknown): AnalystMarketRef {
   const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const symbol = compactSymbol(typeof raw.symbol === "string" ? raw.symbol : "BTCUSDT");
   const venue = isMarketVenue(raw.venue) ? raw.venue : "okx";
-  const interval = isChartInterval(raw.interval) ? raw.interval : "15";
+  const interval = parseChartInterval(raw.interval ?? raw.timeframe, "15");
   const derivativesVenue = isMarketVenue(raw.derivativesVenue) ? raw.derivativesVenue : venue;
   return { symbol, venue, interval, derivativesVenue };
+}
+
+export function marketRefFromContext(context: unknown): AnalystMarketRef {
+  const raw = context && typeof context === "object" ? context as Record<string, unknown> : {};
+  const market = raw.market && typeof raw.market === "object" ? raw.market as Record<string, unknown> : {};
+  return parseAnalystMarketRef({
+    symbol: market.symbol ?? raw.symbol,
+    venue: market.venue ?? raw.venue,
+    interval: market.interval ?? market.timeframe ?? raw.timeframe,
+    derivativesVenue: market.derivativesVenue,
+  });
+}
+
+export function overlayFromContext(context: unknown): AnalystOverlay | null {
+  const raw = context && typeof context === "object" ? context as Record<string, unknown> : {};
+  const indicators = raw.indicators && typeof raw.indicators === "object" ? raw.indicators as Record<string, unknown> : {};
+  const builtIn = indicators.builtIn && typeof indicators.builtIn === "object" ? indicators.builtIn as Record<string, unknown> : {};
+  const customPine = indicators.customPine && typeof indicators.customPine === "object" ? indicators.customPine as Record<string, unknown> : {};
+  const plots = Array.isArray(customPine.plots) ? customPine.plots : [];
+  if (!Object.keys(builtIn).length && !Object.keys(customPine).length) return null;
+  return {
+    ema9Visible: builtIn.ema9Visible === true,
+    ema21Visible: builtIn.ema21Visible === true,
+    customPine: {
+      source: typeof customPine.source === "string" ? customPine.source : "",
+      plots: plots.map((plot) => {
+        const item = plot && typeof plot === "object" ? plot as Record<string, unknown> : {};
+        return {
+          title: typeof item.title === "string" ? item.title : "Plot",
+          recentValues: Array.isArray(item.recentValues) ? item.recentValues.filter((value): value is number | null => typeof value === "number" || value == null) : [],
+        };
+      }),
+    },
+  };
+}
+
+export function attachAnalystHistoryPack(context: unknown, pack: AnalystDataPack): Record<string, unknown> {
+  const base = context && typeof context === "object" ? { ...context as Record<string, unknown> } : {};
+  return {
+    ...base,
+    kind: pack.kind,
+    capturedAt: pack.capturedAt,
+    input: pack.input,
+    media: pack.media,
+    market: pack.market,
+    history: pack.packs.history,
+    packs: pack.packs,
+    overlay: pack.overlay,
+  };
 }
 
 export function buildOrderFlowContext(cvd: CvdSnapshot | null): CvdDataPack {
@@ -148,16 +221,17 @@ export async function assembleAnalystDataPack(
   market: AnalystMarketRef,
   overlay: AnalystOverlay | null = null,
   loaders: DataPackLoaders = {},
+  options: AssemblePackOptions = {},
 ): Promise<AnalystDataPack> {
-  const loadKlines = loaders.fetchKlines ?? fetchVenueKlines;
   const loadCvd = loaders.fetchCvd ?? fetchVenueCvd;
   const loadDerivatives = loaders.fetchDerivatives ?? fetchDerivativesSnapshot;
   const symbol = compactSymbol(market.symbol);
   const klineVenue = market.venue;
   const oiVenue = market.derivativesVenue ?? market.venue;
+  const lookback = resolveLookback({ explicit: options.range, question: options.question, now: options.now });
 
   const [klinesResult, cvdResult, oiResult] = await Promise.allSettled([
-    loadKlines(klineVenue, symbol, market.interval, 120),
+    loadKlinesForPack(loaders, klineVenue, symbol, market.interval, LIVE_KLINE_LIMIT),
     loadCvd(klineVenue, symbol, market.interval),
     loadDerivatives(oiVenue, symbol),
   ]);
@@ -171,6 +245,9 @@ export async function assembleAnalystDataPack(
   const openInterest = oiResult.status === "fulfilled"
     ? oiPackFromSnapshot(oiResult.value)
     : emptyOiPack(symbol, failureReason(oiResult.reason));
+  const history = lookback.requested
+    ? await fetchHistoryPack(market, lookback, loaders, { cvd, openInterest })
+    : packHistoryRange("");
 
   return {
     kind: ANALYST_DATA_PACK_KIND,
@@ -178,7 +255,7 @@ export async function assembleAnalystDataPack(
     input: "backend-api",
     media: { screenshots: false, scrollCapture: false, chartImages: false },
     market: { symbol, venue: klineVenue, interval: market.interval, contract: "USDT perpetual" },
-    packs: { klines, openInterest, cvd },
+    packs: { klines, openInterest, cvd, history },
     overlay,
   };
 }
@@ -317,4 +394,120 @@ function emaOf(series: KlineBar[], length: number): number | null {
 function failureReason(error: unknown): string {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return error instanceof Error ? error.message : "Backend pack request failed";
+}
+
+async function fetchHistoryPack(
+  market: AnalystMarketRef,
+  lookback: ReturnType<typeof resolveLookback>,
+  loaders: DataPackLoaders,
+  extras: { cvd: CvdDataPack; openInterest: OpenInterestDataPack },
+): Promise<HistoryWindow> {
+  const phrase = lookback.phrase || "lookback";
+  if (lookback.parseError && lookback.durationMs == null && lookback.kind !== "listing") {
+    return unavailableHistory(phrase, lookback.parseError);
+  }
+
+  const now = lookback.endMs ?? Date.now();
+  const requestedMs = lookback.kind === "listing"
+    ? maxLookbackMs()
+    : lookback.durationMs ?? (lookback.startMs != null ? now - lookback.startMs : null);
+  if (requestedMs == null || requestedMs <= 0) {
+    return unavailableHistory(phrase, lookback.parseError || "The requested lookback could not be resolved into a time range.");
+  }
+
+  const intervalMs = intervalDurationMs(market.interval);
+  const barsNeeded = Math.max(1, Math.ceil(requestedMs / intervalMs));
+  const listingReason = lookback.kind === "listing"
+    ? "Listing date is not known for this symbol. Packed the oldest available exchange history instead of inventing a listing window."
+    : null;
+  const capReason = requestedMs > maxLookbackMs()
+    ? `Requested lookback exceeds ${formatLookbackDuration(maxLookbackMs())}; packed the capped window.`
+    : null;
+
+  try {
+    let recent: RestKlineResult;
+    let earlierBars: HistoryBar[] = [];
+    let earlierInterval = market.interval;
+    let fetchReason: string | null = listingReason || capReason;
+
+    if (lookback.kind === "listing" || barsNeeded > HISTORY_SINGLE_FETCH_CAP) {
+      const summaryInterval = lookback.kind === "listing" ? "D" : pickSummaryInterval(market.interval, requestedMs, HISTORY_SUMMARY_CAP);
+      const summaryNeeded = Math.ceil(requestedMs / intervalDurationMs(summaryInterval));
+      const summaryLimit = Math.min(HISTORY_SUMMARY_CAP, Math.max(1, summaryNeeded));
+      if (summaryNeeded > HISTORY_SUMMARY_CAP) {
+        fetchReason = [
+          fetchReason,
+          `Requested ${formatLookbackDuration(requestedMs)} exceeds the packed bar cap for ${summaryInterval}. Earlier summary uses ${summaryLimit} ${summaryInterval} bars.`,
+        ].filter(Boolean).join(" ");
+      }
+      const recentLimit = Math.min(LIVE_KLINE_LIMIT, barsNeeded);
+      const [recentResult, summaryResult] = await Promise.all([
+        loadKlinesForPack(loaders, market.venue, market.symbol, market.interval, recentLimit),
+        loadKlinesForPack(loaders, market.venue, market.symbol, summaryInterval, summaryLimit),
+      ]);
+      recent = recentResult;
+      earlierBars = summaryResult.candles.map(toHistoryBar);
+      earlierInterval = summaryInterval;
+    } else {
+      recent = await loadKlinesForPack(loaders, market.venue, market.symbol, market.interval, barsNeeded);
+    }
+
+    if (!recent.candles.length && !earlierBars.length) {
+      return unavailableHistory(phrase, "Exchange history APIs returned no OHLCV bars for this lookback.");
+    }
+
+    return packHistoryRange(phrase, recent.candles.map(toHistoryBar), {
+      earlierBars,
+      earlierInterval,
+      interval: market.interval,
+      startMs: lookback.startMs ?? now - requestedMs,
+      endMs: now,
+      partialReason: fetchReason,
+      venue: recent.venue,
+      source: recent.source,
+      cvd: extras.cvd.available
+        ? {
+            available: true,
+            perpDelta: extras.cvd.perp.available ? extras.cvd.perp.delta : null,
+            spotDelta: extras.cvd.spot.available ? extras.cvd.spot.delta : null,
+            interpretation: extras.cvd.comparison?.interpretation ?? null,
+          }
+        : { available: false, reason: extras.cvd.reason },
+      openInterest: extras.openInterest.available
+        ? {
+            available: true,
+            openInterestUsd: extras.openInterest.openInterestUsd,
+            fundingRate: extras.openInterest.fundingRate,
+          }
+        : { available: false, reason: extras.openInterest.reason },
+    });
+  } catch (error) {
+    return unavailableHistory(phrase, failureReason(error));
+  }
+}
+
+async function loadKlinesForPack(
+  loaders: DataPackLoaders,
+  venue: MarketVenue,
+  symbol: string,
+  interval: ChartInterval,
+  limit: number,
+): Promise<RestKlineResult> {
+  const load = loaders.fetchKlines ?? fetchVenueKlines;
+  const venues = loaders.fetchKlines ? [venue] : venueFallbackOrder(venue);
+  let lastError: unknown;
+  for (const candidate of venues) {
+    try {
+      const result = await load(candidate, symbol, interval, limit);
+      if (result.candles.length) return result;
+      lastError = new Error(`${candidate} returned no candles`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Exchange history request failed");
+}
+
+function toHistoryBar(candle: MarketCandle): HistoryBar {
+  return { t: candle.time, o: candle.open, h: candle.high, l: candle.low, c: candle.close, v: candle.volume ?? null };
 }

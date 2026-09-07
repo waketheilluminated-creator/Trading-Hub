@@ -46,7 +46,7 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /Order flow/);
   assert.match(html, /Perp CVD/);
   assert.match(html, /Spot CVD/);
-  assert.match(html, /Futures vs spot/);
+  assert.match(html, /Futures vs spot|Futures − spot/);
   assert.match(html, /Backend data packs are ready/);
   assert.match(html, /Pine Editor/);
   assert.match(html, /Open Pine editor in new tab/);

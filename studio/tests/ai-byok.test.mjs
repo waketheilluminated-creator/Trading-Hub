@@ -4,7 +4,7 @@ import { applyProviderPreset, providerFromEndpoint } from "../lib/ai/providers.t
 import { validatePublicHttpsEndpoint } from "../lib/ai/endpoint.ts";
 import { classifyNetworkError, classifyProviderStatus } from "../lib/ai/errors.ts";
 import { buildContextPack, summarizeContextPack } from "../lib/ai/context-pack.ts";
-import { CONTEXT_CAPTURE, DEFERRED_HISTORY_REASON, detectHistoryLookback, packHistoryRange } from "../lib/ai/history.ts";
+import { CONTEXT_CAPTURE, HISTORY_SERVER_REASON, detectHistoryLookback, packHistoryRange } from "../lib/ai/history.ts";
 import { buildSystemPrompt, buildUserPrompt } from "../lib/ai/prompt.ts";
 import { runAiProxy } from "../lib/ai/proxy.ts";
 import { containsSecret, redactSecrets } from "../lib/ai/secrets.ts";
@@ -94,7 +94,7 @@ test("context pack attaches candles and derivatives and degrades missing CVD", (
   assert.equal(pack.derivatives.available, true);
   assert.equal(pack.cvd.available, false);
   assert.match(pack.cvd.reason, /CVD is not attached/);
-  assert.deepEqual(summarizeContextPack(pack), { candles: 2, hasDerivatives: true, hasCvd: false, indicators: 3 });
+  assert.deepEqual(summarizeContextPack(pack), { candles: 2, hasDerivatives: true, hasCvd: false, history: "current-window", indicators: 3 });
 
   const withCvd = buildContextPack({
     symbol: "ETHUSDT",
@@ -114,32 +114,48 @@ test("system prompt uses Trading Hub research framing", () => {
   assert.match(prompt, /not personalized financial advice/);
   assert.match(prompt, /same language as the user's question/);
   assert.match(prompt, /Never request, infer from, or wait for chart screenshots/);
+  assert.match(prompt, /history\.status is packed or partial/);
+  assert.doesNotMatch(prompt, /history\.status is deferred/);
   assert.match(buildUserPrompt("趋势如何？", "{\"symbol\":\"BTCUSDT\"}"), /CURRENT TRADING HUB CONTEXT PACK/);
 });
 
-test("history lookback is an arbitrary deferred backend hook, never screenshots", () => {
+test("history lookback is an arbitrary backend pack, never screenshots", () => {
   assert.equal(detectHistoryLookback("What is the current trend?").requested, false);
   assert.equal(detectHistoryLookback("Is funding paying longs today?").requested, false);
   assert.equal(detectHistoryLookback("Summarize the last 3 months of OI and funding").requested, true);
   assert.equal(detectHistoryLookback("How did this market trade over the past year?").requested, true);
   assert.equal(detectHistoryLookback("对比近半年的持仓").requested, true);
 
-  const deferred = buildContextPack({
+  const pending = buildContextPack({
     symbol: "BTCUSDT",
     venue: "okx",
     timeframe: "15m",
     candles: [{ time: 1700000000, open: 1, high: 1, low: 1, close: 1 }],
   }, "2026-09-06T00:00:00.000Z", "Show me the last 90 days of structure");
-  assert.equal(deferred.history.status, "deferred");
-  assert.equal(deferred.history.available, false);
-  assert.match(deferred.history.reason, /history APIs/);
-  assert.equal(deferred.history.reason, DEFERRED_HISTORY_REASON);
-  assert.equal(deferred.source.screenshots, false);
-  assert.equal(deferred.source.capture, "never-screenshots");
-  assert.doesNotMatch(JSON.stringify(deferred), /image\/png|data:image|scroll-and-screenshot/i);
+  assert.equal(pending.history.status, "unavailable");
+  assert.equal(pending.history.available, false);
+  assert.equal(pending.history.requested, "last 90 days");
+  assert.equal(pending.history.reason, HISTORY_SERVER_REASON);
+  assert.equal(pending.source.screenshots, false);
+  assert.equal(pending.source.capture, "never-screenshots");
+  assert.doesNotMatch(JSON.stringify(pending), /image\/png|data:image|scroll-and-screenshot/i);
 
-  assert.equal(packHistoryRange("47 hours").status, "deferred");
+  const bars = Array.from({ length: 120 }, (_, index) => ({
+    t: 1_700_000_000 + index * 900,
+    o: 100,
+    h: 101,
+    l: 99,
+    c: 100.5,
+    v: 4,
+  }));
+  const packed = packHistoryRange("47 hours", bars, { interval: "15", venue: "okx" });
+  assert.equal(packed.status, "packed");
+  assert.equal(packed.available, true);
+  assert.equal(packed.screenshots, false);
+  assert.equal(packed.recent.length, 80);
+  assert.ok(packed.earlier && packed.earlier.bars === 40);
   assert.equal(packHistoryRange("since listing").requested, "since listing");
+  assert.equal(packHistoryRange("since listing").status, "unavailable");
   assert.equal(packHistoryRange("").status, "current-window");
 });
 

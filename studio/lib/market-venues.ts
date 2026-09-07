@@ -64,6 +64,27 @@ export function isChartInterval(value: unknown): value is ChartInterval {
   return CHART_INTERVALS.includes(value as ChartInterval);
 }
 
+export function parseChartInterval(value: unknown, fallback: ChartInterval = "15"): ChartInterval {
+  if (isChartInterval(value)) return value;
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "1m" || raw === "1min" || raw === "1minute") return "1";
+  if (raw === "5" || raw === "5m" || raw === "5min") return "5";
+  if (raw === "15" || raw === "15m" || raw === "15min") return "15";
+  if (raw === "60" || raw === "1h" || raw === "1hr" || raw === "60m") return "60";
+  if (raw === "240" || raw === "4h" || raw === "4hr") return "240";
+  if (raw === "d" || raw === "1d" || raw === "day" || raw === "daily") return "D";
+  return fallback;
+}
+
+export function pickSummaryInterval(base: ChartInterval, remainingMs: number, maxBars = 200): ChartInterval {
+  const start = CHART_INTERVALS.indexOf(base);
+  for (let index = Math.max(0, start); index < CHART_INTERVALS.length; index += 1) {
+    const interval = CHART_INTERVALS[index];
+    if (Math.ceil(remainingMs / intervalDurationMs(interval)) <= maxBars) return interval;
+  }
+  return "D";
+}
+
 export function venueLabel(venue: MarketVenue): string {
   return VENUE_LABELS[venue];
 }
