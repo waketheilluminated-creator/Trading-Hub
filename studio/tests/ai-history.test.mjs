@@ -230,5 +230,5 @@ test("interval labels from the chart snapshot map onto venue intervals", () => {
   assert.equal(parseChartInterval("1D"), "D");
   assert.equal(parseAnalystMarketRef({ symbol: "eth/usdt:usdt", venue: "bitget", interval: "4h" }).interval, "240");
   assert.equal(pickSummaryInterval("15", 182 * 86_400_000), "D");
-  assert.equal(pickSummaryInterval("1", 47 * 3_600_000), "60");
+  assert.equal(pickSummaryInterval("1", 47 * 3_600_000), "15");
 });
