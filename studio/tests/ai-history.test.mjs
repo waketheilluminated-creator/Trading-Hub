@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import {
   assembleAnalystDataPack,
   attachAnalystHistoryPack,
+  enrichAnalyzeRequest,
   parseAnalystMarketRef,
 } from "../lib/ai-context.ts";
+import { runAiProxy } from "../lib/ai/proxy.ts";
 import {
   detectHistoryLookback,
   packHistoryRange,
@@ -192,9 +194,7 @@ test("assembleAnalystDataPack reports blocked venues instead of inventing histor
 test("analyze route wires market, explicit range, and backend history into the Context Pack", () => {
   const analyze = readFileSync(fileURLToPath(new URL("../app/api/ai/analyze/route.ts", import.meta.url)), "utf8");
   const drawer = readFileSync(fileURLToPath(new URL("../components/ai-analyst-drawer.tsx", import.meta.url)), "utf8");
-  assert.match(analyze, /assembleAnalystDataPack/);
-  assert.match(analyze, /attachAnalystHistoryPack/);
-  assert.match(analyze, /body\.range \?\? body\.lookback/);
+  assert.match(analyze, /enrichAnalyzeRequest/);
   assert.match(analyze, /Client-supplied candles are not treated as historical/);
   assert.match(drawer, /range: mode === "analyze"/);
   assert.match(drawer, /market: mode === "analyze" \? market/);
@@ -222,6 +222,70 @@ test("analyze route wires market, explicit range, and backend history into the C
   assert.equal(attached.history.status, "packed");
   assert.equal(attached.media.screenshots, false);
   assert.equal(attached.packs.history.status, "packed");
+});
+
+test("analyze proxy payload includes the packed history and keeps screenshot flags false", async () => {
+  const loaders = {
+    fetchKlines: async (venue, symbol, interval, limit) => ({
+      venue,
+      symbol,
+      interval,
+      source: "official",
+      candles: candleSeries(limit, 1_700_000_000, interval === "D" ? 86_400 : 900),
+    }),
+    fetchCvd: async () => {
+      throw new Error("CVD unavailable");
+    },
+    fetchDerivatives: async () => ({
+      exchange: "okx",
+      symbol: "BTC/USDT:USDT",
+      openInterestAmount: 2,
+      openInterestValue: 100,
+      fundingRate: 0.0001,
+      fundingInterval: "8h",
+      nextFundingTimestamp: null,
+      markPrice: 1,
+      indexPrice: 1,
+      updatedAt: 1,
+    }),
+  };
+
+  const { context } = await enrichAnalyzeRequest({
+    question: "Summarize structure over the last 47 hours",
+    range: "47h",
+    market: { symbol: "BTCUSDT", venue: "okx", interval: "15" },
+    context: { candles: [{ close: 99 }], history: { status: "unavailable" } },
+  }, loaders);
+
+  assert.equal(context.history.status, "packed");
+  assert.equal(context.history.recent.length, 80);
+  assert.equal(context.media.screenshots, false);
+  assert.equal(context.packs.history.screenshots, false);
+  assert.notEqual(context.history.status, "deferred");
+
+  const live = await enrichAnalyzeRequest({
+    question: "What is the current trend?",
+    market: { symbol: "BTCUSDT", venue: "okx", interval: "15" },
+  }, loaders);
+  assert.equal(live.context.history.status, "current-window");
+  assert.equal(live.context.media.screenshots, false);
+
+  const response = await runAiProxy({
+    endpoint: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    question: "Summarize structure over the last 47 hours",
+    context,
+  }, async (_url, init) => {
+    const body = JSON.parse(init.body);
+    assert.match(body.messages[1].content, /"status":"packed"/);
+    assert.match(body.messages[1].content, /"screenshots":false/);
+    assert.match(body.messages[1].content, /"recent"/);
+    assert.doesNotMatch(body.messages[1].content, /"status":"deferred"/);
+    assert.doesNotMatch(body.messages[1].content, /image\/png|data:image|scroll-and-screenshot/i);
+    return new Response(JSON.stringify({ choices: [{ message: { content: "Market state: packed lookback used" } }] }), { status: 200 });
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { analysis: "Market state: packed lookback used" });
 });
 
 test("interval labels from the chart snapshot map onto venue intervals", () => {

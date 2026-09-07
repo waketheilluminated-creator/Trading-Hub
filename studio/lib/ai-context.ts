@@ -198,6 +198,20 @@ export function attachAnalystHistoryPack(context: unknown, pack: AnalystDataPack
   };
 }
 
+export async function enrichAnalyzeRequest(
+  body: { question?: string; market?: unknown; overlay?: AnalystOverlay; range?: unknown; lookback?: unknown; context?: unknown },
+  loaders: DataPackLoaders = {},
+): Promise<{ pack: AnalystDataPack; context: Record<string, unknown> }> {
+  const question = body.question?.trim() ?? "";
+  const market = body.market != null ? marketRefFromContext({ market: body.market }) : marketRefFromContext(body.context);
+  const overlay = body.overlay ?? overlayFromContext(body.context);
+  const pack = await assembleAnalystDataPack(market, overlay, loaders, {
+    question,
+    range: body.range ?? body.lookback,
+  });
+  return { pack, context: attachAnalystHistoryPack(body.context, pack) };
+}
+
 export function buildOrderFlowContext(cvd: CvdSnapshot | null): CvdDataPack {
   if (!cvd) {
     return emptyCvdPack("15", "CVD pack was not returned by the backend.");
