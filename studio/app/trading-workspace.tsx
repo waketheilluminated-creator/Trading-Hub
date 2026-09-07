@@ -711,6 +711,8 @@ export function TradingWorkspace() {
           symbol,
           venue: activeVenue,
           timeframe: INTERVALS.find((item) => item.value === interval)?.label ?? interval,
+          interval,
+          derivativesVenue: derivativesExchange,
           candles,
           lastPrice: last?.close ?? null,
           ema9Visible: showFast,

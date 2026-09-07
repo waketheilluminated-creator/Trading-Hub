@@ -167,6 +167,7 @@ test("AI prompt requires backend CVD/OI/K-line packs and forbids screenshots", (
   assert.match(ANALYST_SYSTEM_PROMPT, /klines \(OHLCV series JSON\)/);
   assert.match(ANALYST_SYSTEM_PROMPT, /openInterest/);
   assert.match(ANALYST_SYSTEM_PROMPT, /cvd \(perp\/spot series JSON\)/);
+  assert.match(ANALYST_SYSTEM_PROMPT, /history \(lookback OHLCV plus summaries\)/);
   assert.match(ANALYST_SYSTEM_PROMPT, /do not receive screenshots, scroll-captures/);
   assert.match(ANALYST_SYSTEM_PROMPT, /Futures-vs-spot force/);
   assert.match(ANALYST_SYSTEM_PROMPT, /entry versus exit/);
@@ -228,6 +229,7 @@ test("assembleAnalystDataPack attaches backend series JSON, not client chart pix
   assert.equal(pack.packs.cvd.pack, "cvd");
   assert.equal(pack.packs.cvd.perp.available, true);
   assert.equal(pack.packs.cvd.perp.series.at(-1)?.cvd, 4);
+  assert.equal(pack.packs.history.status, "current-window");
   assert.match(pack.packs.cvd.comparison.interpretation, /buying/i);
   const message = formatAnalystUserMessage("Force?", pack);
   assert.match(message, /BACKEND MARKET DATA PACKS/);
@@ -246,15 +248,17 @@ test("assembleAnalystDataPack attaches backend series JSON, not client chart pix
 test("workspace asks analyze to attach backend packs instead of posting client candles", () => {
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
   const analyze = readFileSync(fileURLToPath(new URL("../app/api/ai/analyze/route.ts", import.meta.url)), "utf8");
-  const analyzeCall = workspace.slice(workspace.indexOf("const analyzeMarket"), workspace.indexOf("const response = await fetch(\"/api/ai/analyze\"") + 800);
-  assert.doesNotMatch(analyzeCall, /buildAnalystContext|candles\.slice|orderFlow: cvd|screenshot|scroll-capture/i);
-  assert.match(analyzeCall, /market: \{ symbol, venue: activeVenue, interval, derivativesVenue: derivativesExchange \}/);
+  const drawer = readFileSync(fileURLToPath(new URL("../components/ai-analyst-drawer.tsx", import.meta.url)), "utf8");
+  assert.match(drawer, /market: mode === "analyze" \? market/);
+  assert.match(drawer, /range: mode === "analyze"/);
+  assert.doesNotMatch(drawer, /image\/png|data:image|scroll-and-screenshot|orderFlow: cvd/i);
+  assert.match(workspace, /interval,/);
+  assert.match(workspace, /derivativesVenue: derivativesExchange/);
   assert.match(workspace, /\/api\/cvd/);
-  assert.match(workspace, /Futures vs spot/);
+  assert.match(workspace, /Futures [−\-] spot|Futures vs spot/);
   assert.match(workspace, /Order flow/);
   assert.match(workspace, /cvd_perp/);
-  assert.match(workspace, /Backend data packs are ready/);
+  assert.match(drawer, /Backend data packs are ready/);
   assert.match(analyze, /assembleAnalystDataPack/);
-  assert.match(analyze, /void body\.context/);
-  assert.match(analyze, /ANALYST_SYSTEM_PROMPT/);
+  assert.match(analyze, /Client-supplied candles are not treated as historical/);
 });

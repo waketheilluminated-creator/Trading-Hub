@@ -9,6 +9,7 @@ import {
   type AiProviderId,
 } from "@/lib/ai/providers.ts";
 import { buildContextPack, summarizeContextPack, type AnalystSnapshot } from "@/lib/ai/context-pack.ts";
+import { parseChartInterval } from "@/lib/market-venues.ts";
 import { browserSessionStorage, loadByokSession, saveByokSession, type ByokSession } from "@/lib/ai/session.ts";
 
 type AIMessage = { id: number; role: "user" | "assistant"; content: string };
@@ -26,14 +27,21 @@ export function AiAnalystDrawer({
   const [session, setSession] = useState<ByokSession>(() => loadByokSession(browserSessionStorage()));
   const { providerId, endpoint, model, apiKey, rememberKey } = session;
   const [question, setQuestion] = useState("Analyze the current market structure and identify the most important risk signals.");
+  const [lookback, setLookback] = useState("");
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>({ kind: "idle", message: "Not tested this session" });
 
   const provider = aiProvider(providerId);
-  const pack = useMemo(() => buildContextPack(snapshot), [snapshot]);
+  const pack = useMemo(() => buildContextPack(snapshot, undefined, question, lookback), [lookback, question, snapshot]);
   const summary = useMemo(() => summarizeContextPack(pack), [pack]);
+  const market = useMemo(() => ({
+    symbol: snapshot.symbol,
+    venue: snapshot.venue,
+    interval: parseChartInterval(snapshot.interval ?? snapshot.timeframe),
+    derivativesVenue: snapshot.derivativesVenue ?? snapshot.venue,
+  }), [snapshot]);
 
   const updateSession = (patch: Partial<ByokSession>) => {
     setSession((current) => {
@@ -82,7 +90,16 @@ export function AiAnalystDrawer({
           apiKey,
           model,
           question: mode === "analyze" ? nextQuestion : undefined,
-          context: mode === "analyze" ? buildContextPack(snapshot, undefined, nextQuestion) : undefined,
+          range: mode === "analyze" ? (lookback.trim() || undefined) : undefined,
+          market: mode === "analyze" ? market : undefined,
+          overlay: mode === "analyze" ? {
+            ema9Visible: snapshot.ema9Visible,
+            ema21Visible: snapshot.ema21Visible,
+            customPine: snapshot.pineSource
+              ? { source: snapshot.pineSource, plots: (snapshot.pinePlots ?? []).map((plot) => ({ title: plot.title || "Plot", recentValues: plot.data?.slice(-30) ?? [] })) }
+              : undefined,
+          } : undefined,
+          context: mode === "analyze" ? buildContextPack(snapshot, undefined, nextQuestion, lookback) : undefined,
         }),
       });
       const payload = await response.json() as { analysis?: string; error?: string; ok?: boolean };
@@ -122,6 +139,7 @@ export function AiAnalystDrawer({
           <span>{summary.indicators} indicators</span>
           <span>{summary.hasDerivatives ? "OI / funding" : "Derivatives unavailable"}</span>
           <span>{summary.hasCvd ? "CVD" : "CVD unavailable"}</span>
+          <span>{summary.history === "current-window" ? "Live window" : `History ${summary.history}`}</span>
           <span>Backend series</span>
         </div>
         <section className="ai-connection">
@@ -161,7 +179,7 @@ export function AiAnalystDrawer({
             <div className="ai-empty">
               <span>✦</span>
               <strong>Context Pack is attached on every ask</strong>
-              <p>Each ask sends backend market series — OHLCV, EMA and Pine outputs, open interest, funding, and CVD when that series exists. Longer lookbacks will be packed from history APIs, never from screenshots.</p>
+              <p>Each ask sends backend market series — OHLCV, EMA and Pine outputs, open interest, funding, and CVD when that series exists. Backend data packs are ready. Arbitrary lookbacks are packed from history APIs, never from screenshots.</p>
             </div>
           )}
           {messages.map((message) => (
@@ -177,7 +195,12 @@ export function AiAnalystDrawer({
             <button type="button" onClick={() => setQuestion("What is the current trend, momentum, and likely invalidation level?")}>Trend</button>
             <button type="button" onClick={() => setQuestion("Do funding and open interest confirm or contradict the price move?")}>OI + funding</button>
             <button type="button" onClick={() => setQuestion("Explain the current Pine indicator outputs and any conflicts between them.")}>Indicators</button>
+            <button type="button" onClick={() => { setLookback("47h"); setQuestion("Summarize structure, range, and momentum over the last 47 hours."); }}>Last 47h</button>
+            <button type="button" onClick={() => { setLookback("近半年"); setQuestion("对比近半年的结构、波动和持仓变化。"); }}>近半年</button>
           </div>
+          <label className="ai-lookback">Lookback
+            <input aria-label="History lookback range" placeholder="e.g. 47h, 2 weeks, 近半年 — overrides the question" value={lookback} onChange={(event) => setLookback(event.target.value)} />
+          </label>
           <textarea aria-label="Ask AI about the current chart" placeholder="Ask about this chart…" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") requestAnalyst("analyze"); }} />
           {error && <div className="ai-error" role="alert">{error}</div>}
           <div className="ai-send-row">
