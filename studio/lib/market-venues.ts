@@ -97,11 +97,29 @@ export function compactSymbol(symbol: string): string {
   return symbol.toUpperCase().replace(/[-_/:]/g, "").replace(/SWAP$/, "").replace(/USDTUSDT$/, "USDT");
 }
 
+export function toUnifiedSwapSymbol(symbol: string): string {
+  const compact = compactSymbol(symbol);
+  if (compact.endsWith("USDT")) return `${compact.slice(0, -4)}/USDT:USDT`;
+  if (compact.endsWith("USDC")) return `${compact.slice(0, -4)}/USDC:USDC`;
+  throw new Error(`Unsupported unified swap symbol ${symbol}`);
+}
+
 export function toOkxSwapInstId(symbol: string): string {
   const compact = compactSymbol(symbol);
   if (compact.endsWith("USDT")) return `${compact.slice(0, -4)}-USDT-SWAP`;
   if (compact.endsWith("USDC")) return `${compact.slice(0, -4)}-USDC-SWAP`;
   throw new Error(`Unsupported OKX symbol ${symbol}`);
+}
+
+export function toOkxSpotInstId(symbol: string): string {
+  const compact = compactSymbol(symbol);
+  if (compact.endsWith("USDT")) return `${compact.slice(0, -4)}-USDT`;
+  if (compact.endsWith("USDC")) return `${compact.slice(0, -4)}-USDC`;
+  throw new Error(`Unsupported OKX symbol ${symbol}`);
+}
+
+export function intervalDurationMs(interval: ChartInterval): number {
+  return interval === "D" ? 86_400_000 : Number(interval) * 60_000;
 }
 
 export function toBinanceInterval(interval: ChartInterval): string {

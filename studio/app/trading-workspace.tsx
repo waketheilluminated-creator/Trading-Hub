@@ -6,6 +6,7 @@ import {
   type CandlestickData, type IChartApi, type ISeriesApi,
   type LineData, type Time, type UTCTimestamp,
 } from "lightweight-charts";
+import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
 import { isMarketVenue, MARKET_VENUES, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
@@ -49,6 +50,37 @@ function formatPrice(value: number | null) {
 function formatCompact(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value);
+}
+function formatSigned(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const compact = formatCompact(Math.abs(value));
+  if (value > 0) return `+${compact}`;
+  if (value < 0) return `-${compact}`;
+  return compact;
+}
+function signedClass(value: number | null) {
+  if (value == null || value === 0) return "";
+  return value > 0 ? "positive" : "negative";
+}
+function CvdSpark({ bars }: { bars: CvdBar[] }) {
+  if (bars.length < 2) return null;
+  const values = bars.map((bar) => bar.cvd);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const width = 72;
+  const height = 18;
+  const points = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * width;
+    const y = height - ((value - min) / span) * height;
+    return `${x},${y}`;
+  }).join(" ");
+  const rising = values[values.length - 1] >= values[0];
+  return (
+    <svg className="cvd-spark" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <polyline fill="none" stroke={rising ? "var(--accent)" : "var(--red)"} strokeWidth="1.5" points={points} />
+    </svg>
+  );
 }
 function toChartCandle(candle: MarketCandle): Candle {
   return { time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume };
@@ -110,6 +142,7 @@ export function TradingWorkspace() {
   const [consoleKind, setConsoleKind] = useState<"normal" | "success" | "error">("normal");
   const [running, setRunning] = useState(false);
   const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
+  const [cvd, setCvd] = useState<CvdSnapshot | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -406,6 +439,16 @@ export function TradingWorkspace() {
   }, [symbol, derivativesExchange]);
 
   useEffect(() => {
+    let active = true;
+    const load = () => fetch(`/api/cvd?exchange=${derivativesExchange}&symbol=${encodeURIComponent(symbol)}&interval=${interval}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error("CVD feed unavailable")))
+      .then((data) => { if (active) setCvd(data); })
+      .catch(() => { if (active) setCvd(null); });
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [symbol, interval, derivativesExchange]);
+
+  useEffect(() => {
     const price = last?.close;
     if (!price) return;
     const timer = window.setTimeout(() => setAlerts((items) => items.map((alert) => {
@@ -429,11 +472,17 @@ export function TradingWorkspace() {
       try {
         const generatedScript = await import(/* @vite-ignore */ moduleUrl);
         const data = { open: candles.map((c) => c.open), high: candles.map((c) => c.high), low: candles.map((c) => c.low), close: candles.map((c) => c.close), volume: candles.map((c) => c.volume ?? 0), time: candles.map((c) => Number(c.time) * 1000) };
-        const analysisGlobals = globalThis as typeof globalThis & { open_interest: number | null; funding_rate: number | null; mark_price: number | null; index_price: number | null };
+        const analysisGlobals = globalThis as typeof globalThis & {
+          open_interest: number | null; funding_rate: number | null; mark_price: number | null; index_price: number | null;
+          cvd_perp: number | null; cvd_spot: number | null; cvd_spread: number | null;
+        };
         analysisGlobals.open_interest = derivatives?.openInterestValue ?? null;
         analysisGlobals.funding_rate = derivatives?.fundingRate ?? null;
         analysisGlobals.mark_price = derivatives?.markPrice ?? null;
         analysisGlobals.index_price = derivatives?.indexPrice ?? null;
+        analysisGlobals.cvd_perp = cvd?.perp.available ? cvd.perp.cvd : null;
+        analysisGlobals.cvd_spot = cvd?.spot.available ? cvd.spot.cvd : null;
+        analysisGlobals.cvd_spread = cvd?.comparison.perpMinusSpotDelta ?? null;
         const runtime = generatedScript.run(data);
         const plots = Object.values(runtime.plots || {}) as PinePlot[];
         setPinePlots(plots);
@@ -445,7 +494,7 @@ export function TradingWorkspace() {
       } finally { URL.revokeObjectURL(moduleUrl); }
     } catch (error) { setConsoleKind("error"); setConsoleText(error instanceof Error ? error.message : "Pine execution failed"); }
     finally { setRunning(false); }
-  }, [pine, candles, derivatives]);
+  }, [pine, candles, derivatives, cvd]);
 
   useEffect(() => {
     const handleWorkspaceShortcut = (event: KeyboardEvent) => {
@@ -546,19 +595,22 @@ export function TradingWorkspace() {
     setAiRunning(true); setAiError("");
     setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "user", content: question }]);
     try {
-      const ema9 = calculateEma(candles, 9);
-      const ema21 = calculateEma(candles, 21);
-      const context = {
-        capturedAt: new Date().toISOString(),
-        market: { symbol, venue: activeVenue, contract: "USDT perpetual", timeframe: INTERVALS.find((item) => item.value === interval)?.label, lastPrice: last?.close ?? null },
-        candles: candles.slice(-120).map((candle) => ({ time: new Date(Number(candle.time) * 1000).toISOString(), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume ?? null })),
-        indicators: {
-          builtIn: { ema9: ema9.at(-1)?.value ?? null, ema21: ema21.at(-1)?.value ?? null, ema9Visible: showFast, ema21Visible: showSlow },
-          customPine: { source: pine, plots: pinePlots.map((plot, index) => ({ title: plot.title || `Plot ${index + 1}`, recentValues: plot.data?.slice(-30) ?? [] })) },
-        },
-        derivatives: derivatives ? { sourceExchange: derivativesExchange, openInterestUsd: derivatives.openInterestValue, openInterestBase: derivatives.openInterestAmount, fundingRate: derivatives.fundingRate, markPrice: derivatives.markPrice, indexPrice: derivatives.indexPrice, nextFundingTimestamp: derivatives.nextFundingTimestamp } : null,
-      };
-      const response = await fetch("/api/ai/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: aiEndpoint, apiKey: aiKey, model: aiModel, question, context }) });
+      const response = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          endpoint: aiEndpoint,
+          apiKey: aiKey,
+          model: aiModel,
+          question,
+          market: { symbol, venue: activeVenue, interval, derivativesVenue: derivativesExchange },
+          overlay: {
+            ema9Visible: showFast,
+            ema21Visible: showSlow,
+            customPine: { source: pine, plots: pinePlots.map((plot, index) => ({ title: plot.title || `Plot ${index + 1}`, recentValues: plot.data?.slice(-30) ?? [] })) },
+          },
+        }),
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "AI analysis failed");
       setAiMessages((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, role: "assistant", content: payload.analysis }]);
@@ -638,7 +690,37 @@ export function TradingWorkspace() {
               <div className="metric-card"><span>Mark price</span><strong>{formatPrice(derivatives?.markPrice ?? null)}</strong><small>Fair price</small></div>
               <div className="metric-card"><span>Basis</span><strong className={((derivatives?.markPrice ?? 0) - (derivatives?.indexPrice ?? 0)) >= 0 ? "positive" : "negative"}>{derivatives?.markPrice && derivatives?.indexPrice ? `${(((derivatives.markPrice - derivatives.indexPrice) / derivatives.indexPrice) * 100).toFixed(3)}%` : "—"}</strong><small>Mark vs index</small></div>
             </div>
-            <div className="data-source"><span>Pine: open_interest · funding_rate</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
+            <div className="data-source"><span>Pine: open_interest · funding_rate · cvd_perp</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
+          </section>
+          <section className="side-section">
+            <h2 className="section-kicker">Order flow</h2>
+            <div className="metric-grid">
+              <div className="metric-card">
+                <span>Perp CVD</span>
+                <strong className={signedClass(cvd?.perp.available ? cvd.perp.cvd : null)}>{cvd?.perp.available ? formatSigned(cvd.perp.cvd) : "—"}</strong>
+                <small>{cvd?.perp.available ? summarizeCvdWindow(cvd.perp) : (cvd?.perp.reason || "No perp trades")}</small>
+                {cvd?.perp.available && <CvdSpark bars={cvd.perp.spark.length > 1 ? cvd.perp.spark : cvd.perp.bars} />}
+              </div>
+              <div className="metric-card">
+                <span>Spot CVD</span>
+                <strong className={signedClass(cvd?.spot.available ? cvd.spot.cvd : null)}>{cvd?.spot.available ? formatSigned(cvd.spot.cvd) : "—"}</strong>
+                <small>{cvd?.spot.available ? summarizeCvdWindow(cvd.spot) : (cvd?.spot.reason || "No spot trades")}</small>
+                {cvd?.spot.available && <CvdSpark bars={cvd.spot.spark.length > 1 ? cvd.spot.spark : cvd.spot.bars} />}
+              </div>
+              <div className="metric-card">
+                <span>Futures − spot</span>
+                <strong className={signedClass(cvd?.comparison.perpMinusSpotDelta ?? null)}>{formatSigned(cvd?.comparison.perpMinusSpotDelta ?? null)}</strong>
+                <small>{cvd?.comparison.available ? "CVD spread · base size" : "Comparison unavailable"}</small>
+              </div>
+              <div className="metric-card">
+                <span>Force source</span>
+                <strong>{cvd?.comparison.dominantBook === "perp" ? "Perps" : cvd?.comparison.dominantBook === "spot" ? "Spot" : cvd?.comparison.dominantBook === "balanced" ? "Balanced" : "—"}</strong>
+                <small>Perp {cvd?.comparison.perpAggression ?? "—"} · spot {cvd?.comparison.spotAggression ?? "—"}</small>
+              </div>
+            </div>
+            <p className="force-read">{cvd?.comparison.interpretation || "Waiting for public trades to measure futures-versus-spot force."}</p>
+            {cvd?.notice && <p className="force-read muted">{cvd.notice}</p>}
+            <div className="data-source"><span>CVD from public trades</span><code>{venueLabel(cvd?.venue || derivativesExchange)} · {INTERVALS.find((item) => item.value === interval)?.label}</code></div>
           </section>
           <section className="side-section">
             <h2 className="section-kicker">Indicators</h2>
@@ -682,12 +764,12 @@ export function TradingWorkspace() {
           <p>The key stays in this browser session and is sent only when you analyze.</p>
         </section>
         <div className="ai-messages" aria-live="polite">
-          {aiMessages.length === 0 && <div className="ai-empty"><span>✦</span><strong>Chart context is ready</strong><p>The model receives 120 recent OHLCV candles, EMA outputs, custom Pine plots, open interest, funding, mark price, and index price.</p></div>}
+          {aiMessages.length === 0 && <div className="ai-empty"><span>✦</span><strong>Backend data packs are ready</strong><p>The model receives K-line, open-interest, and CVD series JSON from the studio APIs — not a screenshot or scroll-capture — so it can judge futures-versus-spot buy/sell force.</p></div>}
           {aiMessages.map((message) => <article key={message.id} className={`ai-message ${message.role}`}><small>{message.role === "assistant" ? "πlab AI" : "You"}</small><div>{message.content}</div></article>)}
           {aiRunning && <article className="ai-message assistant thinking"><small>πlab AI</small><div><i /><i /><i /> Analyzing chart context…</div></article>}
         </div>
         <div className="ai-composer">
-          <div className="ai-quick-prompts"><button onClick={() => setAiQuestion("What is the current trend, momentum, and likely invalidation level?")}>Trend</button><button onClick={() => setAiQuestion("Do funding and open interest confirm or contradict the price move?")}>OI + funding</button><button onClick={() => setAiQuestion("Explain the current Pine indicator outputs and any conflicts between them.")}>Indicators</button></div>
+          <div className="ai-quick-prompts"><button onClick={() => setAiQuestion("What is the current trend, momentum, and likely invalidation level?")}>Trend</button><button onClick={() => setAiQuestion("Is current buy/sell force coming more from perps or spot, and does that favor entry or exit?")}>Futures vs spot</button><button onClick={() => setAiQuestion("Do funding, open interest, and CVD confirm or contradict the price move?")}>OI + CVD</button><button onClick={() => setAiQuestion("Explain the current Pine indicator outputs and any conflicts between them.")}>Indicators</button></div>
           <textarea aria-label="Ask AI about the current chart" placeholder="Ask about this chart…" value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") analyzeMarket(); }} />
           {aiError && <div className="ai-error">{aiError}</div>}
           <div className="ai-send-row"><span>⌘ Enter to send · analysis only</span><button onClick={analyzeMarket} disabled={aiRunning}>{aiRunning ? "Analyzing…" : "Analyze current chart"}</button></div>

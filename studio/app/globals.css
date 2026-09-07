@@ -208,6 +208,9 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .negative { color:var(--red) !important; }
 .data-source { margin-top:10px; display:flex; align-items:center; justify-content:space-between; color:var(--faint); font-size:10px; }
 .data-source code { color:var(--cyan); font:10px var(--font-geist-mono); }
+.force-read { margin:10px 0 0; color:var(--muted); font-size:11px; line-height:1.45; }
+.force-read.muted { color:var(--faint); font-size:10px; }
+.cvd-spark { display:block; margin-top:6px; }
 .indicator-row, .alert-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid rgba(37,46,60,.65); }
 .indicator-row:last-child, .alert-row:last-child { border-bottom:0; }
 .indicator-copy strong, .alert-copy strong { display:block; font-size:11px; font-weight:590; }
