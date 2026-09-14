@@ -3,6 +3,7 @@ import { toDrawingPoint, type DrawingCoordinateAdapter } from "./coordinates.ts"
 import type { DrawingHit, HitPart, ScreenPoint } from "./geometry.ts";
 import { translateDrawing } from "./geometry.ts";
 import { DEFAULT_DRAWING_STYLE, type Drawing, type DrawingPoint, type DrawingTool } from "./types.ts";
+import { pointerInMainPane } from "../chart-indicator-panes.ts";
 
 type SessionEffect = { committed?: Drawing; updated?: Drawing };
 export type IdleDrawingSession = { phase: "idle" } & SessionEffect;
@@ -177,6 +178,7 @@ export function reduceDrawingSession(state: DrawingSession, action: DrawingActio
 type ChartInteraction = {
   applyOptions(options: { handleScroll: boolean; handleScale: boolean }): void;
   timeScale(): { coordinateToTime(x: number): Time | null };
+  panes?(): ReadonlyArray<{ getHeight(): number }>;
 };
 
 type SeriesInteraction = { coordinateToPrice(y: number): number | null };
@@ -283,6 +285,7 @@ export class DrawingController {
     this.reconcileActiveTool(tool);
     if (tool === "crosshair") return;
     const screenPoint = this.toHostPoint(event);
+    if (!pointerInMainPane(screenPoint.y, this.mainPaneHeight())) return;
     const point = toDrawingPoint(screenPoint, this.coordinateAdapter);
 
     if (point === null) return;
@@ -338,7 +341,12 @@ export class DrawingController {
     if (tool === "crosshair") return;
     if (this.session.phase !== "placing-first" && this.session.phase !== "previewing" && this.session.phase !== "measuring" && this.session.phase !== "dragging") return;
     if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
-    const point = toDrawingPoint(this.toHostPoint(event), this.coordinateAdapter);
+    const screenPoint = this.toHostPoint(event);
+    if (!pointerInMainPane(screenPoint.y, this.mainPaneHeight())) {
+      if (this.session.phase !== "dragging") this.cancel();
+      return;
+    }
+    const point = toDrawingPoint(screenPoint, this.coordinateAdapter);
     if (point === null) {
       this.cancel();
       return;
@@ -389,6 +397,11 @@ export class DrawingController {
     if (completedDrag) this.options.replaceDrawings([...this.options.getDrawings()], "commit");
     this.options.setSession?.(this.session);
     this.options.requestRender();
+  }
+
+  private mainPaneHeight(): number | null {
+    const height = this.options.chart.panes?.()[0]?.getHeight();
+    return typeof height === "number" && Number.isFinite(height) && height > 0 ? height : null;
   }
 
   private toHostPoint(event: PointerEvent): ScreenPoint {

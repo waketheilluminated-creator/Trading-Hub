@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { computeCvdBook, unavailableBook } from "../lib/market-cvd.ts";
-import { loadDerivativesPulse, loadOrderFlowCvd, sanitizeCvdSnapshot } from "../lib/market-pulse.ts";
+import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd, sanitizeCvdSnapshot } from "../lib/market-pulse.ts";
 import { formatVenueFallbackNotice } from "../lib/market-venues.ts";
 
 const LEGAL_WALL = "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).";
@@ -125,4 +125,39 @@ test("sanitizeCvdSnapshot never leaves a legal wall in card copy", () => {
   assert.equal(snapshot.notice, "Binance blocked here — try OKX.");
   assert.equal(snapshot.comparison.interpretation, "Binance blocked here — try OKX.");
   assert.doesNotMatch(JSON.stringify(snapshot), /eligibility|https?:\/\/www\.binance\.com/i);
+});
+
+test("loadOpenInterestSeries skips a geo-blocked venue and uses OKX OI history", async () => {
+  const calls = [];
+  const fetchImpl = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes("exchange=binance")) {
+      return jsonResponse({ error: LEGAL_WALL, blocked: true, exchange: "binance" }, 403);
+    }
+    if (url.includes("exchange=okx")) {
+      return jsonResponse({
+        venue: "okx",
+        symbol: "BTCUSDT",
+        interval: "15",
+        unit: "usd",
+        points: [
+          { time: 100, value: 1_000 },
+          { time: 200, value: 1_100 },
+        ],
+        notice: null,
+        updatedAt: 1,
+      });
+    }
+    return new Response("no", { status: 502 });
+  };
+
+  const result = await loadOpenInterestSeries("binance", "BTCUSDT", "15", fetchImpl);
+  assert.equal(result.venue, "okx");
+  assert.equal(result.fallbackFrom, "binance");
+  assert.equal(result.snapshot.points.at(-1)?.value, 1_100);
+  assert.equal(result.notice, formatVenueFallbackNotice("binance", "okx", true));
+  assert.doesNotMatch(result.notice ?? "", /eligibility|https?:\/\//i);
+  assert.ok(calls.some((url) => url.includes("/api/oi?exchange=binance")));
+  assert.ok(calls.some((url) => url.includes("/api/oi?exchange=okx")));
 });

@@ -320,3 +320,26 @@ test("blur and external tool reconciliation notify the text owner", () => {
   assert.deepEqual(reconciled.cancellations, ["cancel"]);
   assert.deepEqual(reconciled.controller.getSession(), initialDrawingSession);
 });
+
+test("ignores drawing placement that starts on an indicator pane below the candles", () => {
+  const tool = { current: "trend-line" };
+  const controller = new DrawingController({
+    chart: {
+      applyOptions() {},
+      timeScale: () => ({ coordinateToTime: (x) => x }),
+      panes: () => [{ getHeight: () => 80 }],
+    },
+    series: { coordinateToPrice: (y) => y },
+    getDrawings: () => [],
+    replaceDrawings() { assert.fail("indicator pane clicks must not create drawings"); },
+    getTool: () => tool.current,
+    setTool: (next) => { tool.current = next; },
+    requestRender() {},
+    requestText() { assert.fail("indicator pane clicks must not request text"); },
+    hitTest: () => null,
+    createId: () => "d-test",
+    now: () => 1,
+  });
+  controller.onPointerDown({ ...pointerEvent(), clientY: 140 });
+  assert.deepEqual(controller.getSession(), initialDrawingSession);
+});

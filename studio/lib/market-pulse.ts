@@ -1,5 +1,6 @@
 import type { CvdSnapshot } from "./market-cvd.ts";
 import type { DerivativesSnapshot } from "./market-derivatives.ts";
+import type { OiHistorySnapshot } from "./market-oi.ts";
 import {
   classifyMarketFailure,
   compactSymbol,
@@ -31,8 +32,16 @@ export type OrderFlowResult = {
   notice: string | null;
 };
 
+export type OpenInterestSeriesResult = {
+  snapshot: OiHistorySnapshot;
+  venue: MarketVenue;
+  fallbackFrom: MarketVenue | null;
+  notice: string | null;
+};
+
 const lastGoodDerivativesVenue = new Map<string, MarketVenue>();
 const lastGoodCvdVenue = new Map<string, MarketVenue>();
+const lastGoodOiVenue = new Map<string, MarketVenue>();
 
 export function hasDerivativesData(snapshot: Partial<DerivativesSnapshot> | null | undefined): boolean {
   if (!snapshot) return false;
@@ -77,6 +86,64 @@ export async function loadDerivativesPulse(
       failures.push(classifyMarketFailure(venue, 0, error instanceof Error ? error.message : "Failed to fetch"));
     }
   }
+  throw Object.assign(new Error(joinPulseFailures(preferred, failures, "Open interest")), {
+    failures,
+    blocked: failures.some((failure) => failure.blocked),
+    venue: preferred,
+    status: failures.find((failure) => failure.venue === preferred)?.status ?? 0,
+  });
+}
+
+export async function loadOpenInterestSeries(
+  preferred: MarketVenue,
+  symbol: string,
+  interval: ChartInterval,
+  fetchImpl: FetchImpl = fetch,
+  options: { retryPreferred?: boolean } = {},
+): Promise<OpenInterestSeriesResult> {
+  const compact = compactSymbol(symbol);
+  const cacheKey = `${preferred}:${compact}:${interval}`;
+  const retryPreferred = options.retryPreferred ?? true;
+  const failures: MarketRequestFailure[] = [];
+  let bestPartial: OiHistorySnapshot | null = null;
+
+  for (const venue of pulseOrder(preferred, lastGoodOiVenue, cacheKey, retryPreferred)) {
+    try {
+      const response = await fetchImpl(`/api/oi?exchange=${venue}&symbol=${encodeURIComponent(compact)}&interval=${interval}`);
+      const body = await response.text();
+      if (!response.ok) {
+        failures.push(failureFromResponse(venue, response.status, body));
+        continue;
+      }
+      const snapshot = sanitizeOiHistory(parseJson(body) as OiHistorySnapshot, venue);
+      if (snapshot.points.length >= 2) {
+        lastGoodOiVenue.set(cacheKey, venue);
+        const fallbackFrom = venue === preferred ? null : preferred;
+        const blocked = preferredWasBlocked(preferred, failures);
+        return {
+          snapshot,
+          venue,
+          fallbackFrom,
+          notice: fallbackFrom ? formatVenueFallbackNotice(preferred, venue, blocked) : snapshot.notice,
+        };
+      }
+      if (!bestPartial || snapshot.points.length > bestPartial.points.length) {
+        bestPartial = snapshot;
+      }
+    } catch (error) {
+      failures.push(classifyMarketFailure(venue, 0, error instanceof Error ? error.message : "Failed to fetch"));
+    }
+  }
+
+  if (bestPartial?.points.length) {
+    return {
+      snapshot: bestPartial,
+      venue: bestPartial.venue,
+      fallbackFrom: bestPartial.venue === preferred ? null : preferred,
+      notice: bestPartial.notice || (bestPartial.venue === preferred ? null : formatVenueFallbackNotice(preferred, bestPartial.venue, preferredWasBlocked(preferred, failures))),
+    };
+  }
+
   throw Object.assign(new Error(joinPulseFailures(preferred, failures, "Open interest")), {
     failures,
     blocked: failures.some((failure) => failure.blocked),
@@ -145,6 +212,18 @@ export async function loadOrderFlowCvd(
     venue: preferred,
     status: failures.find((failure) => failure.venue === preferred)?.status ?? 0,
   });
+}
+
+export function sanitizeOiHistory(snapshot: OiHistorySnapshot, venue: MarketVenue = snapshot.venue): OiHistorySnapshot {
+  const points = Array.isArray(snapshot.points)
+    ? snapshot.points.filter((point) => Number.isFinite(point?.time) && Number.isFinite(point?.value))
+    : [];
+  return {
+    ...snapshot,
+    venue: snapshot.venue || venue,
+    points,
+    notice: sanitizeMarketCopy(snapshot.notice, snapshot.venue || venue) || null,
+  };
 }
 
 export function sanitizeCvdSnapshot(snapshot: CvdSnapshot): CvdSnapshot {
