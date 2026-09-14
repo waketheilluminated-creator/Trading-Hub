@@ -239,8 +239,9 @@ export function TradingWorkspace() {
   const [derivativesNotice, setDerivativesNotice] = useState<string | null>(null);
   const [cvd, setCvd] = useState<CvdSnapshot | null>(null);
   const [cvdError, setCvdError] = useState<string | null>(null);
-  const [showCvdPane, setShowCvdPane] = useState(() => readStoredFlag(typeof window === "undefined" ? null : window.localStorage, CVD_PANE_STORAGE_KEY, false));
-  const [showOiPane, setShowOiPane] = useState(() => readStoredFlag(typeof window === "undefined" ? null : window.localStorage, OI_PANE_STORAGE_KEY, false));
+  const [showCvdPane, setShowCvdPane] = useState(false);
+  const [showOiPane, setShowOiPane] = useState(false);
+  const [panePrefsReady, setPanePrefsReady] = useState(false);
   const [oiHistory, setOiHistory] = useState<OiHistorySnapshot | null>(null);
   const [oiHistoryNotice, setOiHistoryNotice] = useState<string | null>(null);
   const [chartVersion, setChartVersion] = useState(0);
@@ -435,12 +436,20 @@ export function TradingWorkspace() {
   }, [candles, showFast, showSlow]);
 
   useEffect(() => {
-    writeStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, showCvdPane);
-  }, [showCvdPane]);
+    setShowCvdPane(readStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false));
+    setShowOiPane(readStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, false));
+    setPanePrefsReady(true);
+  }, []);
 
   useEffect(() => {
+    if (!panePrefsReady) return;
+    writeStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, showCvdPane);
+  }, [panePrefsReady, showCvdPane]);
+
+  useEffect(() => {
+    if (!panePrefsReady) return;
     writeStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, showOiPane);
-  }, [showOiPane]);
+  }, [panePrefsReady, showOiPane]);
 
   useEffect(() => {
     const chart = chartRef.current;

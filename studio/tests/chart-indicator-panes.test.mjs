@@ -30,6 +30,14 @@ function memoryStorage(initial = {}) {
   };
 }
 
+test("SSR pane defaults stay off until localStorage is applied after mount", () => {
+  assert.equal(readStoredFlag(undefined, CVD_PANE_STORAGE_KEY, false), false);
+  assert.equal(readStoredFlag(undefined, OI_PANE_STORAGE_KEY, false), false);
+  const stored = memoryStorage({ [CVD_PANE_STORAGE_KEY]: "1", [OI_PANE_STORAGE_KEY]: "1" });
+  assert.equal(readStoredFlag(stored, CVD_PANE_STORAGE_KEY, false), true);
+  assert.equal(readStoredFlag(stored, OI_PANE_STORAGE_KEY, false), true);
+});
+
 test("persists CVD and OI pane toggles without throwing in private mode", () => {
   const storage = memoryStorage();
   assert.equal(readStoredFlag(storage, CVD_PANE_STORAGE_KEY, false), false);
