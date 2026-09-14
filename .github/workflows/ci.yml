@@ -5,6 +5,9 @@ on:
     branches: [master, main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,4 +16,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Syntax-check JS entrypoints
+        run: |
+          set -euo pipefail
+          # tools/example_out.js is a generated dump, not an entrypoint.
+          for f in src/*.js tools/batch_convert.js tools/quick_test.js tools/debug_slice.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done
       - run: npm test
