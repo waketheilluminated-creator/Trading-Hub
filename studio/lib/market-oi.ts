@@ -1,6 +1,7 @@
 import {
   classifyMarketFailure,
   compactSymbol,
+  toOkxSwapInstId,
   type ChartInterval,
   type MarketVenue,
 } from "./market-venues.ts";
@@ -40,9 +41,9 @@ const BINANCE_OI_PERIOD: Record<ChartInterval, string> = {
 const OKX_OI_PERIOD: Record<ChartInterval, string> = {
   "1": "5m",
   "5": "5m",
-  "15": "5m",
+  "15": "15m",
   "60": "1H",
-  "240": "1H",
+  "240": "4H",
   D: "1D",
 };
 
@@ -52,7 +53,7 @@ export function oiHistoryRequestUrl(venue: MarketVenue, symbol: string, interval
     return `https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${compact}&intervalTime=${BYBIT_OI_INTERVAL[interval]}&limit=200`;
   }
   if (venue === "okx") {
-    return `https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-volume?ccy=${encodeURIComponent(toOkxCcy(compact))}&period=${OKX_OI_PERIOD[interval]}`;
+    return `https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-history?instId=${encodeURIComponent(toOkxSwapInstId(compact))}&period=${OKX_OI_PERIOD[interval]}`;
   }
   if (venue === "bitget") {
     return `https://api.bitget.com/api/v2/mix/market/open-interest?productType=USDT-FUTURES&symbol=${compact}`;
@@ -142,7 +143,7 @@ function parseOkxOi(payload: unknown): { points: OiPoint[]; unit: OiUnit } {
   return {
     unit: "usd",
     points: sortPoints(rows.map((row) => {
-      if (Array.isArray(row)) return pointFrom(row[0], row[1]);
+      if (Array.isArray(row)) return pointFrom(row[0], row[3] ?? row[1]);
       if (!row || typeof row !== "object") return null;
       const item = row as Record<string, unknown>;
       return pointFrom(item.ts ?? item.time, item.oi ?? item.oiUsd ?? item.openInterest);

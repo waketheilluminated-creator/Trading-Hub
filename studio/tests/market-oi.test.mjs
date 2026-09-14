@@ -19,7 +19,7 @@ test("builds public OI history URLs for each venue", () => {
   );
   assert.equal(
     oiHistoryRequestUrl("okx", "BTCUSDT", "15"),
-    "https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-volume?ccy=BTC&period=5m",
+    "https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-history?instId=BTC-USDT-SWAP&period=15m",
   );
   assert.equal(
     oiHistoryRequestUrl("bitget", "BTCUSDT", "15"),
@@ -54,8 +54,8 @@ test("parses Bybit, Binance, OKX, and Bitget OI payloads onto chart seconds", ()
   });
   assert.deepEqual(parseVenueOiHistory("okx", {
     data: [
-      ["1700000900000", "2861419938.2798", "1"],
-      ["1700000000000", "2850000000", "1"],
+      ["1700000900000", "10", "0.1", "2861419938.2798"],
+      ["1700000000000", "9", "0.1", "2850000000"],
     ],
   }), {
     unit: "usd",
