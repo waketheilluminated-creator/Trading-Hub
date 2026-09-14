@@ -26,9 +26,9 @@ type FlagStorage = {
 export function readStoredFlag(storage: FlagStorage | null | undefined, key: string, fallback = false): boolean {
   if (!storage) return fallback;
   try {
-    const stored = storage.getItem(key);
-    if (stored === "0") return false;
-    if (stored === "1") return true;
+    const stored = storage.getItem(key)?.trim().toLowerCase();
+    if (stored === "0" || stored === "off" || stored === "false" || stored === "no") return false;
+    if (stored === "1" || stored === "on" || stored === "true" || stored === "yes") return true;
   } catch {
     return fallback;
   }
@@ -44,11 +44,29 @@ export function writeStoredFlag(storage: FlagStorage | null | undefined, key: st
 }
 
 const PANE_PREFS_EVENT = "th-pane-prefs";
+let panePrefsLive = false;
+
+export function panePrefsAreLive(): boolean {
+  return panePrefsLive;
+}
+
+export function readClientPaneFlag(storage: FlagStorage | null | undefined, key: string, fallback = false): boolean {
+  if (typeof window !== "undefined" && !panePrefsLive) return false;
+  return readStoredFlag(storage, key, fallback);
+}
 
 export function subscribePanePrefs(onChange: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   window.addEventListener("storage", onChange);
   window.addEventListener(PANE_PREFS_EVENT, onChange);
+  if (!panePrefsLive) {
+    const enable = () => {
+      panePrefsLive = true;
+      window.dispatchEvent(new Event(PANE_PREFS_EVENT));
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(enable);
+    else setTimeout(enable, 0);
+  }
   return () => {
     window.removeEventListener("storage", onChange);
     window.removeEventListener(PANE_PREFS_EVENT, onChange);

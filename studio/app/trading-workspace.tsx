@@ -16,6 +16,7 @@ import {
   OI_PANE_EMPTY,
   OI_PANE_STORAGE_KEY,
   oiPaneModel,
+  readClientPaneFlag,
   readStoredFlag,
   subscribePanePrefs,
   toBarTimeSeconds,
@@ -246,12 +247,12 @@ export function TradingWorkspace() {
   const [chartVersion, setChartVersion] = useState(0);
   const showCvdPane = useSyncExternalStore(
     subscribePanePrefs,
-    () => readStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false),
+    () => readClientPaneFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false),
     () => false,
   );
   const showOiPane = useSyncExternalStore(
     subscribePanePrefs,
-    () => readStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, false),
+    () => readClientPaneFlag(window.localStorage, OI_PANE_STORAGE_KEY, false),
     () => false,
   );
   const setShowCvdPane = useCallback((next: boolean | ((current: boolean) => boolean)) => {

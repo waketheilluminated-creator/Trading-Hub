@@ -14,7 +14,9 @@ import {
   mergeLiveOiPoint,
   normalizeLinePoints,
   oiPaneModel,
+  panePrefsAreLive,
   pointerInMainPane,
+  readClientPaneFlag,
   readStoredFlag,
   shortPaneNotice,
   toBarTimeSeconds,
@@ -35,9 +37,12 @@ function memoryStorage(initial = {}) {
 test("SSR pane defaults stay off until localStorage is applied after mount", () => {
   assert.equal(readStoredFlag(undefined, CVD_PANE_STORAGE_KEY, false), false);
   assert.equal(readStoredFlag(undefined, OI_PANE_STORAGE_KEY, false), false);
-  const stored = memoryStorage({ [CVD_PANE_STORAGE_KEY]: "1", [OI_PANE_STORAGE_KEY]: "1" });
+  const stored = memoryStorage({ [CVD_PANE_STORAGE_KEY]: "1", [OI_PANE_STORAGE_KEY]: "on" });
   assert.equal(readStoredFlag(stored, CVD_PANE_STORAGE_KEY, false), true);
   assert.equal(readStoredFlag(stored, OI_PANE_STORAGE_KEY, false), true);
+  assert.equal(readStoredFlag(memoryStorage({ [CVD_PANE_STORAGE_KEY]: "off" }), CVD_PANE_STORAGE_KEY, true), false);
+  assert.equal(panePrefsAreLive(), false);
+  assert.equal(readClientPaneFlag(stored, CVD_PANE_STORAGE_KEY, false), true);
   const unsubscribe = subscribePanePrefs(() => {});
   assert.equal(typeof unsubscribe, "function");
   unsubscribe();
