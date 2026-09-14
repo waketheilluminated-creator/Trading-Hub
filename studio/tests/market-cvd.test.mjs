@@ -264,6 +264,15 @@ test("workspace asks analyze to attach backend packs instead of posting client c
   assert.match(workspace, /section-toggle/);
   assert.match(workspace, /th-section-derivatives-open/);
   assert.match(workspace, /th-section-order-flow-open/);
+  assert.match(workspace, /CVD_PANE_STORAGE_KEY/);
+  assert.match(workspace, /OI_PANE_STORAGE_KEY/);
+  assert.match(readFileSync(fileURLToPath(new URL("../lib/chart-indicator-panes.ts", import.meta.url)), "utf8"), /th-pane-cvd/);
+  assert.match(readFileSync(fileURLToPath(new URL("../lib/chart-indicator-panes.ts", import.meta.url)), "utf8"), /th-pane-oi/);
+  assert.match(workspace, /BaselineSeries/);
+  assert.match(workspace, /addSeries\(BaselineSeries/);
+  assert.match(workspace, /loadOpenInterestSeries/);
+  assert.match(workspace, /Toggle CVD pane/);
+  assert.match(workspace, /Toggle open interest pane/);
   assert.match(workspace, /sanitizeMarketCopy/);
   assert.match(workspace, /cvd_perp/);
   assert.match(readFileSync(fileURLToPath(new URL("../lib/market-pulse.ts", import.meta.url)), "utf8"), /\/api\/cvd/);

@@ -2,13 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  CandlestickSeries, ColorType, createChart, LineSeries,
+  BaselineSeries, CandlestickSeries, ColorType, createChart, LineSeries, LineStyle,
   type CandlestickData, type IChartApi, type ISeriesApi,
   type LineData, type Time, type UTCTimestamp,
 } from "lightweight-charts";
+import {
+  applyIndicatorPaneStretch,
+  CVD_PANE_EMPTY,
+  CVD_PANE_STORAGE_KEY,
+  cvdPaneModel,
+  indicatorPaneIndex,
+  indicatorPaneStack,
+  OI_PANE_EMPTY,
+  OI_PANE_STORAGE_KEY,
+  oiPaneModel,
+  readStoredFlag,
+  toBarTimeSeconds,
+  writeStoredFlag,
+} from "@/lib/chart-indicator-panes.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
-import { loadDerivativesPulse, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
+import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
+import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
 import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
@@ -42,6 +57,31 @@ const INTERVALS: { label: string; value: Interval }[] = [
   { label: "1m", value: "1" }, { label: "5m", value: "5" }, { label: "15m", value: "15" },
   { label: "1H", value: "60" }, { label: "4H", value: "240" }, { label: "1D", value: "D" },
 ];
+const CVD_SERIES_OPTIONS = {
+  baseValue: { type: "price" as const, price: 0 },
+  relativeGradient: true,
+  topLineColor: "#53c990",
+  topFillColor1: "rgba(83, 201, 144, 0.22)",
+  topFillColor2: "rgba(83, 201, 144, 0.02)",
+  bottomLineColor: "#e76770",
+  bottomFillColor1: "rgba(231, 103, 112, 0.22)",
+  bottomFillColor2: "rgba(231, 103, 112, 0.02)",
+  lineWidth: 2 as const,
+  priceLineVisible: false,
+  lastValueVisible: true,
+  priceFormat: { type: "volume" as const, precision: 2, minMove: 0.01 },
+};
+const OI_SERIES_OPTIONS = {
+  color: "#62d6e8",
+  lineWidth: 2 as const,
+  priceLineVisible: false,
+  lastValueVisible: true,
+  priceFormat: {
+    type: "custom" as const,
+    minMove: 1,
+    formatter: (price: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(price),
+  },
+};
 function formatPrice(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
   return value >= 1000
@@ -161,6 +201,8 @@ export function TradingWorkspace() {
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const fastSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const slowSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const cvdSeriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
+  const oiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null);
   const drawingControllerRef = useRef<DrawingController | null>(null);
   const drawingSaveSchedulerRef = useRef<DrawingSaveScheduler | null>(null);
@@ -197,6 +239,11 @@ export function TradingWorkspace() {
   const [derivativesNotice, setDerivativesNotice] = useState<string | null>(null);
   const [cvd, setCvd] = useState<CvdSnapshot | null>(null);
   const [cvdError, setCvdError] = useState<string | null>(null);
+  const [showCvdPane, setShowCvdPane] = useState(() => readStoredFlag(typeof window === "undefined" ? null : window.localStorage, CVD_PANE_STORAGE_KEY, false));
+  const [showOiPane, setShowOiPane] = useState(() => readStoredFlag(typeof window === "undefined" ? null : window.localStorage, OI_PANE_STORAGE_KEY, false));
+  const [oiHistory, setOiHistory] = useState<OiHistorySnapshot | null>(null);
+  const [oiHistoryNotice, setOiHistoryNotice] = useState<string | null>(null);
+  const [chartVersion, setChartVersion] = useState(0);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -240,6 +287,13 @@ export function TradingWorkspace() {
   const last = candles.at(-1);
   const first = candles.at(0);
   const change = last && first ? ((last.close - first.open) / first.open) * 100 : 0;
+  const cvdModel = useMemo(() => cvdPaneModel(cvd), [cvd]);
+  const oiModel = useMemo(() => oiPaneModel({
+    history: oiHistory,
+    liveValue: derivatives?.openInterestValue ?? (oiHistory?.unit === "usd" ? null : derivatives?.openInterestAmount) ?? null,
+    liveAmount: derivatives?.openInterestAmount ?? null,
+    liveTime: last ? Number(last.time) : (derivatives ? toBarTimeSeconds(derivatives.updatedAt, interval) : null),
+  }), [derivatives, interval, last, oiHistory]);
   const lineCount = useMemo(() => pine.split("\n").map((_, i) => i + 1).join("\n"), [pine]);
   const recentMarkets = useMemo(
     () => recentSymbols.map((recent) => resolveRecentMarket(recent, marketCatalog) as MarketOption),
@@ -297,7 +351,13 @@ export function TradingWorkspace() {
     if (!chartHost.current) return;
     const chart = createChart(chartHost.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: "#0b1017" }, textColor: "#748094", fontFamily: "var(--font-geist-mono)", fontSize: 10 },
+      layout: {
+        background: { type: ColorType.Solid, color: "#0b1017" },
+        textColor: "#748094",
+        fontFamily: "var(--font-geist-mono)",
+        fontSize: 10,
+        panes: { separatorColor: "#27313f", separatorHoverColor: "rgba(118, 231, 164, 0.16)", enableResize: true },
+      },
       grid: { vertLines: { color: "#17202b" }, horzLines: { color: "#17202b" } },
       rightPriceScale: { borderColor: "#27313f", scaleMargins: { top: 0.09, bottom: 0.08 } },
       timeScale: { borderColor: "#27313f", timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7 },
@@ -340,11 +400,13 @@ export function TradingWorkspace() {
     const fastSeries = chart.addSeries(LineSeries, { color: "#62d6e8", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     const slowSeries = chart.addSeries(LineSeries, { color: "#f2c66d", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     chartRef.current = chart; candleSeriesRef.current = candleSeries; fastSeriesRef.current = fastSeries; slowSeriesRef.current = slowSeries;
+    cvdSeriesRef.current = null; oiSeriesRef.current = null;
     drawingPrimitiveRef.current = drawingPrimitive;
     drawingControllerRef.current = drawingController;
     drawingSaveSchedulerRef.current = drawingSaveScheduler;
     drawingController.attach(chartHost.current);
     drawingPrimitive.setState(drawingsRef.current, drawingController.getSession(), candleTimesRef.current);
+    setChartVersion((value) => value + 1);
     return () => {
       drawingSaveScheduler.flush();
       drawingController.detach();
@@ -354,6 +416,7 @@ export function TradingWorkspace() {
       if (drawingSaveSchedulerRef.current === drawingSaveScheduler) drawingSaveSchedulerRef.current = null;
       chart.remove();
       chartRef.current = null; candleSeriesRef.current = null; fastSeriesRef.current = null; slowSeriesRef.current = null;
+      cvdSeriesRef.current = null; oiSeriesRef.current = null;
     };
   }, [applyDrawingTool, clearDrawingTextEntry]);
 
@@ -370,6 +433,68 @@ export function TradingWorkspace() {
       candleTimes,
     );
   }, [candles, showFast, showSlow]);
+
+  useEffect(() => {
+    writeStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, showCvdPane);
+  }, [showCvdPane]);
+
+  useEffect(() => {
+    writeStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, showOiPane);
+  }, [showOiPane]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (cvdSeriesRef.current) {
+      try { chart.removeSeries(cvdSeriesRef.current); } catch { /* Chart teardown already dropped the series. */ }
+      cvdSeriesRef.current = null;
+    }
+    if (oiSeriesRef.current) {
+      try { chart.removeSeries(oiSeriesRef.current); } catch { /* Chart teardown already dropped the series. */ }
+      oiSeriesRef.current = null;
+    }
+    const stack = indicatorPaneStack({ cvd: showCvdPane, oi: showOiPane });
+    if (showCvdPane) {
+      const series = chart.addSeries(BaselineSeries, CVD_SERIES_OPTIONS, indicatorPaneIndex("cvd", stack));
+      series.createPriceLine({ price: 0, color: "#344154", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false });
+      cvdSeriesRef.current = series;
+    }
+    if (showOiPane) {
+      oiSeriesRef.current = chart.addSeries(LineSeries, OI_SERIES_OPTIONS, indicatorPaneIndex("oi", stack));
+    }
+    applyIndicatorPaneStretch(chart.panes());
+  }, [chartVersion, showCvdPane, showOiPane]);
+
+  useEffect(() => {
+    if (!showCvdPane) return;
+    cvdSeriesRef.current?.setData(cvdModel.points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })));
+  }, [chartVersion, cvdModel, showCvdPane]);
+
+  useEffect(() => {
+    if (!showOiPane) return;
+    oiSeriesRef.current?.setData(oiModel.points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })));
+  }, [chartVersion, oiModel, showOiPane]);
+
+  useEffect(() => {
+    if (!showOiPane) return;
+    let active = true;
+    let retryPreferred = true;
+    const load = () => loadOpenInterestSeries(derivativesExchange, symbol, interval, fetch, { retryPreferred })
+      .then((result) => {
+        retryPreferred = false;
+        if (!active) return;
+        setOiHistory(result.snapshot);
+        setOiHistoryNotice(result.notice);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setOiHistory(null);
+        setOiHistoryNotice(shortCopy(error instanceof Error ? error.message : OI_PANE_EMPTY, OI_PANE_EMPTY));
+      });
+    load();
+    const timer = window.setInterval(load, 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, [derivativesExchange, interval, showOiPane, symbol]);
 
   useEffect(() => {
     drawingSaveSchedulerRef.current?.flush();
@@ -671,12 +796,14 @@ export function TradingWorkspace() {
 
           <div className="chart-region">
             <DrawingToolbar activeTool={activeDrawingTool} onToolChange={changeDrawingToolFromToolbar} />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length}>
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
               {showFast && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />EMA 9</span><button className="indicator-remove" aria-label="Remove EMA 9 indicator" title="Remove indicator" onClick={() => setShowFast(false)}>×</button></div>}
               {showSlow && <div className="indicator-label"><span><i style={{ background: "var(--amber)" }} />EMA 21</span><button className="indicator-remove" aria-label="Remove EMA 21 indicator" title="Remove indicator" onClick={() => setShowSlow(false)}>×</button></div>}
+              {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
+              {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
             </div>
             <div className="chart-canvas" ref={chartHost} />
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
@@ -691,6 +818,14 @@ export function TradingWorkspace() {
               }} /></label>
             </form>}
             {marketStatus.notice && candles.length > 0 && <div className="market-banner" role="status">{marketStatus.notice} Switch venue to try another feed.</div>}
+            {((showCvdPane && !cvdModel.available) || (showOiPane && !oiModel.available)) && (
+              <div className="pane-empty-notice" role="status">
+                {[
+                  showCvdPane && !cvdModel.available ? (cvdModel.emptyNotice || cvdError || CVD_PANE_EMPTY) : null,
+                  showOiPane && !oiModel.available ? shortCopy(oiHistoryNotice, oiModel.emptyNotice || OI_PANE_EMPTY) : null,
+                ].filter(Boolean).join(" ")}
+              </div>
+            )}
             {loading && !marketStatus.error && <div className="chart-loading">Loading market data…</div>}
             {marketStatus.error && !candles.length && <div className="chart-loading market-feed-error" role="alert">{marketStatus.error}</div>}
             </div>
@@ -719,7 +854,11 @@ export function TradingWorkspace() {
             extra={<select aria-label="Derivatives exchange" value={derivativesExchange} onChange={(event) => { const venue = event.target.value; if (isMarketVenue(venue)) setDerivativesExchange(venue); }}>{venueOptions()}</select>}
           >
             <div className="metric-grid">
-              <div className="metric-card"><span>Open interest</span><strong>${formatCompact(derivatives?.openInterestValue ?? null)}</strong><small>{formatCompact(derivatives?.openInterestAmount ?? null)} {symbol.replace("USDT", "")}</small></div>
+              <button type="button" className={`metric-card pane-toggle ${showOiPane ? "active" : ""}`} aria-label="Toggle open interest pane" aria-pressed={showOiPane} title={showOiPane ? "Hide open interest pane" : "Show open interest pane"} onClick={() => setShowOiPane((value) => !value)}>
+                <span>Open interest</span>
+                <strong>${formatCompact(derivatives?.openInterestValue ?? null)}</strong>
+                <small>{formatCompact(derivatives?.openInterestAmount ?? null)} {symbol.replace("USDT", "")}</small>
+              </button>
               <div className="metric-card"><span>Funding / 8h</span><strong className={(derivatives?.fundingRate ?? 0) >= 0 ? "positive" : "negative"}>{derivatives?.fundingRate == null ? "—" : `${(derivatives.fundingRate * 100).toFixed(4)}%`}</strong><small>{derivatives?.nextFundingTimestamp ? `Next ${new Date(derivatives.nextFundingTimestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Current rate"}</small></div>
               <div className="metric-card"><span>Mark price</span><strong>{formatPrice(derivatives?.markPrice ?? null)}</strong><small>Fair price</small></div>
               <div className="metric-card"><span>Basis</span><strong className={((derivatives?.markPrice ?? 0) - (derivatives?.indexPrice ?? 0)) >= 0 ? "positive" : "negative"}>{derivatives?.markPrice && derivatives?.indexPrice ? `${(((derivatives.markPrice - derivatives.indexPrice) / derivatives.indexPrice) * 100).toFixed(3)}%` : "—"}</strong><small>Mark vs index</small></div>
@@ -728,18 +867,18 @@ export function TradingWorkspace() {
           </SideSection>
           <SideSection title="Order flow" storageKey={ORDER_FLOW_SECTION_KEY}>
             <div className="metric-grid">
-              <div className="metric-card">
+              <button type="button" className={`metric-card pane-toggle ${showCvdPane ? "active" : ""}`} aria-label="Toggle CVD pane" aria-pressed={showCvdPane} title={showCvdPane ? "Hide CVD pane" : "Show CVD pane"} onClick={() => setShowCvdPane((value) => !value)}>
                 <span>Perp CVD</span>
                 <strong className={signedClass(cvd?.perp.available ? cvd.perp.cvd : null)}>{cvd?.perp.available ? formatSigned(cvd.perp.cvd) : "—"}</strong>
                 <small>{cvd?.perp.available ? summarizeCvdWindow(cvd.perp) : shortCopy(cvd?.perp.reason, "No perp trades")}</small>
                 {cvd?.perp.available && <CvdSpark bars={cvd.perp.spark.length > 1 ? cvd.perp.spark : cvd.perp.bars} />}
-              </div>
-              <div className="metric-card">
+              </button>
+              <button type="button" className={`metric-card pane-toggle ${showCvdPane ? "active" : ""}`} aria-label="Toggle CVD pane" aria-pressed={showCvdPane} title={showCvdPane ? "Hide CVD pane" : "Show CVD pane"} onClick={() => setShowCvdPane((value) => !value)}>
                 <span>Spot CVD</span>
                 <strong className={signedClass(cvd?.spot.available ? cvd.spot.cvd : null)}>{cvd?.spot.available ? formatSigned(cvd.spot.cvd) : "—"}</strong>
                 <small>{cvd?.spot.available ? summarizeCvdWindow(cvd.spot) : shortCopy(cvd?.spot.reason, "No spot trades")}</small>
                 {cvd?.spot.available && <CvdSpark bars={cvd.spot.spark.length > 1 ? cvd.spot.spark : cvd.spot.bars} />}
-              </div>
+              </button>
               <div className="metric-card">
                 <span>Futures − spot</span>
                 <strong className={signedClass(cvd?.comparison.perpMinusSpotDelta ?? null)}>{formatSigned(cvd?.comparison.perpMinusSpotDelta ?? null)}</strong>
@@ -759,6 +898,8 @@ export function TradingWorkspace() {
             <h2 className="section-kicker">Indicators</h2>
             <div className="indicator-row"><div className="indicator-copy"><strong>EMA 9</strong><span>Built-in · close</span></div><button aria-label="Toggle EMA 9" className={`metric-toggle ${showFast ? "active" : ""}`} onClick={() => setShowFast(!showFast)} /></div>
             <div className="indicator-row"><div className="indicator-copy"><strong>EMA 21</strong><span>Built-in · close</span></div><button aria-label="Toggle EMA 21" className={`metric-toggle ${showSlow ? "active" : ""}`} onClick={() => setShowSlow(!showSlow)} /></div>
+            <div className="indicator-row"><div className="indicator-copy"><strong>CVD</strong><span>Order flow · separate pane</span></div><button type="button" aria-label="Toggle CVD pane" className={`metric-toggle ${showCvdPane ? "active" : ""}`} aria-pressed={showCvdPane} onClick={() => setShowCvdPane((value) => !value)} /></div>
+            <div className="indicator-row"><div className="indicator-copy"><strong>Open interest</strong><span>Derivatives · separate pane</span></div><button type="button" aria-label="Toggle open interest pane" className={`metric-toggle ${showOiPane ? "active" : ""}`} aria-pressed={showOiPane} onClick={() => setShowOiPane((value) => !value)} /></div>
             <div className="indicator-row"><div className="indicator-copy"><strong>Custom Pine</strong><span>Editor output · overlay</span></div><button aria-label="Run custom Pine" className="metric-toggle active" onClick={runPine} /></div>
           </section>
           <section className="side-section">

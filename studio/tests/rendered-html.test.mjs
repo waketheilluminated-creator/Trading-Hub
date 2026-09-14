@@ -46,6 +46,12 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /Order flow/);
   assert.match(html, /Perp CVD/);
   assert.match(html, /Spot CVD/);
+  assert.match(html, /Toggle CVD pane/);
+  assert.match(html, /Toggle open interest pane/);
+  assert.match(html, /data-cvd-pane="off"/);
+  assert.match(html, /data-oi-pane="off"/);
+  assert.match(html, /Order flow · separate pane/);
+  assert.match(html, /Derivatives · separate pane/);
   assert.match(html, /Futures vs spot|Futures − spot/);
   assert.match(html, /Backend data packs are ready/);
   assert.match(html, /Pine Editor/);
@@ -134,6 +140,13 @@ test("CVD API rejects unsupported exchanges", async () => {
   assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
 });
 
+test("OI history API rejects unsupported exchanges", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/oi?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+});
+
 test("klines and markets APIs reject unsupported exchanges", async () => {
   const app = await worker();
   const klines = await app.fetch(new Request("http://localhost/api/klines?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
@@ -182,4 +195,18 @@ test("klines API can serve OKX public candles without API keys", async () => {
   assert.ok(Array.isArray(payload.candles));
   assert.ok(payload.candles.length >= 1);
   assert.equal(typeof payload.candles[0].close, "number");
+});
+
+test("OI API can serve OKX public open-interest history without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/oi?exchange=okx&symbol=BTCUSDT&interval=15"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.venue, "okx");
+  assert.equal(payload.symbol, "BTCUSDT");
+  assert.ok(Array.isArray(payload.points));
+  assert.ok(payload.points.length >= 2);
+  assert.equal(typeof payload.points[0].time, "number");
+  assert.equal(typeof payload.points[0].value, "number");
+  assert.equal(payload.unit, "usd");
 });

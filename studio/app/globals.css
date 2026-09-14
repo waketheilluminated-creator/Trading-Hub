@@ -206,6 +206,10 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .section-title-row select { padding:4px 6px; color:var(--ink); background:#111720; border:1px solid var(--line); border-radius:6px; font-size:10px; }
 .metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .metric-card { padding:8px; min-height:0; border:1px solid var(--line); border-radius:8px; background:#111720; }
+button.metric-card { display:block; width:100%; text-align:left; cursor:pointer; color:inherit; }
+button.metric-card:hover { border-color:#3c485a; background:#151c27; }
+button.metric-card.active, button.metric-card[aria-pressed="true"] { border-color:rgba(118,231,164,.42); background:#152018; }
+.pane-empty-notice { position:absolute; z-index:5; left:14px; bottom:38px; max-width:min(360px, calc(100% - 28px)); padding:6px 8px; color:#c5cdd8; border:1px solid #2d3848; border-radius:6px; background:rgba(13,18,26,.92); font:10px/1.45 var(--font-geist-sans); pointer-events:none; }
 .metric-card span { display:block; color:var(--muted); font-size:10px; }
 .metric-card strong { display:block; margin-top:4px; font:600 14px var(--font-geist-mono); }
 .metric-card small { display:block; margin-top:3px; color:var(--faint); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
