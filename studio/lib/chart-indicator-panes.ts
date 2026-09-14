@@ -43,6 +43,23 @@ export function writeStoredFlag(storage: FlagStorage | null | undefined, key: st
   }
 }
 
+const PANE_PREFS_EVENT = "th-pane-prefs";
+
+export function subscribePanePrefs(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onChange);
+  window.addEventListener(PANE_PREFS_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(PANE_PREFS_EVENT, onChange);
+  };
+}
+
+export function notifyPanePrefs(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(PANE_PREFS_EVENT));
+}
+
 export function indicatorPaneStack(flags: { cvd: boolean; oi: boolean }): IndicatorPaneId[] {
   const stack: IndicatorPaneId[] = [];
   if (flags.cvd) stack.push("cvd");

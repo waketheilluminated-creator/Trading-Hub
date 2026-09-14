@@ -18,6 +18,8 @@ import {
   readStoredFlag,
   shortPaneNotice,
   toBarTimeSeconds,
+  notifyPanePrefs,
+  subscribePanePrefs,
   writeStoredFlag,
 } from "../lib/chart-indicator-panes.ts";
 
@@ -36,6 +38,10 @@ test("SSR pane defaults stay off until localStorage is applied after mount", () 
   const stored = memoryStorage({ [CVD_PANE_STORAGE_KEY]: "1", [OI_PANE_STORAGE_KEY]: "1" });
   assert.equal(readStoredFlag(stored, CVD_PANE_STORAGE_KEY, false), true);
   assert.equal(readStoredFlag(stored, OI_PANE_STORAGE_KEY, false), true);
+  const unsubscribe = subscribePanePrefs(() => {});
+  assert.equal(typeof unsubscribe, "function");
+  unsubscribe();
+  notifyPanePrefs();
 });
 
 test("persists CVD and OI pane toggles without throwing in private mode", () => {

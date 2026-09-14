@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, LineSeries, LineStyle,
   type CandlestickData, type IChartApi, type ISeriesApi,
@@ -17,8 +17,10 @@ import {
   OI_PANE_STORAGE_KEY,
   oiPaneModel,
   readStoredFlag,
+  subscribePanePrefs,
   toBarTimeSeconds,
   writeStoredFlag,
+  notifyPanePrefs,
 } from "@/lib/chart-indicator-panes.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
@@ -239,12 +241,29 @@ export function TradingWorkspace() {
   const [derivativesNotice, setDerivativesNotice] = useState<string | null>(null);
   const [cvd, setCvd] = useState<CvdSnapshot | null>(null);
   const [cvdError, setCvdError] = useState<string | null>(null);
-  const [showCvdPane, setShowCvdPane] = useState(false);
-  const [showOiPane, setShowOiPane] = useState(false);
-  const [panePrefsReady, setPanePrefsReady] = useState(false);
   const [oiHistory, setOiHistory] = useState<OiHistorySnapshot | null>(null);
   const [oiHistoryNotice, setOiHistoryNotice] = useState<string | null>(null);
   const [chartVersion, setChartVersion] = useState(0);
+  const showCvdPane = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false),
+    () => false,
+  );
+  const showOiPane = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, false),
+    () => false,
+  );
+  const setShowCvdPane = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false);
+    writeStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, []);
+  const setShowOiPane = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, false);
+    writeStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, []);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -434,22 +453,6 @@ export function TradingWorkspace() {
       candleTimes,
     );
   }, [candles, showFast, showSlow]);
-
-  useEffect(() => {
-    setShowCvdPane(readStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, false));
-    setShowOiPane(readStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, false));
-    setPanePrefsReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!panePrefsReady) return;
-    writeStoredFlag(window.localStorage, CVD_PANE_STORAGE_KEY, showCvdPane);
-  }, [panePrefsReady, showCvdPane]);
-
-  useEffect(() => {
-    if (!panePrefsReady) return;
-    writeStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, showOiPane);
-  }, [panePrefsReady, showOiPane]);
 
   useEffect(() => {
     const chart = chartRef.current;
