@@ -4,6 +4,8 @@ import type { DrawingTool } from "@/lib/drawings/types.ts";
 type DrawingToolbarProps = {
   activeTool: DrawingTool;
   onToolChange(tool: DrawingTool): void;
+  largeOrderBarsVisible: boolean;
+  onLargeOrderBarsToggle(): void;
 };
 
 const IconFrame = ({ children }: { children: ReactNode }) => (
@@ -50,7 +52,16 @@ function SettingsIcon() {
   return <IconFrame><circle cx="10" cy="10" r="2.5" /><path d="M10 3.5v2M10 14.5v2M3.5 10h2M14.5 10h2M5.4 5.4l1.4 1.4M13.2 13.2l1.4 1.4M14.6 5.4l-1.4 1.4M6.8 13.2l-1.4 1.4" /></IconFrame>;
 }
 
-export function DrawingToolbar({ activeTool, onToolChange }: DrawingToolbarProps) {
+function LargeOrderSrIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" data-icon="large-order-sr">
+      <rect x="2.5" y="4.5" width="15" height="3.2" rx="1" fill="currentColor" stroke="none" opacity="0.5" />
+      <rect x="2.5" y="12.3" width="15" height="3.2" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function DrawingToolbar({ activeTool, onToolChange, largeOrderBarsVisible, onLargeOrderBarsToggle }: DrawingToolbarProps) {
   const tools: { tool: DrawingTool; label: string; Icon: ComponentType }[] = [
     { tool: "select", label: "Select drawing tool", Icon: SelectIcon },
     { tool: "trend-line", label: "Trend line drawing tool", Icon: TrendLineIcon },
@@ -64,6 +75,16 @@ export function DrawingToolbar({ activeTool, onToolChange }: DrawingToolbarProps
   return <nav className="left-rail" aria-label="Chart drawing tools">
     {tools.map(({ tool, label, Icon }) => <button key={tool} type="button" className={`tool-button ${activeTool === tool ? "active" : ""}`} aria-label={label} aria-pressed={activeTool === tool} title={label.replace(" drawing tool", "")} onClick={() => onToolChange(tool)}><Icon /></button>)}
     <span className="rail-spacer" />
+    <button
+      type="button"
+      className={`tool-button ${largeOrderBarsVisible ? "active" : ""}`}
+      aria-label="Toggle large-order support and resistance bars"
+      aria-pressed={largeOrderBarsVisible}
+      title={largeOrderBarsVisible ? "Hide large-order S/R bars" : "Show large-order S/R bars"}
+      onClick={onLargeOrderBarsToggle}
+    >
+      <LargeOrderSrIcon />
+    </button>
     <button type="button" className="tool-button" aria-label="Chart settings" title="Settings"><SettingsIcon /></button>
   </nav>;
 }

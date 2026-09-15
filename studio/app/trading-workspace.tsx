@@ -23,6 +23,19 @@ import {
   writeStoredFlag,
   notifyPanePrefs,
 } from "@/lib/chart-indicator-panes.ts";
+import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
+import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
+import { DrawingSaveScheduler, createDrawingStorage, loadDrawings, type DrawingStorage } from "@/lib/drawings/store.ts";
+import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts";
+import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
+import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
+import { LargeOrderSrPrimitive } from "@/lib/large-order-sr-primitive.ts";
+import {
+  LARGE_ORDER_SR_EMPTY,
+  LARGE_ORDER_SR_STORAGE_KEY,
+  loadLargeOrderWalls,
+  type OrderWall,
+} from "@/lib/market-depth.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
 import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
@@ -30,12 +43,6 @@ import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
 import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
-import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
-import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
-import { DrawingSaveScheduler, createDrawingStorage, loadDrawings, type DrawingStorage } from "@/lib/drawings/store.ts";
-import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts";
-import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
-import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
@@ -207,6 +214,7 @@ export function TradingWorkspace() {
   const cvdSeriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
   const oiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null);
+  const largeOrderPrimitiveRef = useRef<LargeOrderSrPrimitive | null>(null);
   const drawingControllerRef = useRef<DrawingController | null>(null);
   const drawingSaveSchedulerRef = useRef<DrawingSaveScheduler | null>(null);
   const drawingStorageRef = useRef<DrawingStorage | null>(null);
@@ -265,6 +273,18 @@ export function TradingWorkspace() {
     writeStoredFlag(window.localStorage, OI_PANE_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
   }, []);
+  const showLargeOrderSr = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readClientPaneFlag(window.localStorage, LARGE_ORDER_SR_STORAGE_KEY, false),
+    () => false,
+  );
+  const setShowLargeOrderSr = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, LARGE_ORDER_SR_STORAGE_KEY, false);
+    writeStoredFlag(window.localStorage, LARGE_ORDER_SR_STORAGE_KEY, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, []);
+  const [largeOrderWalls, setLargeOrderWalls] = useState<OrderWall[]>([]);
+  const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -387,10 +407,12 @@ export function TradingWorkspace() {
     });
     const candleSeries = chart.addSeries(CandlestickSeries, { upColor: "#53c990", downColor: "#e76770", wickUpColor: "#53c990", wickDownColor: "#e76770", borderVisible: false });
     const drawingPrimitive = new DrawingPrimitive();
+    const largeOrderPrimitive = new LargeOrderSrPrimitive();
     const drawingStorage = drawingStorageRef.current ?? createDrawingStorage();
     drawingStorageRef.current = drawingStorage;
     const drawingSaveScheduler = new DrawingSaveScheduler(drawingStorage);
     candleSeries.attachPrimitive(drawingPrimitive);
+    candleSeries.attachPrimitive(largeOrderPrimitive);
     const replaceDrawings = (next: Drawing[], kind: DrawingChangeKind) => {
       drawingsRef.current = next;
       setDrawings(next);
@@ -423,6 +445,7 @@ export function TradingWorkspace() {
     chartRef.current = chart; candleSeriesRef.current = candleSeries; fastSeriesRef.current = fastSeries; slowSeriesRef.current = slowSeries;
     cvdSeriesRef.current = null; oiSeriesRef.current = null;
     drawingPrimitiveRef.current = drawingPrimitive;
+    largeOrderPrimitiveRef.current = largeOrderPrimitive;
     drawingControllerRef.current = drawingController;
     drawingSaveSchedulerRef.current = drawingSaveScheduler;
     drawingController.attach(chartHost.current);
@@ -431,9 +454,11 @@ export function TradingWorkspace() {
     return () => {
       drawingSaveScheduler.flush();
       drawingController.detach();
+      candleSeries.detachPrimitive(largeOrderPrimitive);
       candleSeries.detachPrimitive(drawingPrimitive);
       if (drawingControllerRef.current === drawingController) drawingControllerRef.current = null;
       if (drawingPrimitiveRef.current === drawingPrimitive) drawingPrimitiveRef.current = null;
+      if (largeOrderPrimitiveRef.current === largeOrderPrimitive) largeOrderPrimitiveRef.current = null;
       if (drawingSaveSchedulerRef.current === drawingSaveScheduler) drawingSaveSchedulerRef.current = null;
       chart.remove();
       chartRef.current = null; candleSeriesRef.current = null; fastSeriesRef.current = null; slowSeriesRef.current = null;
@@ -487,6 +512,31 @@ export function TradingWorkspace() {
     if (!showOiPane) return;
     oiSeriesRef.current?.setData(oiModel.points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })));
   }, [chartVersion, oiModel, showOiPane]);
+
+  useEffect(() => {
+    largeOrderPrimitiveRef.current?.setWalls(showLargeOrderSr ? largeOrderWalls : []);
+  }, [chartVersion, largeOrderWalls, showLargeOrderSr]);
+
+  useEffect(() => {
+    if (!showLargeOrderSr) return;
+    let active = true;
+    let retryPreferred = true;
+    const load = () => loadLargeOrderWalls(activeVenue, symbol, fetch, { retryPreferred })
+      .then((result) => {
+        retryPreferred = false;
+        if (!active) return;
+        setLargeOrderWalls(result.snapshot.walls);
+        setLargeOrderNotice(null);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLargeOrderWalls([]);
+        setLargeOrderNotice(shortCopy(error instanceof Error ? error.message : LARGE_ORDER_SR_EMPTY, LARGE_ORDER_SR_EMPTY));
+      });
+    load();
+    const timer = window.setInterval(load, 8000);
+    return () => { active = false; clearInterval(timer); };
+  }, [activeVenue, showLargeOrderSr, symbol]);
 
   useEffect(() => {
     if (!showOiPane) return;
@@ -808,8 +858,13 @@ export function TradingWorkspace() {
           </div>
 
           <div className="chart-region">
-            <DrawingToolbar activeTool={activeDrawingTool} onToolChange={changeDrawingToolFromToolbar} />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"}>
+            <DrawingToolbar
+              activeTool={activeDrawingTool}
+              onToolChange={changeDrawingToolFromToolbar}
+              largeOrderBarsVisible={showLargeOrderSr}
+              onLargeOrderBarsToggle={() => setShowLargeOrderSr((value) => !value)}
+            />
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
@@ -831,11 +886,12 @@ export function TradingWorkspace() {
               }} /></label>
             </form>}
             {marketStatus.notice && candles.length > 0 && <div className="market-banner" role="status">{marketStatus.notice} Switch venue to try another feed.</div>}
-            {((showCvdPane && !cvdModel.available) || (showOiPane && !oiModel.available)) && (
+            {((showCvdPane && !cvdModel.available) || (showOiPane && !oiModel.available) || (showLargeOrderSr && largeOrderNotice)) && (
               <div className="pane-empty-notice" role="status">
                 {[
                   showCvdPane && !cvdModel.available ? (cvdModel.emptyNotice || cvdError || CVD_PANE_EMPTY) : null,
                   showOiPane && !oiModel.available ? shortCopy(oiHistoryNotice, oiModel.emptyNotice || OI_PANE_EMPTY) : null,
+                  showLargeOrderSr && largeOrderNotice ? largeOrderNotice : null,
                 ].filter(Boolean).join(" ")}
               </div>
             )}

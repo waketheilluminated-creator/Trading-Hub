@@ -50,6 +50,10 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /Toggle open interest pane/);
   assert.match(html, /data-cvd-pane="off"/);
   assert.match(html, /data-oi-pane="off"/);
+  assert.match(html, /data-large-order-sr="off"/);
+  assert.match(html, /Toggle large-order support and resistance bars/);
+  assert.match(html, /data-icon="large-order-sr"/);
+  assert.doesNotMatch(html, /large-order-list|order-book-panel|大额挂单/);
   assert.match(html, /Order flow · separate pane/);
   assert.match(html, /Derivatives · separate pane/);
   assert.match(html, /Futures vs spot|Futures − spot/);
@@ -140,11 +144,25 @@ test("CVD API rejects unsupported exchanges", async () => {
   assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
 });
 
-test("OI history API rejects unsupported exchanges", async () => {
+test("depth API rejects unsupported exchanges and forged symbols", async () => {
   const app = await worker();
-  const response = await app.fetch(new Request("http://localhost/api/oi?exchange=unknown&symbol=BTCUSDT&interval=15"), env, context);
-  assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+  const unknown = await app.fetch(new Request("http://localhost/api/depth?exchange=unknown&symbol=BTCUSDT"), env, context);
+  assert.equal(unknown.status, 400);
+  assert.deepEqual(await unknown.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+  const forged = await app.fetch(new Request("http://localhost/api/depth?exchange=okx&symbol=../etc/passwd"), env, context);
+  assert.equal(forged.status, 400);
+  assert.deepEqual(await forged.json(), { error: "Use a compact perpetual symbol such as BTCUSDT" });
+});
+
+test("depth API can serve OKX public order-book walls without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/depth?exchange=okx&symbol=BTCUSDT&minNotional=100000"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.venue, "okx");
+  assert.equal(payload.symbol, "BTCUSDT");
+  assert.ok(Array.isArray(payload.walls));
+  assert.equal(typeof payload.midPrice, "number");
 });
 
 test("klines and markets APIs reject unsupported exchanges", async () => {

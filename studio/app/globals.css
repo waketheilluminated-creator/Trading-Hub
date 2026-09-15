@@ -40,6 +40,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .tool-button:hover { background:var(--panel-2); color:var(--ink); }
 .tool-button.active { color:var(--accent); background:rgba(118,231,164,.14); border-color:rgba(118,231,164,.24); }
 .tool-button svg { width:20px; height:20px; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.tool-button svg[data-icon="large-order-sr"] { stroke: none; fill: currentColor; }
 .tool-button:focus-visible { outline:2px solid rgba(118,231,164,.85); outline-offset:1px; }
 .rail-spacer { flex:1; }
 .main-area { min-width:0; min-height:0; display:grid; grid-template-rows: 45px minmax(300px, 1fr) 245px; }
