@@ -169,6 +169,10 @@ export function visualWallBands(walls: readonly OrderWall[]): VisualWall[] {
   });
 }
 
+export function wallFillStyle(wall: Pick<VisualWall, "side" | "opacity">): string {
+  return `rgba(${wall.side === "bid" ? "83, 201, 144" : "231, 103, 112"}, ${wall.opacity.toFixed(3)})`;
+}
+
 export async function fetchVenueDepth(
   venue: MarketVenue,
   symbol: string,

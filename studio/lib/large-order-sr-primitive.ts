@@ -6,18 +6,21 @@ import type {
   Time,
 } from "lightweight-charts";
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
-import { visualWallBands, type OrderWall, type VisualWall } from "./market-depth.ts";
+import { visualWallBands, wallFillStyle, type OrderWall, type VisualWall } from "./market-depth.ts";
 
 type PriceToCoordinate = (price: number) => number | null;
 
-const BID_RGB = "83, 201, 144";
-const ASK_RGB = "231, 103, 112";
-
 class LargeOrderSrRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly getWalls: () => readonly VisualWall[], private readonly priceToCoordinate: () => PriceToCoordinate | null) {}
+  private readonly getWalls: () => readonly VisualWall[];
+  private readonly getPriceToCoordinate: () => PriceToCoordinate | null;
+
+  constructor(getWalls: () => readonly VisualWall[], getPriceToCoordinate: () => PriceToCoordinate | null) {
+    this.getWalls = getWalls;
+    this.getPriceToCoordinate = getPriceToCoordinate;
+  }
 
   draw(target: CanvasRenderingTarget2D): void {
-    const priceToCoordinate = this.priceToCoordinate();
+    const priceToCoordinate = this.getPriceToCoordinate();
     if (!priceToCoordinate) return;
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       for (const wall of this.getWalls()) {
@@ -28,7 +31,11 @@ class LargeOrderSrRenderer implements IPrimitivePaneRenderer {
 }
 
 class LargeOrderSrPaneView implements IPrimitivePaneView {
-  constructor(private readonly paneRenderer: LargeOrderSrRenderer) {}
+  private readonly paneRenderer: LargeOrderSrRenderer;
+
+  constructor(paneRenderer: LargeOrderSrRenderer) {
+    this.paneRenderer = paneRenderer;
+  }
 
   zOrder(): "normal" {
     return "normal";
@@ -69,10 +76,6 @@ export class LargeOrderSrPrimitive implements ISeriesPrimitive<Time> {
   paneViews(): readonly IPrimitivePaneView[] {
     return this.views;
   }
-}
-
-export function wallFillStyle(wall: VisualWall): string {
-  return `rgba(${wall.side === "bid" ? BID_RGB : ASK_RGB}, ${wall.opacity.toFixed(3)})`;
 }
 
 function drawWall(

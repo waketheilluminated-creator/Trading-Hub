@@ -14,9 +14,9 @@ import {
   parseOkxContractValue,
   parseVenueDepth,
   visualWallBands,
+  wallFillStyle,
 } from "../lib/market-depth.ts";
 import { formatVenueFallbackNotice, supportedExchangesMessage } from "../lib/market-venues.ts";
-import { wallFillStyle } from "../lib/large-order-sr-primitive.ts";
 import { readStoredFlag, writeStoredFlag } from "../lib/chart-indicator-panes.ts";
 
 const LEGAL_WALL = "Binance is blocked in this region (Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.).";
@@ -109,7 +109,7 @@ test("clusters nearby large bids/asks into S/R walls and drops small noise", () 
       { price: 81_000, size: 8, notional: 648_000 },
       { price: 81_010, size: 2, notional: 162_020 },
     ],
-    { minNotional: 250_000, clusterBps: 20, maxPerSide: 8 },
+    { minNotional: 100_000, clusterBps: 20, maxPerSide: 8 },
   );
   assert.equal(walls.some((wall) => wall.price === 70_000 || wall.notional === 7_000), false);
   const bids = walls.filter((wall) => wall.side === "bid");
