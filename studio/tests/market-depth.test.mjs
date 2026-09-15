@@ -48,10 +48,15 @@ test("rejects invalid venue and symbol without fetching depth", () => {
     assert.equal(injectedBook.symbol, "BTCUSDT");
     assert.equal(injectedBook.minNotional, 10_000);
   }
+  const omitted = parseDepthQuery(new URL("http://localhost/api/depth?exchange=okx&symbol=BTCUSDT"), supportedExchangesMessage());
+  assert.equal(omitted.ok, true);
+  if (omitted.ok) assert.equal(omitted.minNotional, DEFAULT_MIN_WALL_NOTIONAL_USD);
 });
 
 test("clamps forged min notional instead of trusting client bounds", () => {
   assert.equal(clampMinNotional("abc"), DEFAULT_MIN_WALL_NOTIONAL_USD);
+  assert.equal(clampMinNotional(null), DEFAULT_MIN_WALL_NOTIONAL_USD);
+  assert.equal(clampMinNotional(""), DEFAULT_MIN_WALL_NOTIONAL_USD);
   assert.equal(clampMinNotional(-50), 10_000);
   assert.equal(clampMinNotional(1e12), 50_000_000);
   assert.equal(clampMinNotional(500_000), 500_000);
@@ -124,6 +129,22 @@ test("clusters nearby large bids/asks into S/R walls and drops small noise", () 
   assert.ok(visuals.every((wall) => wall.opacity > 0.1 && wall.thicknessPx >= 3));
   assert.match(wallFillStyle(visuals.find((wall) => wall.side === "bid")), /83, 201, 144/);
   assert.match(wallFillStyle(visuals.find((wall) => wall.side === "ask")), /231, 103, 112/);
+});
+
+test("keeps distinct large levels more than one basis point apart", () => {
+  const walls = clusterOrderWalls(
+    [
+      { price: 75_910, size: 5, notional: 379_550 },
+      { price: 75_850, size: 5, notional: 379_250 },
+    ],
+    [
+      { price: 75_930, size: 5, notional: 379_650 },
+      { price: 75_980, size: 5, notional: 379_900 },
+    ],
+    { minNotional: 250_000 },
+  );
+  assert.equal(walls.filter((wall) => wall.side === "bid").length, 2);
+  assert.equal(walls.filter((wall) => wall.side === "ask").length, 2);
 });
 
 test("does not invent walls when the venue returns an empty book", async () => {

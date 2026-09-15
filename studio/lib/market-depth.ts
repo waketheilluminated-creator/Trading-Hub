@@ -20,7 +20,7 @@ export const LARGE_ORDER_SR_EMPTY = "Order book unavailable.";
 export const DEFAULT_MIN_WALL_NOTIONAL_USD = 250_000;
 export const MIN_WALL_NOTIONAL_USD = 10_000;
 export const MAX_WALL_NOTIONAL_USD = 50_000_000;
-export const DEFAULT_CLUSTER_BPS = 8;
+export const DEFAULT_CLUSTER_BPS = 1;
 export const MAX_WALLS_PER_SIDE = 18;
 
 export type BookSide = "bid" | "ask";
@@ -69,6 +69,7 @@ export type DepthQuery =
 const lastGoodDepthVenue = new Map<string, MarketVenue>();
 
 export function clampMinNotional(value: unknown, fallback = DEFAULT_MIN_WALL_NOTIONAL_USD): number {
+  if (value == null || value === "") return fallback;
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(MAX_WALL_NOTIONAL_USD, Math.max(MIN_WALL_NOTIONAL_USD, numeric));
@@ -146,7 +147,7 @@ export function clusterOrderWalls(
   options: { minNotional?: number; clusterBps?: number; maxPerSide?: number } = {},
 ): OrderWall[] {
   const minNotional = clampMinNotional(options.minNotional);
-  const clusterBps = Number.isFinite(options.clusterBps) ? Math.max(1, Number(options.clusterBps)) : DEFAULT_CLUSTER_BPS;
+  const clusterBps = Number.isFinite(options.clusterBps) ? Math.max(0.1, Number(options.clusterBps)) : DEFAULT_CLUSTER_BPS;
   const maxPerSide = Math.max(1, options.maxPerSide ?? MAX_WALLS_PER_SIDE);
   const bidWalls = clusterSide(bids.filter((level) => level.notional >= minNotional), "bid", clusterBps, maxPerSide);
   const askWalls = clusterSide(asks.filter((level) => level.notional >= minNotional), "ask", clusterBps, maxPerSide);
@@ -275,33 +276,47 @@ function clusterSide(
   clusterBps: number,
   maxPerSide: number,
 ): OrderWall[] {
-  const sorted = [...levels].sort((left, right) => left.price - right.price);
-  const clusters: OrderWall[] = [];
-  for (const level of sorted) {
-    const last = clusters.at(-1);
-    const threshold = Math.max(level.price, last?.high ?? 0) * (clusterBps / 10_000);
-    if (last && level.price - last.high <= threshold) {
-      const size = last.size + level.size;
-      const notional = last.notional + level.notional;
-      last.high = level.price;
-      last.size = size;
-      last.notional = notional;
-      last.price = notional > 0 ? notional / (size || 1) : last.price;
+  const buckets = new Map<number, OrderWall>();
+  for (const level of levels) {
+    const key = bucketPrice(level.price, clusterBps);
+    const current = buckets.get(key);
+    if (!current) {
+      buckets.set(key, {
+        side,
+        price: level.price,
+        low: level.price,
+        high: level.price,
+        size: level.size,
+        notional: level.notional,
+      });
       continue;
     }
-    clusters.push({
-      side,
-      price: level.price,
-      low: level.price,
-      high: level.price,
-      size: level.size,
-      notional: level.notional,
-    });
+    const size = current.size + level.size;
+    const notional = current.notional + level.notional;
+    current.low = Math.min(current.low, level.price);
+    current.high = Math.max(current.high, level.price);
+    current.size = size;
+    current.notional = notional;
+    current.price = notional > 0 ? notional / (size || 1) : current.price;
   }
-  return clusters
+  return [...buckets.values()]
     .sort((left, right) => right.notional - left.notional)
     .slice(0, maxPerSide)
     .sort((left, right) => left.price - right.price);
+}
+
+function bucketPrice(price: number, clusterBps: number): number {
+  const step = niceIncrement(price * (clusterBps / 10_000));
+  if (!Number.isFinite(step) || step <= 0) return price;
+  return Math.round(price / step) * step;
+}
+
+function niceIncrement(raw: number): number {
+  if (!(raw > 0) || !Number.isFinite(raw)) return 1;
+  const exp = 10 ** Math.floor(Math.log10(raw));
+  const mantissa = raw / exp;
+  const nice = mantissa <= 1 ? 1 : mantissa <= 2 ? 2 : mantissa <= 5 ? 5 : 10;
+  return nice * exp;
 }
 
 function sortedBook(bids: DepthLevel[], asks: DepthLevel[]): { bids: DepthLevel[]; asks: DepthLevel[] } {
