@@ -54,8 +54,8 @@ Sensitive domain: **BYOK, user-supplied API keys, and market-data credentials**.
 
 Market-data keys and privileged backend fetches must not be reachable from untrusted renderer/client paths. Prefer existing protected server/backend helpers:
 
-- `studio/app/api/klines/route.ts`, `studio/app/api/markets/route.ts`, `studio/app/api/cvd/route.ts`, `studio/app/api/derivatives/route.ts`
-- `studio/lib/market-rest.ts`, `studio/lib/market-cvd.ts`, `studio/lib/market-derivatives.ts`
+- `studio/app/api/klines/route.ts`, `studio/app/api/markets/route.ts`, `studio/app/api/cvd/route.ts`, `studio/app/api/derivatives/route.ts`, `studio/app/api/depth/route.ts`
+- `studio/lib/market-rest.ts`, `studio/lib/market-cvd.ts`, `studio/lib/market-derivatives.ts`, `studio/lib/market-depth.ts`
 - `studio/app/api/ai/analyze/route.ts` + `studio/lib/ai-context.ts` + `studio/lib/ai/proxy.ts`
 
 Client-supplied candles, screenshots, or “I already packed history” flags are not entitlement. The analyze route assembles klines / OI / CVD / history packs on the server.
