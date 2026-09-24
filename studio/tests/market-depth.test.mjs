@@ -243,8 +243,12 @@ test("persists the left-rail S/R toggle without throwing in private mode", () =>
 test("workspace plots S/R on the K-chart from the left rail and never adds a right-side list", () => {
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
   const toolbar = readFileSync(fileURLToPath(new URL("../components/drawing-toolbar.tsx", import.meta.url)), "utf8");
-  assert.match(toolbar, /Toggle large-order support and resistance bars/);
+  assert.match(toolbar, /Show support\/resistance walls/);
+  assert.match(toolbar, /Hide support\/resistance walls/);
   assert.match(toolbar, /data-icon="large-order-sr"/);
+  assert.match(workspace, /\[showFast, setShowFast\] = useState\(false\)/);
+  assert.match(workspace, /\[showSlow, setShowSlow\] = useState\(false\)/);
+  assert.match(workspace, /showLargeOrderSr && <div className="sr-walls-chip">S\/R walls<\/div>/);
   assert.match(workspace, /loadLargeOrderWalls/);
   assert.match(workspace, /LargeOrderSrPrimitive/);
   assert.match(workspace, /LARGE_ORDER_SR_STORAGE_KEY/);

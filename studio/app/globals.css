@@ -76,6 +76,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .quote-line { display:flex; gap:12px; margin-top:6px; color:var(--muted); font:11px var(--font-geist-mono); }
 .quote-line .price { color:var(--ink); font-size:13px; }
 .quote-line .positive { color:var(--accent); }
+.sr-walls-chip { width:max-content; margin-top:6px; padding:2px 6px; border:1px solid rgba(118,231,164,.28); border-radius:4px; color:#c8efd6; background:rgba(118,231,164,.08); font:10px var(--font-geist-mono); letter-spacing:.02em; pointer-events:none; }
 .indicator-label { width:max-content; display:flex; align-items:center; gap:5px; margin-top:5px; padding:3px 4px 3px 0; font:10px var(--font-geist-mono); color:#b2bac6; pointer-events:auto; }
 .indicator-label > span { display:flex; align-items:center; }
 .indicator-label i { display:inline-block; width:7px; height:2px; margin-right:6px; vertical-align:middle; }

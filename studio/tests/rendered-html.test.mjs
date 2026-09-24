@@ -12,6 +12,13 @@ const env = {
 };
 const context = { waitUntil() {}, passThroughOnException() {} };
 
+function buttonOpeningTag(html, label) {
+  const buttons = html.match(/<button\b[^>]*>/g) ?? [];
+  const button = buttons.find((tag) => tag.includes(`aria-label="${label}"`));
+  assert.ok(button, `missing button ${label}`);
+  return button;
+}
+
 function requiredIndex(html, token) {
   const index = html.indexOf(token);
   assert.notEqual(index, -1, `missing rendered token: ${token}`);
@@ -51,8 +58,10 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /data-cvd-pane="off"/);
   assert.match(html, /data-oi-pane="off"/);
   assert.match(html, /data-large-order-sr="off"/);
-  assert.match(html, /Toggle large-order support and resistance bars/);
+  assert.match(html, /aria-label="Show support\/resistance walls"/);
+  assert.match(html, /title="Show support\/resistance walls"/);
   assert.match(html, /data-icon="large-order-sr"/);
+  assert.doesNotMatch(html, /S\/R walls/);
   assert.doesNotMatch(html, /large-order-list|order-book-panel|大额挂单/);
   assert.match(html, /Order flow · separate pane/);
   assert.match(html, /Derivatives · separate pane/);
@@ -61,8 +70,12 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /Pine Editor/);
   assert.match(html, /Open Pine editor in new tab/);
   assert.match(html, /Collapse bottom panel/);
-  assert.match(html, /Remove EMA 9 indicator/);
-  assert.match(html, /Remove EMA 21 indicator/);
+  assert.match(html, /Toggle EMA 9/);
+  assert.match(html, /Toggle EMA 21/);
+  assert.doesNotMatch(buttonOpeningTag(html, "Toggle EMA 9"), /\bactive\b/);
+  assert.doesNotMatch(buttonOpeningTag(html, "Toggle EMA 21"), /\bactive\b/);
+  assert.doesNotMatch(html, /Remove EMA 9 indicator/);
+  assert.doesNotMatch(html, /Remove EMA 21 indicator/);
   assert.match(html, /Add to chart/);
   assert.match(html, /Create alert \(Alt\+A\)/);
   assert.match(html, /Search symbols \(Cmd\/Ctrl\+K\)/);
