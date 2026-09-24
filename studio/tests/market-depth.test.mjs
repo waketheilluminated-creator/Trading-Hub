@@ -13,11 +13,18 @@ import {
   parseDepthQuery,
   parseOkxContractValue,
   parseVenueDepth,
+  filterWallsForRange,
+  LARGE_ORDER_SR_MIN_NOTIONAL_KEY,
+  LARGE_ORDER_SR_RANGE_KEY,
   layoutSeparatedWalls,
   MIN_WALL_CENTER_GAP_PX,
   MIN_WALL_NOTIONAL_USD,
+  readStoredMinNotional,
+  readStoredWallRange,
   visualWallBands,
   wallFillStyle,
+  writeStoredMinNotional,
+  writeStoredWallRange,
 } from "../lib/market-depth.ts";
 import { formatVenueFallbackNotice, supportedExchangesMessage } from "../lib/market-venues.ts";
 import { readStoredFlag, writeStoredFlag } from "../lib/chart-indicator-panes.ts";
@@ -282,6 +289,77 @@ test("leaves already separated walls on their live prices", () => {
   assert.ok(ask.thicknessPx >= 3);
 });
 
+test("filters live walls by book, visible, or custom price span", () => {
+  const walls = [
+    wallAt("bid", 80_000, 200_000),
+    { side: "bid", price: 100, low: 90, high: 110, size: 1, notional: 200_000 },
+    wallAt("ask", 84_000, 300_000),
+    wallAt("ask", 90_000, 400_000),
+  ];
+  assert.deepEqual(filterWallsForRange(walls, "book").map((wall) => wall.price), [80_000, 100, 84_000, 90_000]);
+  assert.deepEqual(filterWallsForRange(walls, "visible", { visible: null }).map((wall) => wall.price), [80_000, 100, 84_000, 90_000]);
+  assert.deepEqual(filterWallsForRange(walls, "visible", { visible: { low: 83_000, high: 85_000 } }).map((wall) => wall.price), [84_000]);
+  assert.deepEqual(filterWallsForRange(walls, "visible", { visible: { low: 70_000, high: 80_000 } }).map((wall) => wall.price), [80_000]);
+  assert.equal(filterWallsForRange(walls, "visible", { visible: { low: 108, high: 120 } }).some((wall) => wall.price === 100), true);
+  assert.equal(filterWallsForRange(walls, "visible", { visible: { low: 111, high: 120 } }).some((wall) => wall.price === 100), false);
+  assert.deepEqual(filterWallsForRange(walls, "custom", { customLow: null, customHigh: 85_000 }).map((wall) => wall.price), [80_000, 100, 84_000, 90_000]);
+  assert.deepEqual(filterWallsForRange(walls, "custom", { customLow: 91_000, customHigh: 89_000 }).map((wall) => wall.price), [90_000]);
+});
+
+test("persists min notional and price-range settings and ignores forged modes", () => {
+  assert.equal(LARGE_ORDER_SR_MIN_NOTIONAL_KEY, "th-large-order-sr-min-notional");
+  assert.equal(LARGE_ORDER_SR_RANGE_KEY, "th-large-order-sr-range");
+  const storage = memoryStorage();
+  assert.equal(readStoredMinNotional(storage), 100_000);
+  writeStoredMinNotional(storage, 50_000);
+  assert.equal(readStoredMinNotional(storage), 50_000);
+  writeStoredMinNotional(storage, 5_000);
+  assert.equal(readStoredMinNotional(storage), 10_000);
+  writeStoredMinNotional(storage, 80_000_000);
+  assert.equal(readStoredMinNotional(storage), 50_000_000);
+  assert.deepEqual(readStoredWallRange(storage), { mode: "book", low: null, high: null });
+  writeStoredWallRange(storage, { mode: "custom", low: 80_000, high: 90_000 });
+  assert.deepEqual(readStoredWallRange(storage), { mode: "custom", low: 80_000, high: 90_000 });
+  storage.setItem(LARGE_ORDER_SR_RANGE_KEY, JSON.stringify({ mode: "historical", low: 1, high: 2 }));
+  assert.deepEqual(readStoredWallRange(storage), { mode: "book", low: null, high: null });
+  storage.setItem(LARGE_ORDER_SR_RANGE_KEY, JSON.stringify({ mode: "visible", low: -4, high: "nope" }));
+  assert.deepEqual(readStoredWallRange(storage), { mode: "visible", low: null, high: null });
+  writeStoredMinNotional({
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  }, 250_000);
+  writeStoredWallRange({
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  }, { mode: "book", low: null, high: null });
+  assert.equal(readStoredMinNotional({
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  }), 100_000);
+});
+
+test("loadLargeOrderWalls sends clamped min notional on the depth request", async () => {
+  const calls = [];
+  const fetchImpl = async (input) => {
+    calls.push(String(input));
+    return jsonResponse({
+      venue: "okx",
+      symbol: "BTCUSDT",
+      source: "official",
+      midPrice: 80_000,
+      walls: [wallAt("bid", 80_000, 200_000)],
+      notice: null,
+      updatedAt: 1,
+    });
+  };
+  await loadLargeOrderWalls("okx", "BTCUSDT", fetchImpl, { minNotional: 50_000, retryPreferred: false });
+  assert.ok(calls.some((url) => url.includes("/api/depth?") && url.includes("minNotional=50000")));
+  calls.length = 0;
+  await loadLargeOrderWalls("okx", "BTCUSDT", fetchImpl, { minNotional: -1, retryPreferred: false });
+  assert.ok(calls.some((url) => url.includes("minNotional=10000")));
+  assert.ok(calls.every((url) => !url.includes("minNotional=-1")));
+});
+
 test("persists the left-rail S/R toggle without throwing in private mode", () => {
   const storage = memoryStorage();
   assert.equal(readStoredFlag(storage, LARGE_ORDER_SR_STORAGE_KEY, false), false);
@@ -301,7 +379,23 @@ test("workspace plots S/R on the K-chart from the left rail and never adds a rig
   assert.match(toolbar, /data-icon="large-order-sr"/);
   assert.match(workspace, /\[showFast, setShowFast\] = useState\(false\)/);
   assert.match(workspace, /\[showSlow, setShowSlow\] = useState\(false\)/);
-  assert.match(workspace, /showLargeOrderSr && <div className="sr-walls-chip">S\/R · \{largeOrderWalls\.length\}<\/div>/);
+  assert.match(workspace, /S\/R · \{displayedWalls\.length\}/);
+  assert.match(workspace, /<SrWallControls /);
+  assert.match(workspace, /filterWallsForRange/);
+  assert.match(workspace, /loadLargeOrderWalls\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional \}\)/);
+  assert.match(workspace, /getVisibleRange\(\)/);
+  const controls = readFileSync(fileURLToPath(new URL("../components/sr-wall-controls.tsx", import.meta.url)), "utf8");
+  assert.match(controls, /\$50k/);
+  assert.match(controls, /\$100k/);
+  assert.match(controls, /\$250k/);
+  assert.match(controls, /\$1M/);
+  assert.match(controls, /aria-label="Custom minimum wall notional"/);
+  assert.match(controls, /aria-label="Wall price range"/);
+  assert.match(controls, /aria-label="Custom range low"/);
+  assert.match(controls, /aria-label="Custom range high"/);
+  assert.match(controls, />Book</);
+  assert.match(controls, />Visible</);
+  assert.match(controls, />Custom</);
   const primitive = readFileSync(fileURLToPath(new URL("../lib/large-order-sr-primitive.ts", import.meta.url)), "utf8");
   assert.match(primitive, /layoutSeparatedWalls/);
   assert.doesNotMatch(primitive, /historical|swing high|candle high/);
@@ -311,6 +405,6 @@ test("workspace plots S/R on the K-chart from the left rail and never adds a rig
   assert.match(workspace, /data-large-order-sr/);
   assert.doesNotMatch(workspace, /large-order-list|order-book-panel|大额挂单/);
   assert.doesNotMatch(toolbar, /large-order-list|order-book-panel/);
-  const marketEffect = workspace.slice(workspace.indexOf("loadLargeOrderWalls(activeVenue"), workspace.indexOf("}, [activeVenue, showLargeOrderSr, symbol]"));
+  const marketEffect = workspace.slice(workspace.indexOf("loadLargeOrderWalls(activeVenue"), workspace.indexOf("}, [activeVenue, minNotional, showLargeOrderSr, symbol]"));
   assert.doesNotMatch(marketEffect, /setConsoleText|setConsoleKind/);
 });

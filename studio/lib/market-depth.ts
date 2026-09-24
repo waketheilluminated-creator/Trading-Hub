@@ -16,7 +16,10 @@ import {
 type FetchImpl = typeof fetch;
 
 export const LARGE_ORDER_SR_STORAGE_KEY = "th-large-order-sr";
+export const LARGE_ORDER_SR_MIN_NOTIONAL_KEY = "th-large-order-sr-min-notional";
+export const LARGE_ORDER_SR_RANGE_KEY = "th-large-order-sr-range";
 export const LARGE_ORDER_SR_EMPTY = "Order book unavailable.";
+export const WALL_NOTIONAL_PRESETS_USD = [50_000, 100_000, 250_000, 1_000_000] as const;
 /** Live L2 filter. Omitted or forged notionals cannot drop below MIN_WALL_NOTIONAL_USD. */
 export const DEFAULT_MIN_WALL_NOTIONAL_USD = 100_000;
 export const MIN_WALL_NOTIONAL_USD = 10_000;
@@ -53,6 +56,26 @@ export type PlacedWallBand = {
   edgeY: number;
   thicknessPx: number;
 };
+
+export type WallRangeMode = "book" | "visible" | "custom";
+
+export type WallRangeSettings = {
+  mode: WallRangeMode;
+  low: number | null;
+  high: number | null;
+};
+
+export type PriceSpan = {
+  low: number;
+  high: number;
+};
+
+type KeyValueStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+const DEFAULT_WALL_RANGE: WallRangeSettings = { mode: "book", low: null, high: null };
 
 export type DepthSnapshot = {
   venue: MarketVenue;
@@ -236,6 +259,91 @@ export function layoutSeparatedWalls(
       : natural;
     return { wall: item.wall, centerY: item.centerY, edgeY: item.trueY, thicknessPx };
   });
+}
+
+export function readStoredMinNotional(
+  storage: KeyValueStorage | null | undefined,
+  fallback = DEFAULT_MIN_WALL_NOTIONAL_USD,
+): number {
+  if (!storage) return clampMinNotional(fallback);
+  try {
+    const raw = storage.getItem(LARGE_ORDER_SR_MIN_NOTIONAL_KEY);
+    if (raw == null || raw.trim() === "") return clampMinNotional(fallback);
+    return clampMinNotional(raw);
+  } catch {
+    return clampMinNotional(fallback);
+  }
+}
+
+export function writeStoredMinNotional(storage: KeyValueStorage | null | undefined, value: number): void {
+  try {
+    storage?.setItem(LARGE_ORDER_SR_MIN_NOTIONAL_KEY, String(clampMinNotional(value)));
+  } catch {
+    // Quota or private mode should not break the chart.
+  }
+}
+
+export function readStoredWallRange(storage: KeyValueStorage | null | undefined): WallRangeSettings {
+  if (!storage) return { ...DEFAULT_WALL_RANGE };
+  try {
+    const raw = storage.getItem(LARGE_ORDER_SR_RANGE_KEY);
+    if (!raw) return { ...DEFAULT_WALL_RANGE };
+    const parsed = JSON.parse(raw) as { mode?: unknown; low?: unknown; high?: unknown };
+    if (parsed.mode !== "book" && parsed.mode !== "visible" && parsed.mode !== "custom") return { ...DEFAULT_WALL_RANGE };
+    return { mode: parsed.mode, low: finitePrice(parsed.low), high: finitePrice(parsed.high) };
+  } catch {
+    return { ...DEFAULT_WALL_RANGE };
+  }
+}
+
+export function writeStoredWallRange(storage: KeyValueStorage | null | undefined, settings: WallRangeSettings): void {
+  const mode: WallRangeMode = settings.mode === "visible" || settings.mode === "custom" ? settings.mode : "book";
+  try {
+    storage?.setItem(LARGE_ORDER_SR_RANGE_KEY, JSON.stringify({
+      mode,
+      low: finitePrice(settings.low),
+      high: finitePrice(settings.high),
+    }));
+  } catch {
+    // Quota or private mode should not break the chart.
+  }
+}
+
+export function priceSpanFromVisibleRange(range: { from: number; to: number } | null | undefined): PriceSpan | null {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) return null;
+  return { low: Math.min(range.from, range.to), high: Math.max(range.from, range.to) };
+}
+
+export function wallOverlapsPriceSpan(wall: Pick<OrderWall, "price" | "low" | "high">, span: PriceSpan): boolean {
+  if (!Number.isFinite(span.low) || !Number.isFinite(span.high)) return false;
+  const spanLow = Math.min(span.low, span.high);
+  const spanHigh = Math.max(span.low, span.high);
+  const wallLow = Math.min(wall.low, wall.high, wall.price);
+  const wallHigh = Math.max(wall.low, wall.high, wall.price);
+  return wallHigh >= spanLow && wallLow <= spanHigh;
+}
+
+export function filterWallsForRange(
+  walls: readonly OrderWall[],
+  mode: WallRangeMode,
+  options: { visible?: PriceSpan | null; customLow?: number | null; customHigh?: number | null } = {},
+): OrderWall[] {
+  if (mode === "visible") {
+    if (!options.visible) return walls.slice();
+    return walls.filter((wall) => wallOverlapsPriceSpan(wall, options.visible as PriceSpan));
+  }
+  if (mode === "custom") {
+    const low = finitePrice(options.customLow);
+    const high = finitePrice(options.customHigh);
+    if (low == null || high == null) return walls.slice();
+    return walls.filter((wall) => wallOverlapsPriceSpan(wall, { low, high }));
+  }
+  return walls.slice();
+}
+
+function finitePrice(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return value;
 }
 
 export async function fetchVenueDepth(

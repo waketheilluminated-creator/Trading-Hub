@@ -62,6 +62,8 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /title="Show support\/resistance walls"/);
   assert.match(html, /data-icon="large-order-sr"/);
   assert.doesNotMatch(html, /S\/R ·/);
+  assert.doesNotMatch(html, /Custom minimum wall notional/);
+  assert.doesNotMatch(html, /Wall price range/);
   assert.doesNotMatch(html, /large-order-list|order-book-panel|大额挂单/);
   assert.match(html, /Order flow · separate pane/);
   assert.match(html, /Derivatives · separate pane/);

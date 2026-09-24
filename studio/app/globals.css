@@ -76,7 +76,15 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .quote-line { display:flex; gap:12px; margin-top:6px; color:var(--muted); font:11px var(--font-geist-mono); }
 .quote-line .price { color:var(--ink); font-size:13px; }
 .quote-line .positive { color:var(--accent); }
-.sr-walls-chip { width:max-content; margin-top:6px; padding:2px 6px; border:1px solid rgba(118,231,164,.28); border-radius:4px; color:#c8efd6; background:rgba(118,231,164,.08); font:10px var(--font-geist-mono); letter-spacing:.02em; pointer-events:none; }
+.sr-walls-chip { width:max-content; padding:2px 6px; border:1px solid rgba(118,231,164,.28); border-radius:4px; color:#c8efd6; background:rgba(118,231,164,.08); font:10px var(--font-geist-mono); letter-spacing:.02em; pointer-events:none; }
+.sr-walls-panel { width:max-content; max-width:340px; margin-top:6px; pointer-events:auto; }
+.sr-wall-controls { margin-top:4px; padding:6px; display:flex; flex-direction:column; gap:4px; border:1px solid #2a3646; border-radius:6px; background:rgba(11,16,23,.92); }
+.sr-wall-row { display:flex; flex-wrap:wrap; align-items:center; gap:3px; }
+.sr-wall-label { color:var(--faint); font:9px var(--font-geist-mono); letter-spacing:.04em; margin-right:2px; }
+.sr-mini-button { padding:2px 5px; color:var(--muted); border:1px solid transparent; border-radius:4px; background:transparent; cursor:pointer; font:10px var(--font-geist-mono); }
+.sr-mini-button[aria-pressed="true"] { color:#d7f5e2; border-color:rgba(118,231,164,.35); background:rgba(118,231,164,.1); }
+.sr-mini-button:hover { color:var(--ink); background:var(--panel-2); }
+.sr-mini-input { width:78px; padding:2px 4px; color:var(--ink); border:1px solid var(--line); border-radius:4px; background:#101720; font:10px var(--font-geist-mono); }
 .indicator-label { width:max-content; display:flex; align-items:center; gap:5px; margin-top:5px; padding:3px 4px 3px 0; font:10px var(--font-geist-mono); color:#b2bac6; pointer-events:auto; }
 .indicator-label > span { display:flex; align-items:center; }
 .indicator-label i { display:inline-block; width:7px; height:2px; margin-right:6px; vertical-align:middle; }
