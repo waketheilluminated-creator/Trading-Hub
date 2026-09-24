@@ -72,15 +72,17 @@ export function DrawingToolbar({ activeTool, onToolChange, largeOrderBarsVisible
     { tool: "crosshair", label: "Crosshair drawing tool", Icon: CrosshairIcon },
   ];
 
+  const largeOrderWallsLabel = largeOrderBarsVisible ? "Hide support/resistance walls" : "Show support/resistance walls";
+
   return <nav className="left-rail" aria-label="Chart drawing tools">
     {tools.map(({ tool, label, Icon }) => <button key={tool} type="button" className={`tool-button ${activeTool === tool ? "active" : ""}`} aria-label={label} aria-pressed={activeTool === tool} title={label.replace(" drawing tool", "")} onClick={() => onToolChange(tool)}><Icon /></button>)}
     <span className="rail-spacer" />
     <button
       type="button"
       className={`tool-button ${largeOrderBarsVisible ? "active" : ""}`}
-      aria-label="Toggle large-order support and resistance bars"
+      aria-label={largeOrderWallsLabel}
       aria-pressed={largeOrderBarsVisible}
-      title={largeOrderBarsVisible ? "Hide large-order S/R bars" : "Show large-order S/R bars"}
+      title={largeOrderWallsLabel}
       onClick={onLargeOrderBarsToggle}
     >
       <LargeOrderSrIcon />

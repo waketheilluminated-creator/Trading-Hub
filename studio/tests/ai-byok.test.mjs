@@ -94,7 +94,21 @@ test("context pack attaches candles and derivatives and degrades missing CVD", (
   assert.equal(pack.derivatives.available, true);
   assert.equal(pack.cvd.available, false);
   assert.match(pack.cvd.reason, /CVD is not attached/);
+  assert.equal(pack.indicators.builtIn.ema9Visible, true);
+  assert.equal(pack.indicators.builtIn.ema21Visible, true);
   assert.deepEqual(summarizeContextPack(pack), { candles: 2, hasDerivatives: true, hasCvd: false, history: "current-window", indicators: 3 });
+
+  const clientHidden = buildContextPack({
+    symbol: "BTCUSDT",
+    venue: "bybit",
+    timeframe: "15m",
+    candles: [{ time: 1700000000, open: 1, high: 1, low: 1, close: 1 }],
+    ema9Visible: false,
+    ema21Visible: false,
+  });
+  assert.equal(clientHidden.indicators.builtIn.ema9Visible, false);
+  assert.equal(clientHidden.indicators.builtIn.ema21Visible, false);
+  assert.equal(summarizeContextPack(clientHidden).indicators, 0);
 
   const withCvd = buildContextPack({
     symbol: "ETHUSDT",

@@ -16,12 +16,13 @@ import {
   OI_PANE_EMPTY,
   OI_PANE_STORAGE_KEY,
   oiPaneModel,
+  notifyPanePrefs,
+  panePrefsAreLive,
   readClientPaneFlag,
   readStoredFlag,
   subscribePanePrefs,
   toBarTimeSeconds,
   writeStoredFlag,
-  notifyPanePrefs,
 } from "@/lib/chart-indicator-panes.ts";
 import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
 import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
@@ -31,10 +32,20 @@ import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/work
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
 import { LargeOrderSrPrimitive } from "@/lib/large-order-sr-primitive.ts";
 import {
+  DEFAULT_MIN_WALL_NOTIONAL_USD,
   LARGE_ORDER_SR_EMPTY,
   LARGE_ORDER_SR_STORAGE_KEY,
+  clampMinNotional,
+  filterWallsForRange,
   loadLargeOrderWalls,
+  priceSpanFromVisibleRange,
+  readStoredMinNotional,
+  readStoredWallRange,
+  writeStoredMinNotional,
+  writeStoredWallRange,
   type OrderWall,
+  type PriceSpan,
+  type WallRangeSettings,
 } from "@/lib/market-depth.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
@@ -45,6 +56,7 @@ import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type Mark
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
+import { SrWallControls } from "@/components/sr-wall-controls";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { savePineSource, usePineSource } from "./pine-source";
 
@@ -61,6 +73,26 @@ type MarketOption = SymbolSearchMarket;
 
 function venueOptions() {
   return MARKET_VENUES.map((venue) => <option key={venue} value={venue}>{venueLabel(venue)}</option>);
+}
+
+const BOOK_WALL_RANGE: WallRangeSettings = { mode: "book", low: null, high: null };
+let liveWallRangeSnapshot: WallRangeSettings = BOOK_WALL_RANGE;
+let liveWallRangeToken = "book::";
+
+function readLiveMinNotional(): number {
+  if (!panePrefsAreLive()) return DEFAULT_MIN_WALL_NOTIONAL_USD;
+  return readStoredMinNotional(window.localStorage);
+}
+
+function readLiveWallRange(): WallRangeSettings {
+  if (!panePrefsAreLive()) return BOOK_WALL_RANGE;
+  const next = readStoredWallRange(window.localStorage);
+  const token = `${next.mode}:${next.low ?? ""}:${next.high ?? ""}`;
+  if (token !== liveWallRangeToken) {
+    liveWallRangeToken = token;
+    liveWallRangeSnapshot = next;
+  }
+  return liveWallRangeSnapshot;
 }
 
 const INTERVALS: { label: string; value: Interval }[] = [
@@ -239,8 +271,8 @@ export function TradingWorkspace() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showFast, setShowFast] = useState(true);
-  const [showSlow, setShowSlow] = useState(true);
+  const [showFast, setShowFast] = useState(false);
+  const [showSlow, setShowSlow] = useState(false);
   const [activeTab, setActiveTab] = useState<"pine" | "console">("pine");
   const pine = usePineSource();
   const [consoleText, setConsoleText] = useState("Ready. Pine Script v5 subset loaded.");
@@ -285,6 +317,9 @@ export function TradingWorkspace() {
   }, []);
   const [largeOrderWalls, setLargeOrderWalls] = useState<OrderWall[]>([]);
   const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
+  const minNotional = useSyncExternalStore(subscribePanePrefs, readLiveMinNotional, () => DEFAULT_MIN_WALL_NOTIONAL_USD);
+  const wallRange = useSyncExternalStore(subscribePanePrefs, readLiveWallRange, () => BOOK_WALL_RANGE);
+  const [visiblePriceSpan, setVisiblePriceSpan] = useState<PriceSpan | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
@@ -513,15 +548,60 @@ export function TradingWorkspace() {
     oiSeriesRef.current?.setData(oiModel.points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })));
   }, [chartVersion, oiModel, showOiPane]);
 
+  const displayedWalls = useMemo(
+    () => filterWallsForRange(largeOrderWalls, wallRange.mode, {
+      visible: visiblePriceSpan,
+      customLow: wallRange.low,
+      customHigh: wallRange.high,
+    }),
+    [largeOrderWalls, visiblePriceSpan, wallRange],
+  );
+
+  const applyMinNotional = useCallback((value: number) => {
+    writeStoredMinNotional(window.localStorage, clampMinNotional(value));
+    notifyPanePrefs();
+  }, []);
+
+  const applyWallRange = useCallback((next: WallRangeSettings) => {
+    writeStoredWallRange(window.localStorage, next);
+    notifyPanePrefs();
+  }, []);
+
   useEffect(() => {
-    largeOrderPrimitiveRef.current?.setWalls(showLargeOrderSr ? largeOrderWalls : []);
-  }, [chartVersion, largeOrderWalls, showLargeOrderSr]);
+    largeOrderPrimitiveRef.current?.setWalls(showLargeOrderSr ? displayedWalls : []);
+  }, [chartVersion, displayedWalls, showLargeOrderSr]);
+
+  useEffect(() => {
+    if (!showLargeOrderSr || wallRange.mode !== "visible") return;
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+    const read = () => {
+      const next = priceSpanFromVisibleRange(series.priceScale().getVisibleRange());
+      setVisiblePriceSpan((current) => {
+        if (!current && !next) return current;
+        if (current && next && current.low === next.low && current.high === next.high) return current;
+        return next;
+      });
+    };
+    const scheduleRead = () => { requestAnimationFrame(() => requestAnimationFrame(read)); };
+    read();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleRead);
+    const host = chartHost.current;
+    host?.addEventListener("wheel", scheduleRead, { passive: true });
+    host?.addEventListener("pointerup", scheduleRead);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleRead);
+      host?.removeEventListener("wheel", scheduleRead);
+      host?.removeEventListener("pointerup", scheduleRead);
+    };
+  }, [candles.length, chartVersion, showLargeOrderSr, wallRange.mode]);
 
   useEffect(() => {
     if (!showLargeOrderSr) return;
     let active = true;
     let retryPreferred = true;
-    const load = () => loadLargeOrderWalls(activeVenue, symbol, fetch, { retryPreferred })
+    const load = () => loadLargeOrderWalls(activeVenue, symbol, fetch, { retryPreferred, minNotional })
       .then((result) => {
         retryPreferred = false;
         if (!active) return;
@@ -536,7 +616,7 @@ export function TradingWorkspace() {
     load();
     const timer = window.setInterval(load, 8000);
     return () => { active = false; clearInterval(timer); };
-  }, [activeVenue, showLargeOrderSr, symbol]);
+  }, [activeVenue, minNotional, showLargeOrderSr, symbol]);
 
   useEffect(() => {
     if (!showOiPane) return;
@@ -873,6 +953,10 @@ export function TradingWorkspace() {
               {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
               {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
             </div>
+            {showLargeOrderSr && <div className="sr-walls-panel">
+              <div className="sr-walls-chip">S/R · {displayedWalls.length}</div>
+              <SrWallControls minNotional={minNotional} onMinNotional={applyMinNotional} range={wallRange} onRange={applyWallRange} />
+            </div>}
             <div className="chart-canvas" ref={chartHost} />
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
