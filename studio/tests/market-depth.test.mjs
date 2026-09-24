@@ -13,6 +13,9 @@ import {
   parseDepthQuery,
   parseOkxContractValue,
   parseVenueDepth,
+  layoutSeparatedWalls,
+  MIN_WALL_CENTER_GAP_PX,
+  MIN_WALL_NOTIONAL_USD,
   visualWallBands,
   wallFillStyle,
 } from "../lib/market-depth.ts";
@@ -54,11 +57,15 @@ test("rejects invalid venue and symbol without fetching depth", () => {
 });
 
 test("clamps forged min notional instead of trusting client bounds", () => {
+  assert.equal(DEFAULT_MIN_WALL_NOTIONAL_USD, 100_000);
+  assert.equal(MIN_WALL_NOTIONAL_USD, 10_000);
   assert.equal(clampMinNotional("abc"), DEFAULT_MIN_WALL_NOTIONAL_USD);
   assert.equal(clampMinNotional(null), DEFAULT_MIN_WALL_NOTIONAL_USD);
   assert.equal(clampMinNotional(""), DEFAULT_MIN_WALL_NOTIONAL_USD);
   assert.equal(clampMinNotional(-50), 10_000);
+  assert.equal(clampMinNotional(9_999), 10_000);
   assert.equal(clampMinNotional(1e12), 50_000_000);
+  assert.equal(clampMinNotional(100_000), 100_000);
   assert.equal(clampMinNotional(500_000), 500_000);
 });
 
@@ -229,6 +236,52 @@ test("drops forged tiny walls from a proxied depth payload", async () => {
   assert.equal(result.snapshot.walls[0].notional, 810_000);
 });
 
+function wallAt(side, price, notional) {
+  return { side, price, low: price, high: price, size: notional / price, notional };
+}
+
+test("spreads collapsed live-book walls into distinct green and red bands", () => {
+  const walls = visualWallBands([
+    wallAt("ask", 84_020, 300_000),
+    wallAt("ask", 84_050, 420_000),
+    wallAt("ask", 84_080, 260_000),
+    wallAt("bid", 83_990, 500_000),
+    wallAt("bid", 83_970, 250_000),
+  ]);
+  const mid = 84_000;
+  const priceToY = (price) => 300 - (price - mid) * (2 / 50);
+  const placed = layoutSeparatedWalls(walls, priceToY);
+  assert.equal(placed.length, 5);
+  const asks = placed.filter((band) => band.wall.side === "ask").map((band) => band.centerY).sort((a, b) => a - b);
+  const bids = placed.filter((band) => band.wall.side === "bid").map((band) => band.centerY).sort((a, b) => a - b);
+  assert.ok(Math.max(...asks) <= Math.min(...bids) - MIN_WALL_CENTER_GAP_PX);
+  for (const group of [asks, bids]) {
+    for (let index = 1; index < group.length; index += 1) {
+      assert.ok(group[index] - group[index - 1] >= MIN_WALL_CENTER_GAP_PX);
+    }
+  }
+  assert.ok(placed.every((band) => band.thicknessPx <= MIN_WALL_CENTER_GAP_PX - 2));
+  assert.ok(placed.every((band) => band.edgeY !== band.centerY));
+  assert.match(wallFillStyle(placed.find((band) => band.wall.side === "bid").wall), /83, 201, 144/);
+  assert.match(wallFillStyle(placed.find((band) => band.wall.side === "ask").wall), /231, 103, 112/);
+});
+
+test("leaves already separated walls on their live prices", () => {
+  const walls = visualWallBands([
+    wallAt("bid", 80_000, 200_000),
+    wallAt("ask", 81_000, 220_000),
+  ]);
+  const placed = layoutSeparatedWalls(walls, (price) => (price === 80_000 ? 400 : 80));
+  const bid = placed.find((band) => band.wall.side === "bid");
+  const ask = placed.find((band) => band.wall.side === "ask");
+  assert.equal(bid.centerY, 400);
+  assert.equal(ask.centerY, 80);
+  assert.equal(bid.edgeY, 400);
+  assert.equal(ask.edgeY, 80);
+  assert.ok(bid.thicknessPx >= 3);
+  assert.ok(ask.thicknessPx >= 3);
+});
+
 test("persists the left-rail S/R toggle without throwing in private mode", () => {
   const storage = memoryStorage();
   assert.equal(readStoredFlag(storage, LARGE_ORDER_SR_STORAGE_KEY, false), false);
@@ -248,7 +301,10 @@ test("workspace plots S/R on the K-chart from the left rail and never adds a rig
   assert.match(toolbar, /data-icon="large-order-sr"/);
   assert.match(workspace, /\[showFast, setShowFast\] = useState\(false\)/);
   assert.match(workspace, /\[showSlow, setShowSlow\] = useState\(false\)/);
-  assert.match(workspace, /showLargeOrderSr && <div className="sr-walls-chip">S\/R walls<\/div>/);
+  assert.match(workspace, /showLargeOrderSr && <div className="sr-walls-chip">S\/R · \{largeOrderWalls\.length\}<\/div>/);
+  const primitive = readFileSync(fileURLToPath(new URL("../lib/large-order-sr-primitive.ts", import.meta.url)), "utf8");
+  assert.match(primitive, /layoutSeparatedWalls/);
+  assert.doesNotMatch(primitive, /historical|swing high|candle high/);
   assert.match(workspace, /loadLargeOrderWalls/);
   assert.match(workspace, /LargeOrderSrPrimitive/);
   assert.match(workspace, /LARGE_ORDER_SR_STORAGE_KEY/);

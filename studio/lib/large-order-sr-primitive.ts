@@ -6,7 +6,7 @@ import type {
   Time,
 } from "lightweight-charts";
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
-import { visualWallBands, wallFillStyle, type OrderWall, type VisualWall } from "./market-depth.ts";
+import { layoutSeparatedWalls, visualWallBands, wallEdgeStyle, wallFillStyle, type OrderWall, type PlacedWallBand, type VisualWall } from "./market-depth.ts";
 
 type PriceToCoordinate = (price: number) => number | null;
 
@@ -23,9 +23,9 @@ class LargeOrderSrRenderer implements IPrimitivePaneRenderer {
     const priceToCoordinate = this.getPriceToCoordinate();
     if (!priceToCoordinate) return;
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-      for (const wall of this.getWalls()) {
-        drawWall(context, wall, mediaSize.width, priceToCoordinate);
-      }
+      const placed = layoutSeparatedWalls(this.getWalls(), priceToCoordinate);
+      for (const band of placed) drawWallBand(context, band, mediaSize.width);
+      for (const band of placed) drawWallEdges(context, band, mediaSize.width);
     });
   }
 }
@@ -78,25 +78,16 @@ export class LargeOrderSrPrimitive implements ISeriesPrimitive<Time> {
   }
 }
 
-function drawWall(
-  context: CanvasRenderingContext2D,
-  wall: VisualWall,
-  paneWidth: number,
-  priceToCoordinate: PriceToCoordinate,
-): void {
-  const yPrice = priceToCoordinate(wall.price);
-  const yLow = priceToCoordinate(wall.low);
-  const yHigh = priceToCoordinate(wall.high);
-  if (yPrice == null && yLow == null && yHigh == null) return;
-  const topRaw = Math.min(yLow ?? yPrice ?? 0, yHigh ?? yPrice ?? 0);
-  const bottomRaw = Math.max(yLow ?? yPrice ?? 0, yHigh ?? yPrice ?? 0);
-  const mid = yPrice ?? (topRaw + bottomRaw) / 2;
-  let top = topRaw;
-  let bottom = bottomRaw;
-  if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom - top < wall.thicknessPx) {
-    top = mid - wall.thicknessPx / 2;
-    bottom = mid + wall.thicknessPx / 2;
+function drawWallBand(context: CanvasRenderingContext2D, band: PlacedWallBand, paneWidth: number): void {
+  const top = band.centerY - band.thicknessPx / 2;
+  context.fillStyle = wallFillStyle(band.wall);
+  context.fillRect(0, top, paneWidth, Math.max(1, band.thicknessPx));
+}
+
+function drawWallEdges(context: CanvasRenderingContext2D, band: PlacedWallBand, paneWidth: number): void {
+  context.fillStyle = wallEdgeStyle(band.wall);
+  context.fillRect(0, Math.round(band.centerY), paneWidth, 1);
+  if (Math.abs(band.edgeY - band.centerY) >= 1) {
+    context.fillRect(0, Math.round(band.edgeY), paneWidth, 1);
   }
-  context.fillStyle = wallFillStyle(wall);
-  context.fillRect(0, top, paneWidth, Math.max(1, bottom - top));
 }

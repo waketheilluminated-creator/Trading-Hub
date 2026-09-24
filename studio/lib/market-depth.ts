@@ -17,11 +17,13 @@ type FetchImpl = typeof fetch;
 
 export const LARGE_ORDER_SR_STORAGE_KEY = "th-large-order-sr";
 export const LARGE_ORDER_SR_EMPTY = "Order book unavailable.";
-export const DEFAULT_MIN_WALL_NOTIONAL_USD = 250_000;
+/** Live L2 filter. Omitted or forged notionals cannot drop below MIN_WALL_NOTIONAL_USD. */
+export const DEFAULT_MIN_WALL_NOTIONAL_USD = 100_000;
 export const MIN_WALL_NOTIONAL_USD = 10_000;
 export const MAX_WALL_NOTIONAL_USD = 50_000_000;
 export const DEFAULT_CLUSTER_BPS = 1;
 export const MAX_WALLS_PER_SIDE = 18;
+export const MIN_WALL_CENTER_GAP_PX = 8;
 
 export type BookSide = "bid" | "ask";
 
@@ -42,6 +44,13 @@ export type OrderWall = {
 
 export type VisualWall = OrderWall & {
   opacity: number;
+  thicknessPx: number;
+};
+
+export type PlacedWallBand = {
+  wall: VisualWall;
+  centerY: number;
+  edgeY: number;
   thicknessPx: number;
 };
 
@@ -172,6 +181,61 @@ export function visualWallBands(walls: readonly OrderWall[]): VisualWall[] {
 
 export function wallFillStyle(wall: Pick<VisualWall, "side" | "opacity">): string {
   return `rgba(${wall.side === "bid" ? "83, 201, 144" : "231, 103, 112"}, ${wall.opacity.toFixed(3)})`;
+}
+
+export function wallEdgeStyle(wall: Pick<VisualWall, "side">): string {
+  return wall.side === "bid" ? "rgba(83, 201, 144, 0.95)" : "rgba(231, 103, 112, 0.95)";
+}
+
+export function layoutSeparatedWalls(
+  walls: readonly VisualWall[],
+  priceToY: (price: number) => number | null,
+  minGapPx = MIN_WALL_CENTER_GAP_PX,
+): PlacedWallBand[] {
+  const gap = Math.max(6, minGapPx);
+  const mapped: { wall: VisualWall; trueY: number }[] = [];
+  for (const wall of walls) {
+    const trueY = priceToY(wall.price);
+    if (trueY == null || !Number.isFinite(trueY)) continue;
+    mapped.push({ wall, trueY });
+  }
+  if (!mapped.length) return [];
+
+  const asks = mapped.filter((item) => item.wall.side === "ask").sort((a, b) => a.wall.price - b.wall.price);
+  const bids = mapped.filter((item) => item.wall.side === "bid").sort((a, b) => b.wall.price - a.wall.price);
+  const bestAskY = asks[0]?.trueY;
+  const bestBidY = bids[0]?.trueY;
+  const anchor = bestAskY != null && bestBidY != null ? (bestAskY + bestBidY) / 2 : (bestAskY ?? bestBidY ?? 0);
+  const bothSides = asks.length > 0 && bids.length > 0;
+  const centers: { wall: VisualWall; trueY: number; centerY: number }[] = [];
+
+  const placeSide = (items: typeof asks, direction: -1 | 1) => {
+    items.forEach((item, index) => {
+      let centerY = item.trueY;
+      if (index === 0 && bothSides) {
+        centerY = direction < 0 ? Math.min(item.trueY, anchor - gap / 2) : Math.max(item.trueY, anchor + gap / 2);
+      } else if (index > 0) {
+        const previous = centers[centers.length - 1]?.centerY ?? item.trueY;
+        centerY = direction < 0 ? Math.min(item.trueY, previous - gap) : Math.max(item.trueY, previous + gap);
+      }
+      centers.push({ wall: item.wall, trueY: item.trueY, centerY });
+    });
+  };
+  placeSide(asks, -1);
+  placeSide(bids, 1);
+
+  return centers.map((item) => {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const other of centers) {
+      if (other === item) continue;
+      nearest = Math.min(nearest, Math.abs(item.centerY - other.centerY));
+    }
+    const natural = item.wall.thicknessPx;
+    const thicknessPx = Number.isFinite(nearest) && nearest < natural + 2
+      ? Math.max(2, Math.min(natural, nearest - 2))
+      : natural;
+    return { wall: item.wall, centerY: item.centerY, edgeY: item.trueY, thicknessPx };
+  });
 }
 
 export async function fetchVenueDepth(
