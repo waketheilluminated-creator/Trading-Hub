@@ -58,13 +58,22 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /data-cvd-pane="off"/);
   assert.match(html, /data-oi-pane="off"/);
   assert.match(html, /data-large-order-sr="off"/);
-  assert.match(html, /aria-label="Show support\/resistance walls"/);
-  assert.match(html, /title="Show support\/resistance walls"/);
+  assert.match(html, /data-large-trades="off"/);
+  assert.match(html, /data-large-order-list="off"/);
+  assert.match(html, /aria-label="Show unfilled large orders"/);
+  assert.match(html, /title="Show unfilled large orders \(大额挂单\)"/);
+  assert.match(html, /aria-label="Show executed large trades"/);
+  assert.match(html, /title="Show executed large trades \(大额成交\)"/);
   assert.match(html, /data-icon="large-order-sr"/);
-  assert.doesNotMatch(html, /S\/R ·/);
+  assert.match(html, /data-icon="large-trades"/);
+  assert.ok(html.indexOf('aria-label="Show unfilled large orders"') < html.indexOf('aria-label="Show executed large trades"'));
+  assert.ok(html.indexOf('aria-label="Show executed large trades"') < html.indexOf('aria-label="Chart settings"'));
+  assert.doesNotMatch(buttonOpeningTag(html, "Show unfilled large orders"), /\bactive\b/);
+  assert.doesNotMatch(buttonOpeningTag(html, "Show executed large trades"), /\bactive\b/);
   assert.doesNotMatch(html, /Custom minimum wall notional/);
   assert.doesNotMatch(html, /Wall price range/);
-  assert.doesNotMatch(html, /large-order-list|order-book-panel|大额挂单/);
+  assert.doesNotMatch(html, /aria-label="Unfilled large orders"/);
+  assert.doesNotMatch(html, /aria-label="Executed large trades"/);
   assert.match(html, /Order flow · separate pane/);
   assert.match(html, /Derivatives · separate pane/);
   assert.match(html, /Futures vs spot|Futures − spot/);
@@ -178,6 +187,30 @@ test("depth API can serve OKX public order-book walls without API keys", async (
   assert.equal(payload.symbol, "BTCUSDT");
   assert.ok(Array.isArray(payload.walls));
   assert.equal(typeof payload.midPrice, "number");
+});
+
+test("trades API rejects forged venues and symbols and ignores client trade dumps", async () => {
+  const app = await worker();
+  const unknown = await app.fetch(new Request("http://localhost/api/trades?exchange=unknown&symbol=BTCUSDT&privileged=1&trades=%5B%5D"), env, context);
+  assert.equal(unknown.status, 400);
+  assert.deepEqual(await unknown.json(), { error: "Supported exchanges: bybit, binance, okx, bitget" });
+  const forged = await app.fetch(new Request("http://localhost/api/trades?exchange=okx&symbol=../etc/passwd&minNotional=-1"), env, context);
+  assert.equal(forged.status, 400);
+  assert.deepEqual(await forged.json(), { error: "Use a compact perpetual symbol such as BTCUSDT" });
+});
+
+test("trades API can serve OKX public prints without API keys", async () => {
+  const app = await worker();
+  const response = await app.fetch(new Request("http://localhost/api/trades?exchange=okx&symbol=BTCUSDT&minNotional=100000&privileged=1"), env, context);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.venue, "okx");
+  assert.equal(payload.symbol, "BTCUSDT");
+  assert.equal(payload.source, "official");
+  assert.equal(payload.minNotional, 100_000);
+  assert.ok(Array.isArray(payload.trades));
+  assert.ok(payload.trades.every((trade) => trade.notional >= 100_000 && (trade.side === "buy" || trade.side === "sell")));
+  assert.equal(payload.privileged, undefined);
 });
 
 test("klines and markets APIs reject unsupported exchanges", async () => {

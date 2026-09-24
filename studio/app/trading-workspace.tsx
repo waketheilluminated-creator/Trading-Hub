@@ -30,6 +30,7 @@ import { DrawingSaveScheduler, createDrawingStorage, loadDrawings, type DrawingS
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts";
 import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
+import { LargeTradeMarkersPrimitive } from "@/lib/large-trade-markers-primitive.ts";
 import { LargeOrderSrPrimitive } from "@/lib/large-order-sr-primitive.ts";
 import {
   DEFAULT_MIN_WALL_NOTIONAL_USD,
@@ -41,12 +42,21 @@ import {
   priceSpanFromVisibleRange,
   readStoredMinNotional,
   readStoredWallRange,
+  readStoredWallTracker,
+  trackOrderWalls,
   writeStoredMinNotional,
   writeStoredWallRange,
-  type OrderWall,
+  writeStoredWallTracker,
   type PriceSpan,
+  type TrackedWall,
   type WallRangeSettings,
 } from "@/lib/market-depth.ts";
+import {
+  LARGE_TRADES_EMPTY,
+  LARGE_TRADES_STORAGE_KEY,
+  loadLargeTrades,
+  type LargeTrade,
+} from "@/lib/market-trades.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
 import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
@@ -56,7 +66,7 @@ import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type Mark
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
-import { SrWallControls } from "@/components/sr-wall-controls";
+import { LargeOrderDock } from "@/components/large-order-dock";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { savePineSource, usePineSource } from "./pine-source";
 
@@ -247,6 +257,7 @@ export function TradingWorkspace() {
   const oiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null);
   const largeOrderPrimitiveRef = useRef<LargeOrderSrPrimitive | null>(null);
+  const largeTradePrimitiveRef = useRef<LargeTradeMarkersPrimitive | null>(null);
   const drawingControllerRef = useRef<DrawingController | null>(null);
   const drawingSaveSchedulerRef = useRef<DrawingSaveScheduler | null>(null);
   const drawingStorageRef = useRef<DrawingStorage | null>(null);
@@ -315,8 +326,21 @@ export function TradingWorkspace() {
     writeStoredFlag(window.localStorage, LARGE_ORDER_SR_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
   }, []);
-  const [largeOrderWalls, setLargeOrderWalls] = useState<OrderWall[]>([]);
+  const showLargeTrades = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readClientPaneFlag(window.localStorage, LARGE_TRADES_STORAGE_KEY, false),
+    () => false,
+  );
+  const setShowLargeTrades = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, LARGE_TRADES_STORAGE_KEY, false);
+    writeStoredFlag(window.localStorage, LARGE_TRADES_STORAGE_KEY, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, []);
+  const [largeOrderWalls, setLargeOrderWalls] = useState<TrackedWall[]>([]);
   const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
+  const [largeTrades, setLargeTrades] = useState<LargeTrade[]>([]);
+  const [largeTradeNotice, setLargeTradeNotice] = useState<string | null>(null);
+  const [wallClock, setWallClock] = useState(() => Date.now());
   const minNotional = useSyncExternalStore(subscribePanePrefs, readLiveMinNotional, () => DEFAULT_MIN_WALL_NOTIONAL_USD);
   const wallRange = useSyncExternalStore(subscribePanePrefs, readLiveWallRange, () => BOOK_WALL_RANGE);
   const [visiblePriceSpan, setVisiblePriceSpan] = useState<PriceSpan | null>(null);
@@ -443,11 +467,13 @@ export function TradingWorkspace() {
     const candleSeries = chart.addSeries(CandlestickSeries, { upColor: "#53c990", downColor: "#e76770", wickUpColor: "#53c990", wickDownColor: "#e76770", borderVisible: false });
     const drawingPrimitive = new DrawingPrimitive();
     const largeOrderPrimitive = new LargeOrderSrPrimitive();
+    const largeTradePrimitive = new LargeTradeMarkersPrimitive();
     const drawingStorage = drawingStorageRef.current ?? createDrawingStorage();
     drawingStorageRef.current = drawingStorage;
     const drawingSaveScheduler = new DrawingSaveScheduler(drawingStorage);
     candleSeries.attachPrimitive(drawingPrimitive);
     candleSeries.attachPrimitive(largeOrderPrimitive);
+    candleSeries.attachPrimitive(largeTradePrimitive);
     const replaceDrawings = (next: Drawing[], kind: DrawingChangeKind) => {
       drawingsRef.current = next;
       setDrawings(next);
@@ -481,6 +507,7 @@ export function TradingWorkspace() {
     cvdSeriesRef.current = null; oiSeriesRef.current = null;
     drawingPrimitiveRef.current = drawingPrimitive;
     largeOrderPrimitiveRef.current = largeOrderPrimitive;
+    largeTradePrimitiveRef.current = largeTradePrimitive;
     drawingControllerRef.current = drawingController;
     drawingSaveSchedulerRef.current = drawingSaveScheduler;
     drawingController.attach(chartHost.current);
@@ -489,11 +516,13 @@ export function TradingWorkspace() {
     return () => {
       drawingSaveScheduler.flush();
       drawingController.detach();
+      candleSeries.detachPrimitive(largeTradePrimitive);
       candleSeries.detachPrimitive(largeOrderPrimitive);
       candleSeries.detachPrimitive(drawingPrimitive);
       if (drawingControllerRef.current === drawingController) drawingControllerRef.current = null;
       if (drawingPrimitiveRef.current === drawingPrimitive) drawingPrimitiveRef.current = null;
       if (largeOrderPrimitiveRef.current === largeOrderPrimitive) largeOrderPrimitiveRef.current = null;
+      if (largeTradePrimitiveRef.current === largeTradePrimitive) largeTradePrimitiveRef.current = null;
       if (drawingSaveSchedulerRef.current === drawingSaveScheduler) drawingSaveSchedulerRef.current = null;
       chart.remove();
       chartRef.current = null; candleSeriesRef.current = null; fastSeriesRef.current = null; slowSeriesRef.current = null;
@@ -572,6 +601,16 @@ export function TradingWorkspace() {
   }, [chartVersion, displayedWalls, showLargeOrderSr]);
 
   useEffect(() => {
+    largeTradePrimitiveRef.current?.setTrades(showLargeTrades ? largeTrades : [], interval);
+  }, [chartVersion, interval, largeTrades, showLargeTrades]);
+
+  useEffect(() => {
+    if (!showLargeOrderSr) return;
+    const timer = window.setInterval(() => setWallClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [showLargeOrderSr]);
+
+  useEffect(() => {
     if (!showLargeOrderSr || wallRange.mode !== "visible") return;
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
@@ -601,12 +640,20 @@ export function TradingWorkspace() {
     if (!showLargeOrderSr) return;
     let active = true;
     let retryPreferred = true;
+    let seeded = true;
+    let previous = readStoredWallTracker(window.localStorage, activeVenue, symbol);
     const load = () => loadLargeOrderWalls(activeVenue, symbol, fetch, { retryPreferred, minNotional })
       .then((result) => {
         retryPreferred = false;
         if (!active) return;
-        setLargeOrderWalls(result.snapshot.walls);
-        setLargeOrderNotice(null);
+        const now = Date.now();
+        const tracked = trackOrderWalls(previous, result.snapshot.walls, now, { dropUnmatched: seeded });
+        seeded = false;
+        previous = tracked;
+        writeStoredWallTracker(window.localStorage, activeVenue, symbol, tracked);
+        setWallClock(now);
+        setLargeOrderWalls(tracked);
+        setLargeOrderNotice(result.notice);
       })
       .catch((error) => {
         if (!active) return;
@@ -617,6 +664,27 @@ export function TradingWorkspace() {
     const timer = window.setInterval(load, 8000);
     return () => { active = false; clearInterval(timer); };
   }, [activeVenue, minNotional, showLargeOrderSr, symbol]);
+
+  useEffect(() => {
+    if (!showLargeTrades) return;
+    let active = true;
+    let retryPreferred = true;
+    const load = () => loadLargeTrades(activeVenue, symbol, fetch, { retryPreferred, minNotional })
+      .then((result) => {
+        retryPreferred = false;
+        if (!active) return;
+        setLargeTrades(result.snapshot.trades);
+        setLargeTradeNotice(result.notice);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLargeTrades([]);
+        setLargeTradeNotice(shortCopy(error instanceof Error ? error.message : LARGE_TRADES_EMPTY, LARGE_TRADES_EMPTY));
+      });
+    load();
+    const timer = window.setInterval(load, 8000);
+    return () => { active = false; clearInterval(timer); };
+  }, [activeVenue, minNotional, showLargeTrades, symbol]);
 
   useEffect(() => {
     if (!showOiPane) return;
@@ -941,10 +1009,12 @@ export function TradingWorkspace() {
             <DrawingToolbar
               activeTool={activeDrawingTool}
               onToolChange={changeDrawingToolFromToolbar}
-              largeOrderBarsVisible={showLargeOrderSr}
-              onLargeOrderBarsToggle={() => setShowLargeOrderSr((value) => !value)}
+              unfilledLargeOrdersVisible={showLargeOrderSr}
+              onUnfilledLargeOrdersToggle={() => setShowLargeOrderSr((value) => !value)}
+              executedLargeTradesVisible={showLargeTrades}
+              onExecutedLargeTradesToggle={() => setShowLargeTrades((value) => !value)}
             />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"}>
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
@@ -953,10 +1023,18 @@ export function TradingWorkspace() {
               {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
               {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
             </div>
-            {showLargeOrderSr && <div className="sr-walls-panel">
-              <div className="sr-walls-chip">S/R · {displayedWalls.length}</div>
-              <SrWallControls minNotional={minNotional} onMinNotional={applyMinNotional} range={wallRange} onRange={applyWallRange} />
-            </div>}
+            {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
+              showUnfilled={showLargeOrderSr}
+              showExecuted={showLargeTrades}
+              walls={displayedWalls}
+              trades={largeTrades}
+              now={wallClock}
+              minNotional={minNotional}
+              onMinNotional={applyMinNotional}
+              range={wallRange}
+              onRange={applyWallRange}
+              notice={[showLargeOrderSr ? largeOrderNotice : null, showLargeTrades ? largeTradeNotice : null].filter(Boolean).join(" ") || null}
+            />}
             <div className="chart-canvas" ref={chartHost} />
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
@@ -970,12 +1048,13 @@ export function TradingWorkspace() {
               }} /></label>
             </form>}
             {marketStatus.notice && candles.length > 0 && <div className="market-banner" role="status">{marketStatus.notice} Switch venue to try another feed.</div>}
-            {((showCvdPane && !cvdModel.available) || (showOiPane && !oiModel.available) || (showLargeOrderSr && largeOrderNotice)) && (
+            {((showCvdPane && !cvdModel.available) || (showOiPane && !oiModel.available) || (showLargeOrderSr && largeOrderNotice) || (showLargeTrades && largeTradeNotice)) && (
               <div className="pane-empty-notice" role="status">
                 {[
                   showCvdPane && !cvdModel.available ? (cvdModel.emptyNotice || cvdError || CVD_PANE_EMPTY) : null,
                   showOiPane && !oiModel.available ? shortCopy(oiHistoryNotice, oiModel.emptyNotice || OI_PANE_EMPTY) : null,
                   showLargeOrderSr && largeOrderNotice ? largeOrderNotice : null,
+                  showLargeTrades && largeTradeNotice ? largeTradeNotice : null,
                 ].filter(Boolean).join(" ")}
               </div>
             )}
