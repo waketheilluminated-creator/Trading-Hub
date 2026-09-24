@@ -948,15 +948,15 @@ export function TradingWorkspace() {
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
-              {showLargeOrderSr && <div className="sr-walls-panel">
-                <div className="sr-walls-chip">S/R · {displayedWalls.length}</div>
-                <SrWallControls minNotional={minNotional} onMinNotional={applyMinNotional} range={wallRange} onRange={applyWallRange} />
-              </div>}
               {showFast && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />EMA 9</span><button className="indicator-remove" aria-label="Remove EMA 9 indicator" title="Remove indicator" onClick={() => setShowFast(false)}>×</button></div>}
               {showSlow && <div className="indicator-label"><span><i style={{ background: "var(--amber)" }} />EMA 21</span><button className="indicator-remove" aria-label="Remove EMA 21 indicator" title="Remove indicator" onClick={() => setShowSlow(false)}>×</button></div>}
               {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
               {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
             </div>
+            {showLargeOrderSr && <div className="sr-walls-panel">
+              <div className="sr-walls-chip">S/R · {displayedWalls.length}</div>
+              <SrWallControls minNotional={minNotional} onMinNotional={applyMinNotional} range={wallRange} onRange={applyWallRange} />
+            </div>}
             <div className="chart-canvas" ref={chartHost} />
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
