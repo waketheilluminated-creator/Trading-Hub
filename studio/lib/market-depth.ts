@@ -323,11 +323,11 @@ export function wallOverlapsPriceSpan(wall: Pick<OrderWall, "price" | "low" | "h
   return wallHigh >= spanLow && wallLow <= spanHigh;
 }
 
-export function filterWallsForRange(
-  walls: readonly OrderWall[],
+export function filterWallsForRange<T extends OrderWall>(
+  walls: readonly T[],
   mode: WallRangeMode,
   options: { visible?: PriceSpan | null; customLow?: number | null; customHigh?: number | null } = {},
-): OrderWall[] {
+): T[] {
   if (mode === "visible") {
     if (!options.visible) return walls.slice();
     return walls.filter((wall) => wallOverlapsPriceSpan(wall, options.visible as PriceSpan));
@@ -339,6 +339,212 @@ export function filterWallsForRange(
     return walls.filter((wall) => wallOverlapsPriceSpan(wall, { low, high }));
   }
   return walls.slice();
+}
+
+/** Drop a resting wall after this many polls where its cluster is absent. */
+export const WALL_GONE_POLLS = 2;
+/** Session tracker only. Older stored ages are discarded instead of replayed as history. */
+export const WALL_TRACKER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_STORED_WALLS = 36;
+const MAX_STORED_WALL_NOTIONAL = 1_000_000_000_000;
+
+export type TrackedWall = OrderWall & {
+  firstSeenAt: number;
+  lastSeenAt: number;
+  missedPolls: number;
+};
+
+export type WallListEntry = {
+  side: BookSide;
+  price: number;
+  priceLabel: string;
+  notional: number;
+  notionalLabel: string;
+  ageLabel: string;
+  barPct: number;
+};
+
+export function wallClusterKey(side: BookSide, price: number, clusterBps = DEFAULT_CLUSTER_BPS): string {
+  return `${side}:${bucketPrice(price, clusterBps)}`;
+}
+
+export function trackOrderWalls(
+  previous: readonly TrackedWall[],
+  incoming: readonly OrderWall[],
+  now: number,
+  options: { dropUnmatched?: boolean } = {},
+): TrackedWall[] {
+  const nowMs = Number.isFinite(now) ? now : Date.now();
+  const used = new Set<number>();
+  const next: TrackedWall[] = [];
+  for (const wall of incoming) {
+    if (!isOrderWall(wall)) continue;
+    const key = wallClusterKey(wall.side, wall.price);
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    previous.forEach((prior, index) => {
+      if (used.has(index) || !isOrderWall(prior) || wallClusterKey(prior.side, prior.price) !== key) return;
+      const distance = Math.abs(prior.price - wall.price);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0) {
+      used.add(bestIndex);
+      const prior = previous[bestIndex];
+      next.push({
+        ...wall,
+        firstSeenAt: trustedFirstSeen(prior.firstSeenAt, nowMs),
+        lastSeenAt: nowMs,
+        missedPolls: 0,
+      });
+      continue;
+    }
+    next.push({ ...wall, firstSeenAt: nowMs, lastSeenAt: nowMs, missedPolls: 0 });
+  }
+  if (!options.dropUnmatched) {
+    previous.forEach((prior, index) => {
+      if (used.has(index) || !isOrderWall(prior)) return;
+      const missedPolls = Math.max(0, prior.missedPolls) + 1;
+      if (missedPolls >= WALL_GONE_POLLS) return;
+      next.push({ ...prior, missedPolls });
+    });
+  }
+  return next;
+}
+
+export function formatWallAge(firstSeenAt: number, now: number): string {
+  if (!Number.isFinite(firstSeenAt) || !Number.isFinite(now)) return "0s";
+  const elapsed = Math.max(0, Math.floor((now - firstSeenAt) / 1000));
+  const hours = Math.floor(elapsed / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+  const seconds = elapsed % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+export function formatNotionalUsd(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(2)}k`;
+  return `${sign}$${Math.round(abs).toLocaleString("en-US")}`;
+}
+
+export function formatWallPrice(price: number): string {
+  if (!Number.isFinite(price)) return "—";
+  if (price >= 1000) return price.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  return price.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+export function relativeNotionalPercents(notionals: readonly number[]): number[] {
+  const finite = notionals.filter((value) => Number.isFinite(value) && value > 0);
+  const max = finite.length ? Math.max(...finite) : 0;
+  if (!(max > 0)) return notionals.map(() => 0);
+  return notionals.map((value) => {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.round((value / max) * 100);
+  });
+}
+
+export function wallListEntries(walls: readonly TrackedWall[], now: number): WallListEntry[] {
+  const ladder = [...walls].sort((left, right) => right.price - left.price || right.notional - left.notional);
+  const bars = relativeNotionalPercents(ladder.map((wall) => wall.notional));
+  return ladder.map((wall, index) => ({
+    side: wall.side,
+    price: wall.price,
+    priceLabel: formatWallPrice(wall.price),
+    notional: wall.notional,
+    notionalLabel: formatNotionalUsd(wall.notional),
+    ageLabel: formatWallAge(wall.firstSeenAt, now),
+    barPct: bars[index] ?? 0,
+  }));
+}
+
+export function wallTrackerStorageKey(venue: MarketVenue, symbol: string): string {
+  return `th-wall-tracker:${venue}:${compactSymbol(symbol)}`;
+}
+
+export function readStoredWallTracker(
+  storage: KeyValueStorage | null | undefined,
+  venue: string,
+  symbol: string,
+  now = Date.now(),
+): TrackedWall[] {
+  if (!storage || !isMarketVenue(venue)) return [];
+  const compact = compactSymbol(symbol);
+  if (!/^[A-Z0-9]{5,20}$/.test(compact)) return [];
+  try {
+    const raw = storage.getItem(wallTrackerStorageKey(venue, compact));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const walls: TrackedWall[] = [];
+    for (const row of parsed) {
+      const tracked = parseStoredWall(row, now);
+      if (tracked) walls.push(tracked);
+      if (walls.length >= MAX_STORED_WALLS) break;
+    }
+    return walls;
+  } catch {
+    return [];
+  }
+}
+
+export function writeStoredWallTracker(
+  storage: KeyValueStorage | null | undefined,
+  venue: string,
+  symbol: string,
+  walls: readonly TrackedWall[],
+): void {
+  if (!storage || !isMarketVenue(venue)) return;
+  const compact = compactSymbol(symbol);
+  if (!/^[A-Z0-9]{5,20}$/.test(compact)) return;
+  const now = Date.now();
+  const payload = walls
+    .map((wall) => parseStoredWall(wall, now))
+    .filter((wall): wall is TrackedWall => Boolean(wall))
+    .slice(0, MAX_STORED_WALLS);
+  try {
+    storage.setItem(wallTrackerStorageKey(venue, compact), JSON.stringify(payload));
+  } catch {
+    // Quota or private mode should not break the chart.
+  }
+}
+
+function trustedFirstSeen(value: number, now: number): number {
+  return storedFirstSeen(value, now) ?? now;
+}
+
+function storedFirstSeen(value: unknown, now: number): number | null {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  if (numeric > now + 5_000) return null;
+  if (now - numeric > WALL_TRACKER_MAX_AGE_MS) return null;
+  return numeric;
+}
+
+function parseStoredWall(value: unknown, now: number): TrackedWall | null {
+  if (!isOrderWall(value)) return null;
+  const row = value as TrackedWall;
+  if (row.notional < MIN_WALL_NOTIONAL_USD || row.notional > MAX_STORED_WALL_NOTIONAL) return null;
+  const firstSeenAt = storedFirstSeen(row.firstSeenAt, now);
+  if (firstSeenAt == null) return null;
+  const lastSeenAt = storedFirstSeen(row.lastSeenAt, now) ?? firstSeenAt;
+  return {
+    side: row.side,
+    price: row.price,
+    low: row.low,
+    high: row.high,
+    size: row.size,
+    notional: row.notional,
+    firstSeenAt,
+    lastSeenAt,
+    missedPolls: 0,
+  };
 }
 
 function finitePrice(value: unknown): number | null {

@@ -4,8 +4,10 @@ import type { DrawingTool } from "@/lib/drawings/types.ts";
 type DrawingToolbarProps = {
   activeTool: DrawingTool;
   onToolChange(tool: DrawingTool): void;
-  largeOrderBarsVisible: boolean;
-  onLargeOrderBarsToggle(): void;
+  unfilledLargeOrdersVisible: boolean;
+  onUnfilledLargeOrdersToggle(): void;
+  executedLargeTradesVisible: boolean;
+  onExecutedLargeTradesToggle(): void;
 };
 
 const IconFrame = ({ children }: { children: ReactNode }) => (
@@ -61,7 +63,24 @@ function LargeOrderSrIcon() {
   );
 }
 
-export function DrawingToolbar({ activeTool, onToolChange, largeOrderBarsVisible, onLargeOrderBarsToggle }: DrawingToolbarProps) {
+function LargeTradesIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" data-icon="large-trades">
+      <circle cx="6.5" cy="13.5" r="2.1" fill="currentColor" stroke="none" />
+      <circle cx="13.2" cy="6.6" r="2.6" fill="currentColor" stroke="none" />
+      <circle cx="14.2" cy="13.8" r="1.5" fill="currentColor" stroke="none" opacity="0.72" />
+    </svg>
+  );
+}
+
+export function DrawingToolbar({
+  activeTool,
+  onToolChange,
+  unfilledLargeOrdersVisible,
+  onUnfilledLargeOrdersToggle,
+  executedLargeTradesVisible,
+  onExecutedLargeTradesToggle,
+}: DrawingToolbarProps) {
   const tools: { tool: DrawingTool; label: string; Icon: ComponentType }[] = [
     { tool: "select", label: "Select drawing tool", Icon: SelectIcon },
     { tool: "trend-line", label: "Trend line drawing tool", Icon: TrendLineIcon },
@@ -72,20 +91,31 @@ export function DrawingToolbar({ activeTool, onToolChange, largeOrderBarsVisible
     { tool: "crosshair", label: "Crosshair drawing tool", Icon: CrosshairIcon },
   ];
 
-  const largeOrderWallsLabel = largeOrderBarsVisible ? "Hide support/resistance walls" : "Show support/resistance walls";
+  const unfilledLabel = unfilledLargeOrdersVisible ? "Hide unfilled large orders" : "Show unfilled large orders";
+  const executedLabel = executedLargeTradesVisible ? "Hide executed large trades" : "Show executed large trades";
 
   return <nav className="left-rail" aria-label="Chart drawing tools">
     {tools.map(({ tool, label, Icon }) => <button key={tool} type="button" className={`tool-button ${activeTool === tool ? "active" : ""}`} aria-label={label} aria-pressed={activeTool === tool} title={label.replace(" drawing tool", "")} onClick={() => onToolChange(tool)}><Icon /></button>)}
     <span className="rail-spacer" />
     <button
       type="button"
-      className={`tool-button ${largeOrderBarsVisible ? "active" : ""}`}
-      aria-label={largeOrderWallsLabel}
-      aria-pressed={largeOrderBarsVisible}
-      title={largeOrderWallsLabel}
-      onClick={onLargeOrderBarsToggle}
+      className={`tool-button ${unfilledLargeOrdersVisible ? "active" : ""}`}
+      aria-label={unfilledLabel}
+      aria-pressed={unfilledLargeOrdersVisible}
+      title={unfilledLargeOrdersVisible ? "Hide unfilled large orders (大额挂单)" : "Show unfilled large orders (大额挂单)"}
+      onClick={onUnfilledLargeOrdersToggle}
     >
       <LargeOrderSrIcon />
+    </button>
+    <button
+      type="button"
+      className={`tool-button ${executedLargeTradesVisible ? "active" : ""}`}
+      aria-label={executedLabel}
+      aria-pressed={executedLargeTradesVisible}
+      title={executedLargeTradesVisible ? "Hide executed large trades (大额成交)" : "Show executed large trades (大额成交)"}
+      onClick={onExecutedLargeTradesToggle}
+    >
+      <LargeTradesIcon />
     </button>
     <button type="button" className="tool-button" aria-label="Chart settings" title="Settings"><SettingsIcon /></button>
   </nav>;

@@ -19,12 +19,23 @@ import {
   layoutSeparatedWalls,
   MIN_WALL_CENTER_GAP_PX,
   MIN_WALL_NOTIONAL_USD,
+  formatNotionalUsd,
+  formatWallAge,
+  formatWallPrice,
   readStoredMinNotional,
   readStoredWallRange,
+  readStoredWallTracker,
+  relativeNotionalPercents,
+  trackOrderWalls,
   visualWallBands,
+  wallClusterKey,
   wallFillStyle,
+  wallListEntries,
+  wallTrackerStorageKey,
+  WALL_GONE_POLLS,
   writeStoredMinNotional,
   writeStoredWallRange,
+  writeStoredWallTracker,
 } from "../lib/market-depth.ts";
 import { formatVenueFallbackNotice, supportedExchangesMessage } from "../lib/market-venues.ts";
 import { readStoredFlag, writeStoredFlag } from "../lib/chart-indicator-panes.ts";
@@ -371,19 +382,40 @@ test("persists the left-rail S/R toggle without throwing in private mode", () =>
   }, LARGE_ORDER_SR_STORAGE_KEY, true);
 });
 
-test("workspace plots S/R on the K-chart from the left rail and never adds a right-side list", () => {
+test("workspace keeps unfilled walls on the K-chart with an aged list and a separate executed toggle", () => {
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
   const toolbar = readFileSync(fileURLToPath(new URL("../components/drawing-toolbar.tsx", import.meta.url)), "utf8");
-  assert.match(toolbar, /Show support\/resistance walls/);
-  assert.match(toolbar, /Hide support\/resistance walls/);
+  const dock = readFileSync(fileURLToPath(new URL("../components/large-order-dock.tsx", import.meta.url)), "utf8");
+  assert.match(toolbar, /Show unfilled large orders/);
+  assert.match(toolbar, /Hide unfilled large orders/);
+  assert.match(toolbar, /Show executed large trades/);
+  assert.match(toolbar, /Hide executed large trades/);
   assert.match(toolbar, /data-icon="large-order-sr"/);
+  assert.match(toolbar, /data-icon="large-trades"/);
+  const rail = toolbar.slice(toolbar.indexOf("rail-spacer"), toolbar.indexOf("Chart settings"));
+  assert.ok(rail.indexOf("Show unfilled large orders") < rail.indexOf("Show executed large trades"));
   assert.match(workspace, /\[showFast, setShowFast\] = useState\(false\)/);
   assert.match(workspace, /\[showSlow, setShowSlow\] = useState\(false\)/);
-  assert.match(workspace, /S\/R · \{displayedWalls\.length\}/);
-  assert.match(workspace, /<SrWallControls /);
+  assert.match(workspace, /LARGE_TRADES_STORAGE_KEY/);
+  assert.match(workspace, /onUnfilledLargeOrdersToggle=\{\(\) => setShowLargeOrderSr\(\(value\) => !value\)\}/);
+  assert.match(workspace, /onExecutedLargeTradesToggle=\{\(\) => setShowLargeTrades\(\(value\) => !value\)\}/);
+  assert.match(workspace, /<LargeOrderDock/);
+  assert.match(workspace, /showUnfilled=\{showLargeOrderSr\}/);
+  assert.match(workspace, /showExecuted=\{showLargeTrades\}/);
   assert.match(workspace, /filterWallsForRange/);
+  assert.match(workspace, /trackOrderWalls\(previous, result\.snapshot\.walls/);
   assert.match(workspace, /loadLargeOrderWalls\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional \}\)/);
+  assert.match(workspace, /loadLargeTrades\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional \}\)/);
   assert.match(workspace, /getVisibleRange\(\)/);
+  assert.match(workspace, /data-large-trades=/);
+  assert.match(workspace, /data-large-order-list=/);
+  assert.match(dock, /Unfilled ·/);
+  assert.match(dock, /Executed ·/);
+  assert.match(dock, /aria-label="Unfilled large orders"/);
+  assert.match(dock, /aria-label="Executed large trades"/);
+  assert.match(dock, /ageLabel/);
+  assert.match(dock, /clockLabel/);
+  assert.match(dock, /showRange=\{showUnfilled\}/);
   const controls = readFileSync(fileURLToPath(new URL("../components/sr-wall-controls.tsx", import.meta.url)), "utf8");
   assert.match(controls, /\$50k/);
   assert.match(controls, /\$100k/);
@@ -396,15 +428,105 @@ test("workspace plots S/R on the K-chart from the left rail and never adds a rig
   assert.match(controls, />Book</);
   assert.match(controls, />Visible</);
   assert.match(controls, />Custom</);
+  assert.match(controls, /showRange/);
   const primitive = readFileSync(fileURLToPath(new URL("../lib/large-order-sr-primitive.ts", import.meta.url)), "utf8");
   assert.match(primitive, /layoutSeparatedWalls/);
   assert.doesNotMatch(primitive, /historical|swing high|candle high/);
+  const markers = readFileSync(fileURLToPath(new URL("../lib/large-trade-markers-primitive.ts", import.meta.url)), "utf8");
+  assert.match(markers, /planTradeMarkers/);
+  assert.match(markers, /context\.arc/);
   assert.match(workspace, /loadLargeOrderWalls/);
   assert.match(workspace, /LargeOrderSrPrimitive/);
+  assert.match(workspace, /LargeTradeMarkersPrimitive/);
   assert.match(workspace, /LARGE_ORDER_SR_STORAGE_KEY/);
   assert.match(workspace, /data-large-order-sr/);
-  assert.doesNotMatch(workspace, /large-order-list|order-book-panel|大额挂单/);
-  assert.doesNotMatch(toolbar, /large-order-list|order-book-panel/);
   const marketEffect = workspace.slice(workspace.indexOf("loadLargeOrderWalls(activeVenue"), workspace.indexOf("}, [activeVenue, minNotional, showLargeOrderSr, symbol]"));
   assert.doesNotMatch(marketEffect, /setConsoleText|setConsoleKind/);
+  const tradeEffect = workspace.slice(workspace.indexOf("loadLargeTrades(activeVenue"), workspace.indexOf("}, [activeVenue, minNotional, showLargeTrades, symbol]"));
+  assert.doesNotMatch(tradeEffect, /setConsoleText|setConsoleKind/);
+});
+
+function restingWall(side, price, notional = 200_000) {
+  return { side, price, low: price, high: price, size: notional / price, notional };
+}
+
+test("tracks resting walls by side and clustered price and ages them from firstSeen", () => {
+  const started = 1_700_000_000_000;
+  const first = trackOrderWalls([], [restingWall("bid", 80_000), restingWall("ask", 81_000, 300_000)], started);
+  assert.equal(first.length, 2);
+  assert.ok(first.every((wall) => wall.firstSeenAt === started && wall.missedPolls === 0));
+  assert.equal(wallClusterKey("bid", 80_000), wallClusterKey("bid", 80_004));
+  assert.notEqual(wallClusterKey("bid", 80_000), wallClusterKey("ask", 80_000));
+  assert.notEqual(wallClusterKey("bid", 80_000), wallClusterKey("bid", 80_020));
+
+  const later = started + (18 * 3600 + 35 * 60) * 1000;
+  const updated = trackOrderWalls(first, [restingWall("bid", 80_004, 250_000), restingWall("ask", 81_000, 280_000)], later);
+  const bid = updated.find((wall) => wall.side === "bid");
+  assert.equal(bid.firstSeenAt, started);
+  assert.equal(bid.notional, 250_000);
+  assert.equal(bid.missedPolls, 0);
+  assert.equal(formatWallAge(bid.firstSeenAt, later), "18h 35m");
+  assert.equal(formatWallAge(later - 3 * 60_000 - 36_000, later), "3m 36s");
+  assert.equal(formatWallAge(later - 16_000, later), "16s");
+
+  const askOnly = trackOrderWalls(updated, [restingWall("ask", 80_000, 220_000)], later + 1_000);
+  assert.equal(askOnly.find((wall) => wall.side === "ask" && wall.price === 80_000).firstSeenAt, later + 1_000);
+  assert.equal(askOnly.find((wall) => wall.side === "bid").missedPolls, 1);
+
+  const flickered = trackOrderWalls(askOnly, [restingWall("bid", 80_000, 250_000)], later + 2_000);
+  assert.equal(flickered.find((wall) => wall.side === "bid").firstSeenAt, started);
+  assert.equal(flickered.find((wall) => wall.side === "bid").missedPolls, 0);
+
+  const missing = trackOrderWalls(updated, [], later);
+  assert.equal(missing.length, updated.length);
+  assert.ok(missing.every((wall) => wall.missedPolls === 1));
+  assert.equal(trackOrderWalls(missing, [], later + 1).length, 0);
+  assert.equal(WALL_GONE_POLLS, 2);
+
+  const reseeded = trackOrderWalls(updated, [restingWall("bid", 79_000, 210_000)], later, { dropUnmatched: true });
+  assert.equal(reseeded.length, 1);
+  assert.equal(reseeded[0].firstSeenAt, later);
+  assert.equal(reseeded[0].price, 79_000);
+});
+
+test("formats the unfilled ladder with relative size and rejects forged tracker ages", () => {
+  const now = 1_700_000_000_000;
+  const entries = wallListEntries([
+    { ...restingWall("bid", 80_000, 200_000), firstSeenAt: now - 60_000, lastSeenAt: now, missedPolls: 0 },
+    { ...restingWall("ask", 84_500, 400_000), firstSeenAt: now - (18 * 3600 + 35 * 60) * 1000, lastSeenAt: now, missedPolls: 0 },
+  ], now);
+  assert.deepEqual(entries.map((entry) => entry.price), [84_500, 80_000]);
+  assert.equal(entries[0].priceLabel, formatWallPrice(84_500));
+  assert.equal(entries[0].notionalLabel, "$400.00k");
+  assert.equal(entries[1].notionalLabel, formatNotionalUsd(200_000));
+  assert.equal(entries[0].ageLabel, "18h 35m");
+  assert.equal(entries[0].barPct, 100);
+  assert.equal(entries[1].barPct, 50);
+  assert.deepEqual(relativeNotionalPercents([0, -1]), [0, 0]);
+
+  const storage = memoryStorage();
+  const clock = Date.now();
+  writeStoredWallTracker(storage, "okx", "BTCUSDT", [{
+    ...restingWall("bid", 80_000, 240_000),
+    firstSeenAt: clock - 3_600_000,
+    lastSeenAt: clock,
+    missedPolls: 4,
+  }]);
+  const restored = readStoredWallTracker(storage, "okx", "BTCUSDT", clock);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].firstSeenAt, clock - 3_600_000);
+  assert.equal(restored[0].missedPolls, 0);
+  storage.setItem(wallTrackerStorageKey("okx", "BTCUSDT"), JSON.stringify([
+    { ...restingWall("bid", 80_000, 240_000), firstSeenAt: clock - 8 * 24 * 60 * 60 * 1000, lastSeenAt: clock },
+    { side: "admin", price: 80_000, low: 80_000, high: 80_000, size: 1, notional: 9e15, firstSeenAt: clock },
+    { ...restingWall("ask", 81_000, 5_000), firstSeenAt: clock, lastSeenAt: clock },
+    { ...restingWall("ask", 82_000, 220_000), firstSeenAt: clock + 60_000, lastSeenAt: clock },
+  ]));
+  assert.deepEqual(readStoredWallTracker(storage, "okx", "BTCUSDT", clock), []);
+  assert.deepEqual(readStoredWallTracker(storage, "coinbase", "BTCUSDT", now), []);
+  assert.deepEqual(readStoredWallTracker(storage, "okx", "../etc/passwd", now), []);
+  writeStoredWallTracker({
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  }, "okx", "BTCUSDT", restored);
 });
