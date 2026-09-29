@@ -8,6 +8,8 @@ type DrawingToolbarProps = {
   onUnfilledLargeOrdersToggle(): void;
   executedLargeTradesVisible: boolean;
   onExecutedLargeTradesToggle(): void;
+  liqHeatmapVisible: boolean;
+  onLiqHeatmapToggle(): void;
 };
 
 const IconFrame = ({ children }: { children: ReactNode }) => (
@@ -73,6 +75,14 @@ function LargeTradesIcon() {
   );
 }
 
+function LiqHeatmapIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" data-icon="liq-heatmap">
+      <path fill="currentColor" stroke="none" d="M10.2 1.7c.2 2.2-1.1 3.4-2.1 4.9-1.2 1.6-2.4 3.2-2.4 5.3 0 2.8 2.1 5 4.6 5s4.5-2.1 4.5-4.9c0-1.7-.8-2.9-1.6-4-.3 1.2-1 1.9-1.8 1.9.8-1.8.5-3.6-.2-5-.7-1.3-1.1-2.4-1-3.2Z" />
+    </svg>
+  );
+}
+
 export function DrawingToolbar({
   activeTool,
   onToolChange,
@@ -80,6 +90,8 @@ export function DrawingToolbar({
   onUnfilledLargeOrdersToggle,
   executedLargeTradesVisible,
   onExecutedLargeTradesToggle,
+  liqHeatmapVisible,
+  onLiqHeatmapToggle,
 }: DrawingToolbarProps) {
   const tools: { tool: DrawingTool; label: string; Icon: ComponentType }[] = [
     { tool: "select", label: "Select drawing tool", Icon: SelectIcon },
@@ -93,6 +105,7 @@ export function DrawingToolbar({
 
   const unfilledLabel = unfilledLargeOrdersVisible ? "Hide unfilled large orders" : "Show unfilled large orders";
   const executedLabel = executedLargeTradesVisible ? "Hide executed large trades" : "Show executed large trades";
+  const liqLabel = liqHeatmapVisible ? "Hide liquidation heatmap" : "Show liquidation heatmap";
 
   return <nav className="left-rail" aria-label="Chart drawing tools">
     {tools.map(({ tool, label, Icon }) => <button key={tool} type="button" className={`tool-button ${activeTool === tool ? "active" : ""}`} aria-label={label} aria-pressed={activeTool === tool} title={label.replace(" drawing tool", "")} onClick={() => onToolChange(tool)}><Icon /></button>)}
@@ -116,6 +129,16 @@ export function DrawingToolbar({
       onClick={onExecutedLargeTradesToggle}
     >
       <LargeTradesIcon />
+    </button>
+    <button
+      type="button"
+      className={`tool-button ${liqHeatmapVisible ? "active" : ""}`}
+      aria-label={liqLabel}
+      aria-pressed={liqHeatmapVisible}
+      title={liqHeatmapVisible ? "Hide extreme liquidation heatmap (极高清算带)" : "Show extreme liquidation heatmap (极高清算带)"}
+      onClick={onLiqHeatmapToggle}
+    >
+      <LiqHeatmapIcon />
     </button>
     <button type="button" className="tool-button" aria-label="Chart settings" title="Settings"><SettingsIcon /></button>
   </nav>;

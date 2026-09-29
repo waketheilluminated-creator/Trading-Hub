@@ -60,16 +60,22 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /data-large-order-sr="off"/);
   assert.match(html, /data-large-trades="off"/);
   assert.match(html, /data-large-order-list="off"/);
+  assert.match(html, /data-liq-heatmap="off"/);
   assert.match(html, /aria-label="Show unfilled large orders"/);
   assert.match(html, /title="Show unfilled large orders \(大额挂单\)"/);
   assert.match(html, /aria-label="Show executed large trades"/);
   assert.match(html, /title="Show executed large trades \(大额成交\)"/);
   assert.match(html, /data-icon="large-order-sr"/);
   assert.match(html, /data-icon="large-trades"/);
+  assert.match(html, /data-icon="liq-heatmap"/);
+  assert.match(html, /aria-label="Show liquidation heatmap"/);
+  assert.match(html, /title="Show extreme liquidation heatmap \(极高清算带\)"/);
   assert.ok(html.indexOf('aria-label="Show unfilled large orders"') < html.indexOf('aria-label="Show executed large trades"'));
-  assert.ok(html.indexOf('aria-label="Show executed large trades"') < html.indexOf('aria-label="Chart settings"'));
+  assert.ok(html.indexOf('aria-label="Show executed large trades"') < html.indexOf('aria-label="Show liquidation heatmap"'));
+  assert.ok(html.indexOf('aria-label="Show liquidation heatmap"') < html.indexOf('aria-label="Chart settings"'));
   assert.doesNotMatch(buttonOpeningTag(html, "Show unfilled large orders"), /\bactive\b/);
   assert.doesNotMatch(buttonOpeningTag(html, "Show executed large trades"), /\bactive\b/);
+  assert.doesNotMatch(buttonOpeningTag(html, "Show liquidation heatmap"), /\bactive\b/);
   assert.doesNotMatch(html, /Custom minimum wall notional/);
   assert.doesNotMatch(html, /Wall price range/);
   assert.doesNotMatch(html, /aria-label="Unfilled large orders"/);
@@ -176,6 +182,34 @@ test("depth API rejects unsupported exchanges and forged symbols", async () => {
   const forged = await app.fetch(new Request("http://localhost/api/depth?exchange=okx&symbol=../etc/passwd"), env, context);
   assert.equal(forged.status, 400);
   assert.deepEqual(await forged.json(), { error: "Use a compact perpetual symbol such as BTCUSDT" });
+});
+
+test("liq heatmap API serves the ZEC fixture and drops mismatched or forged queries", async () => {
+  const app = await worker();
+  const missing = await app.fetch(new Request("http://localhost/api/liq-heatmap"), env, context);
+  assert.equal(missing.status, 400);
+  const forged = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=../etc/passwd&admin=1&entitled=true"), env, context);
+  assert.equal(forged.status, 400);
+  assert.deepEqual(await forged.json(), { error: "Use a compact perpetual symbol such as ZECUSDT" });
+  const mismatch = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=BTCUSDT&admin=1&role=admin&hasMarketHistory=1"), env, context);
+  assert.equal(mismatch.status, 200);
+  const mismatchBody = await mismatch.json();
+  assert.deepEqual(mismatchBody.bands, []);
+  assert.equal(mismatchBody.notice, "Extreme liquidation bands match ZECUSDT only.");
+  assert.equal(mismatchBody.admin, undefined);
+  assert.equal(mismatchBody.role, undefined);
+  const sample = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZEC&liqSample=1&role=admin"), env, context);
+  assert.equal(sample.status, 200);
+  const body = await sample.json();
+  assert.equal(body.kind, "liq_heatmap_bands");
+  assert.equal(body.symbol, "ZECUSDT");
+  assert.equal(body.bucket_pct, 0.5);
+  assert.equal(body.bands.length, 13);
+  assert.equal(body.admin, undefined);
+  assert.equal(body.role, undefined);
+  assert.ok(body.bands.every((band) => band.risk === "极高" && (band.side === "long" || band.side === "short")));
+  assert.equal(body.bands.some((band) => band.side === "long"), true);
+  assert.equal(body.bands.some((band) => band.side === "short"), true);
 });
 
 test("depth API can serve OKX public order-book walls without API keys", async () => {
