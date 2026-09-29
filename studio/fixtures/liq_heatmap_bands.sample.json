@@ -1,0 +1,116 @@
+{
+  "kind": "liq_heatmap_bands",
+  "venue": "multi",
+  "symbol": "ZECUSDT",
+  "mid": 1385.28,
+  "bucket_pct": 0.5,
+  "updatedAt": 1790661109308,
+  "source": "oi_liq_estimator",
+  "unit": "usd_millions",
+  "bands": [
+    {
+      "lo": 1523.808,
+      "hi": 1530.7344,
+      "side": "short",
+      "liq_m": 234.04,
+      "risk": "极高",
+      "dist_pct": 10.25
+    },
+    {
+      "lo": 1246.752,
+      "hi": 1253.6784,
+      "side": "long",
+      "liq_m": 219.87,
+      "risk": "极高",
+      "dist_pct": -9.75
+    },
+    {
+      "lo": 1662.336,
+      "hi": 1669.2624,
+      "side": "short",
+      "liq_m": 149.55,
+      "risk": "极高",
+      "dist_pct": 20.25
+    },
+    {
+      "lo": 1108.224,
+      "hi": 1115.1504,
+      "side": "long",
+      "liq_m": 140.28,
+      "risk": "极高",
+      "dist_pct": -19.75
+    },
+    {
+      "lo": 1544.5872,
+      "hi": 1551.5136,
+      "side": "short",
+      "liq_m": 82.35,
+      "risk": "极高",
+      "dist_pct": 11.75
+    },
+    {
+      "lo": 1426.8383999999999,
+      "hi": 1433.7648,
+      "side": "long",
+      "liq_m": 69.64,
+      "risk": "极高",
+      "dist_pct": 3.25
+    },
+    {
+      "lo": 1516.8816,
+      "hi": 1523.808,
+      "side": "short",
+      "liq_m": 63.78,
+      "risk": "极高",
+      "dist_pct": 9.75
+    },
+    {
+      "lo": 1634.6304,
+      "hi": 1641.5568,
+      "side": "short",
+      "liq_m": 63.01,
+      "risk": "极高",
+      "dist_pct": 18.25
+    },
+    {
+      "lo": 1440.6912,
+      "hi": 1447.6176,
+      "side": "short",
+      "liq_m": 58.13,
+      "risk": "极高",
+      "dist_pct": 4.25
+    },
+    {
+      "lo": 1329.8688,
+      "hi": 1336.7952,
+      "side": "long",
+      "liq_m": 54.35,
+      "risk": "极高",
+      "dist_pct": -3.75
+    },
+    {
+      "lo": 1842.4224,
+      "hi": 1849.3488,
+      "side": "short",
+      "liq_m": 53.22,
+      "risk": "极高",
+      "dist_pct": 33.25
+    },
+    {
+      "lo": 921.2112,
+      "hi": 928.1375999999999,
+      "side": "long",
+      "liq_m": 52.37,
+      "risk": "极高",
+      "dist_pct": -33.25
+    },
+    {
+      "lo": 1336.7952,
+      "hi": 1343.7216,
+      "side": "long",
+      "liq_m": 50.19,
+      "risk": "极高",
+      "dist_pct": -3.25
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, LineSeries, LineStyle,
   type CandlestickData, type IChartApi, type ISeriesApi,
-  type LineData, type Time, type UTCTimestamp,
+  type LineData, type MouseEventParams, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import {
   applyIndicatorPaneStretch,
@@ -32,6 +32,16 @@ import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/work
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
 import { LargeTradeMarkersPrimitive } from "@/lib/large-trade-markers-primitive.ts";
 import { LargeOrderSrPrimitive } from "@/lib/large-order-sr-primitive.ts";
+import { LiqHeatmapPrimitive } from "@/lib/liq-heatmap-primitive.ts";
+import {
+  LIQ_HEATMAP_STORAGE_KEY,
+  LIQ_HEATMAP_UNAVAILABLE,
+  findLiqBandAtPrice,
+  formatLiqBandTooltip,
+  liqSymbolsMatch,
+  loadLiqHeatmapBands,
+  type LiqBand,
+} from "@/lib/liq-heatmap.ts";
 import {
   DEFAULT_MIN_WALL_NOTIONAL_USD,
   LARGE_ORDER_SR_EMPTY,
@@ -258,6 +268,9 @@ export function TradingWorkspace() {
   const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null);
   const largeOrderPrimitiveRef = useRef<LargeOrderSrPrimitive | null>(null);
   const largeTradePrimitiveRef = useRef<LargeTradeMarkersPrimitive | null>(null);
+  const liqHeatmapPrimitiveRef = useRef<LiqHeatmapPrimitive | null>(null);
+  const liqBandsRef = useRef<LiqBand[]>([]);
+  const liqTipRef = useRef<HTMLDivElement>(null);
   const drawingControllerRef = useRef<DrawingController | null>(null);
   const drawingSaveSchedulerRef = useRef<DrawingSaveScheduler | null>(null);
   const drawingStorageRef = useRef<DrawingStorage | null>(null);
@@ -336,6 +349,21 @@ export function TradingWorkspace() {
     writeStoredFlag(window.localStorage, LARGE_TRADES_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
   }, []);
+  const showLiqHeatmap = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readClientPaneFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, false),
+    () => false,
+  );
+  const setShowLiqHeatmap = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, false);
+    writeStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, []);
+  const [liqModel, setLiqModel] = useState<{ symbol: string; bands: LiqBand[]; notice: string | null } | null>(null);
+  const liqForChart = showLiqHeatmap && liqModel && liqSymbolsMatch(liqModel.symbol, symbol) ? liqModel : null;
+  const liqBands = useMemo(() => liqForChart?.bands ?? [], [liqForChart]);
+  const liqNotice = liqForChart?.notice ?? null;
+  liqBandsRef.current = liqBands;
   const [largeOrderWalls, setLargeOrderWalls] = useState<TrackedWall[]>([]);
   const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
   const [largeTrades, setLargeTrades] = useState<LargeTrade[]>([]);
@@ -468,12 +496,14 @@ export function TradingWorkspace() {
     const drawingPrimitive = new DrawingPrimitive();
     const largeOrderPrimitive = new LargeOrderSrPrimitive();
     const largeTradePrimitive = new LargeTradeMarkersPrimitive();
+    const liqHeatmapPrimitive = new LiqHeatmapPrimitive();
     const drawingStorage = drawingStorageRef.current ?? createDrawingStorage();
     drawingStorageRef.current = drawingStorage;
     const drawingSaveScheduler = new DrawingSaveScheduler(drawingStorage);
     candleSeries.attachPrimitive(drawingPrimitive);
     candleSeries.attachPrimitive(largeOrderPrimitive);
     candleSeries.attachPrimitive(largeTradePrimitive);
+    candleSeries.attachPrimitive(liqHeatmapPrimitive);
     const replaceDrawings = (next: Drawing[], kind: DrawingChangeKind) => {
       drawingsRef.current = next;
       setDrawings(next);
@@ -508,6 +538,7 @@ export function TradingWorkspace() {
     drawingPrimitiveRef.current = drawingPrimitive;
     largeOrderPrimitiveRef.current = largeOrderPrimitive;
     largeTradePrimitiveRef.current = largeTradePrimitive;
+    liqHeatmapPrimitiveRef.current = liqHeatmapPrimitive;
     drawingControllerRef.current = drawingController;
     drawingSaveSchedulerRef.current = drawingSaveScheduler;
     drawingController.attach(chartHost.current);
@@ -516,6 +547,7 @@ export function TradingWorkspace() {
     return () => {
       drawingSaveScheduler.flush();
       drawingController.detach();
+      candleSeries.detachPrimitive(liqHeatmapPrimitive);
       candleSeries.detachPrimitive(largeTradePrimitive);
       candleSeries.detachPrimitive(largeOrderPrimitive);
       candleSeries.detachPrimitive(drawingPrimitive);
@@ -523,6 +555,7 @@ export function TradingWorkspace() {
       if (drawingPrimitiveRef.current === drawingPrimitive) drawingPrimitiveRef.current = null;
       if (largeOrderPrimitiveRef.current === largeOrderPrimitive) largeOrderPrimitiveRef.current = null;
       if (largeTradePrimitiveRef.current === largeTradePrimitive) largeTradePrimitiveRef.current = null;
+      if (liqHeatmapPrimitiveRef.current === liqHeatmapPrimitive) liqHeatmapPrimitiveRef.current = null;
       if (drawingSaveSchedulerRef.current === drawingSaveScheduler) drawingSaveSchedulerRef.current = null;
       chart.remove();
       chartRef.current = null; candleSeriesRef.current = null; fastSeriesRef.current = null; slowSeriesRef.current = null;
@@ -603,6 +636,64 @@ export function TradingWorkspace() {
   useEffect(() => {
     largeTradePrimitiveRef.current?.setTrades(showLargeTrades ? largeTrades : [], interval);
   }, [chartVersion, interval, largeTrades, showLargeTrades]);
+
+  useEffect(() => {
+    liqHeatmapPrimitiveRef.current?.setBands(showLiqHeatmap ? liqBands : []);
+  }, [chartVersion, liqBands, showLiqHeatmap]);
+
+  useEffect(() => {
+    if (!showLiqHeatmap) return;
+    let active = true;
+    const sample = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("liqSample") === "1";
+    loadLiqHeatmapBands(symbol, fetch, { sample })
+      .then((result) => {
+        if (!active) return;
+        setLiqModel({ symbol, bands: result.bands, notice: result.notice });
+      })
+      .catch(() => {
+        if (!active) return;
+        setLiqModel({ symbol, bands: [], notice: LIQ_HEATMAP_UNAVAILABLE });
+      });
+    return () => { active = false; };
+  }, [showLiqHeatmap, symbol]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    const tip = liqTipRef.current;
+    if (!chart || !series || !tip || !showLiqHeatmap) {
+      if (tip) tip.hidden = true;
+      return;
+    }
+    const onMove = (param: MouseEventParams<Time>) => {
+      const node = liqTipRef.current;
+      if (!node) return;
+      const point = param.point;
+      if (!point || (param.paneIndex != null && param.paneIndex !== 0)) {
+        node.hidden = true;
+        return;
+      }
+      const price = series.coordinateToPrice(point.y);
+      const band = price == null ? null : findLiqBandAtPrice(liqBandsRef.current, price);
+      if (!band) {
+        node.hidden = true;
+        return;
+      }
+      const host = chartHost.current;
+      const width = host?.clientWidth ?? 0;
+      const height = host?.clientHeight ?? 0;
+      node.hidden = false;
+      node.dataset.side = band.side;
+      node.textContent = formatLiqBandTooltip(band);
+      node.style.left = `${Math.min(point.x + 12, Math.max(8, width - 240))}px`;
+      node.style.top = `${Math.min(point.y + 14, Math.max(8, height - 32))}px`;
+    };
+    chart.subscribeCrosshairMove(onMove);
+    return () => {
+      chart.unsubscribeCrosshairMove(onMove);
+      tip.hidden = true;
+    };
+  }, [chartVersion, showLiqHeatmap, liqBands]);
 
   useEffect(() => {
     if (!showLargeOrderSr) return;
@@ -1013,8 +1104,10 @@ export function TradingWorkspace() {
               onUnfilledLargeOrdersToggle={() => setShowLargeOrderSr((value) => !value)}
               executedLargeTradesVisible={showLargeTrades}
               onExecutedLargeTradesToggle={() => setShowLargeTrades((value) => !value)}
+              liqHeatmapVisible={showLiqHeatmap}
+              onLiqHeatmapToggle={() => setShowLiqHeatmap((value) => !value)}
             />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"}>
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
@@ -1022,6 +1115,7 @@ export function TradingWorkspace() {
               {showSlow && <div className="indicator-label"><span><i style={{ background: "var(--amber)" }} />EMA 21</span><button className="indicator-remove" aria-label="Remove EMA 21 indicator" title="Remove indicator" onClick={() => setShowSlow(false)}>×</button></div>}
               {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
               {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span><button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}
@@ -1036,6 +1130,8 @@ export function TradingWorkspace() {
               notice={[showLargeOrderSr ? largeOrderNotice : null, showLargeTrades ? largeTradeNotice : null].filter(Boolean).join(" ") || null}
             />}
             <div className="chart-canvas" ref={chartHost} />
+            {showLiqHeatmap && <div ref={liqTipRef} className="liq-heatmap-tip" role="tooltip" hidden />}
+            {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
                 {/* eslint-disable-next-line jsx-a11y/no-autofocus -- Text placement is a deliberate inline-edit action and should accept typing immediately. */}
