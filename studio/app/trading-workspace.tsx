@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import Link from "next/link";
 import {
   BaselineSeries, CandlestickSeries, ColorType, createChart, LineSeries, LineStyle,
   type CandlestickData, type IChartApi, type ISeriesApi,
@@ -1083,7 +1084,7 @@ export function TradingWorkspace() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button></div>
+        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button></div>
       </header>
 
       <section className="workspace">

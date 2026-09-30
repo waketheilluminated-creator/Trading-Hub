@@ -112,6 +112,12 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /aria-label="Crosshair drawing tool"/);
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /Create alert/);
+  assert.match(html, /href="\/etf-flows"/);
+  assert.match(html, />ETF Flows<\/a>/);
+  assert.match(html, /href="\/cvd-oi"/);
+  assert.match(html, />CVD \/ OI<\/a>/);
+  assert.ok(html.indexOf('href="/etf-flows"') < html.indexOf('aria-label="Chart drawing tools"'));
+  assert.ok(html.indexOf('href="/cvd-oi"') < html.indexOf('aria-label="Chart drawing tools"'));
   assert.match(html, /AI Analyst/);
   assert.match(html, /Trading Hub AI Analyst/);
   assert.match(html, /Test connection/);
@@ -123,6 +129,88 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /Backend series/);
   assert.doesNotMatch(html, /πlab AI Analyst/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
+});
+
+test("ETF flows and CVD/OI pages serve sanitized fixtures and ignore privilege flags", async () => {
+  const app = await worker();
+  const forgedQuery = "admin=1&entitled=true&role=admin&authorized=1&hasMarketHistory=1&membership=pro&privileged=1";
+  const etfPage = await app.fetch(new Request(`http://localhost/etf-flows?${forgedQuery}`, { headers: { accept: "text/html" } }), env, context);
+  assert.equal(etfPage.status, 200);
+  const etfHtml = await etfPage.text();
+  assert.match(etfHtml, /<title>BTC ETF Flows — Trading Hub<\/title>/i);
+  assert.match(etfHtml, /Cumulative Total Net Inflow/);
+  assert.match(etfHtml, /Daily Total Net Inflow/);
+  assert.match(etfHtml, /Daily Volume/);
+  assert.match(etfHtml, /Total Net Assets/);
+  assert.match(etfHtml, /As of 2026-09-29/);
+  assert.match(etfHtml, /evening ET/);
+  assert.match(etfHtml, /\$57\.64B/);
+  assert.match(etfHtml, /\+51\.1/);
+  assert.match(etfHtml, /-18\.1/);
+  assert.match(etfHtml, /Back to workspace/);
+  assert.match(etfHtml, /href="\/"/);
+  assert.match(etfHtml, /aria-label="Flow unit"/);
+  assert.doesNotMatch(etfHtml, /Access granted|Pro membership/);
+
+  const etf = await app.fetch(new Request(`http://localhost/api/etf-flows?${forgedQuery}&symbol=ETHUSDT`), env, context);
+  assert.equal(etf.status, 200);
+  assert.match(etf.headers.get("cache-control") ?? "", /max-age=60/);
+  const etfBody = await etf.json();
+  assert.equal(etfBody.kind, "btc_spot_etf_flows");
+  assert.equal(etfBody.asOfDate, "2026-09-29");
+  assert.equal(etfBody.rows.length, 20);
+  assert.equal(etfBody.rows[0].date, "2026-09-29");
+  assert.equal(etfBody.rows[0].flowsUsdM.IBIT, 51.1);
+  assert.equal(etfBody.admin, undefined);
+  assert.equal(etfBody.role, undefined);
+  assert.equal(etfBody.entitled, undefined);
+  assert.equal(etfBody.hasMarketHistory, undefined);
+  assert.equal(etfBody.privileged, undefined);
+  assert.doesNotMatch(JSON.stringify(etfBody), /https?:\/\//);
+
+  const etfPost = await app.fetch(new Request("http://localhost/api/etf-flows?admin=1", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "btc_spot_etf_flows", admin: true, rows: [{ date: "1999-01-01" }] }),
+  }), env, context);
+  assert.notEqual(etfPost.status, 200);
+  assert.doesNotMatch(await etfPost.text(), /1999-01-01/);
+
+  const cvdPage = await app.fetch(new Request(`http://localhost/cvd-oi?${forgedQuery}`, { headers: { accept: "text/html" } }), env, context);
+  assert.equal(cvdPage.status, 200);
+  const cvdHtml = await cvdPage.text();
+  assert.match(cvdHtml, /<title>CVD \/ OI — Trading Hub<\/title>/i);
+  assert.match(cvdHtml, /BTC Price/);
+  assert.match(cvdHtml, /Open Interest/);
+  assert.match(cvdHtml, /Cumulative Net Taker Volume/);
+  assert.match(cvdHtml, /Direction\/scale close to CryptoQuant/);
+  assert.match(cvdHtml, /84,024\.90/);
+  assert.match(cvdHtml, /#111111/);
+  assert.match(cvdHtml, /#2f6bff/);
+  assert.match(cvdHtml, /#e23b4a/);
+  assert.match(cvdHtml, /Back to workspace/);
+  assert.match(cvdHtml, /Shared time axis/);
+
+  const cvd = await app.fetch(new Request(`http://localhost/api/cvd-oi?symbol=ETHUSDT&${forgedQuery}`), env, context);
+  assert.equal(cvd.status, 200);
+  const cvdBody = await cvd.json();
+  assert.equal(cvdBody.kind, "binance_cvd_oi");
+  assert.equal(cvdBody.symbol, "BTCUSDT");
+  assert.equal(cvdBody.series.length, 288);
+  assert.equal(cvdBody.series.at(-1).price, 84024.9);
+  assert.equal(cvdBody.admin, undefined);
+  assert.equal(cvdBody.role, undefined);
+  assert.equal(cvdBody.hasMarketHistory, undefined);
+  assert.equal(cvdBody.symbol, "BTCUSDT");
+  assert.doesNotMatch(JSON.stringify(cvdBody), /https?:\/\/|ETHUSDT/);
+
+  const cvdPost = await app.fetch(new Request("http://localhost/api/cvd-oi", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "binance_cvd_oi", symbol: "ETHUSDT", admin: true }),
+  }), env, context);
+  assert.notEqual(cvdPost.status, 200);
+  assert.doesNotMatch(await cvdPost.text(), /ETHUSDT/);
 });
 
 test("server-renders the synchronized Pine editor tab", async () => {
