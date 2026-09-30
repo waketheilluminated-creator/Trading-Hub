@@ -407,6 +407,16 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .cvd-oi-legend strong { font: 600 13px var(--font-geist-mono); }
 .cvd-oi-legend em { color: var(--faint); font-style: normal; font-size: 10px; }
 .cvd-oi-chart { height: min(760px, calc(100vh - 280px)); min-height: 520px; border: 1px solid #d5dbe3; border-radius: 12px; overflow: hidden; background: #f6f7f9; }
+.cex-netflow-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cex-netflow-legend li { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #111720; }
+.cex-netflow-legend i { width: 14px; height: 14px; border-radius: 3px; box-shadow: inset 0 0 0 3px #f6f7f9; }
+.cex-netflow-legend i[data-series="ma"] { box-shadow: none; background: transparent; }
+.cex-netflow-legend span { color: var(--muted); }
+.cex-netflow-legend strong { font: 600 13px var(--font-geist-mono); }
+.cex-netflow-legend em { color: var(--faint); font-style: normal; font-size: 10px; }
+.cex-netflow-chart-wrap { position: relative; }
+.cex-netflow-chart { height: min(680px, calc(100vh - 360px)); min-height: 480px; border: 1px solid #d5dbe3; border-radius: 12px; overflow: hidden; background: #f6f7f9; }
+.cex-netflow-watermark { position: absolute; right: 16px; bottom: 28px; z-index: 2; margin: 0; pointer-events: none; color: rgba(62, 72, 86, 0.72); font: 600 11px/1 var(--font-geist-mono); letter-spacing: .02em; }
 @media (max-width: 980px) {
   .etf-cards { grid-template-columns: 1fr 1fr; }
   .desk-title-row { align-items: flex-start; flex-direction: column; }
