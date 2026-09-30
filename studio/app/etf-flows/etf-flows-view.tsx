@@ -42,7 +42,7 @@ function EtfFlowsBody({
         <div>
           <p className="desk-kicker">US spot Bitcoin</p>
           <h1>ETF Flows</h1>
-          <p className="desk-asof">As of {snapshot.asOfDate}</p>
+          <p className="desk-asof">{`As of ${snapshot.asOfDate}`}</p>
         </div>
         <div className="unit-toggle" role="group" aria-label="Flow unit">
           {snapshot.units.map((option) => (
