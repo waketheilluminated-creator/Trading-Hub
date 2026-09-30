@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 async function worker() {
@@ -116,8 +117,13 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, />ETF Flows<\/a>/);
   assert.match(html, /href="\/cvd-oi"/);
   assert.match(html, />CVD \/ OI<\/a>/);
+  assert.match(html, /href="\/cex-netflow"/);
+  assert.match(html, />Net Flow<\/a>/);
+  assert.match(html, /aria-label="Exchange Net Flow Pulse \(proxy\)"/);
+  assert.doesNotMatch(html, /href="\/ifp"/);
   assert.ok(html.indexOf('href="/etf-flows"') < html.indexOf('aria-label="Chart drawing tools"'));
   assert.ok(html.indexOf('href="/cvd-oi"') < html.indexOf('aria-label="Chart drawing tools"'));
+  assert.ok(html.indexOf('href="/cex-netflow"') < html.indexOf('aria-label="Chart drawing tools"'));
   assert.match(html, /AI Analyst/);
   assert.match(html, /Trading Hub AI Analyst/);
   assert.match(html, /Test connection/);
@@ -211,6 +217,63 @@ test("ETF flows and CVD/OI pages serve sanitized fixtures and ignore privilege f
   }), env, context);
   assert.notEqual(cvdPost.status, 200);
   assert.doesNotMatch(await cvdPost.text(), /ETHUSDT/);
+});
+
+test("exchange net flow page serves the sanitized reserve proxy and ignores privilege flags", async () => {
+  const app = await worker();
+  const sample = JSON.parse(readFileSync(new URL("../fixtures/cex_netflow.sample.json", import.meta.url), "utf8"));
+  const forgedQuery = "admin=1&entitled=true&role=admin&authorized=1&hasMarketHistory=1&membership=pro&privileged=1&kind=btc_ifp";
+  const page = await app.fetch(new Request(`http://localhost/cex-netflow?${forgedQuery}`, { headers: { accept: "text/html" } }), env, context);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /<title>Exchange Net Flow Pulse — Trading Hub<\/title>/i);
+  assert.match(html, /data-page="cex-netflow"/);
+  assert.match(html, /交易所净流\/储备脉搏/);
+  assert.match(html, /<h1>Bitcoin: Exchange Net Flow Pulse \(proxy\)<\/h1>/);
+  assert.match(html, /CEX reserve proxy \(CoinMetrics\)/);
+  assert.match(html, /Not CryptoQuant Inter-exchange Flow Pulse\./);
+  assert.match(html, /CEX net flow \/ reserve proxy/);
+  assert.match(html, /BTC Price/);
+  assert.match(html, /2\.686M BTC/);
+  assert.match(html, /\$83,674\.66/);
+  assert.match(html, /data-signal="bull"/);
+  assert.match(html, /non-CQ \/ experimental proxy/);
+  assert.match(html, /90(?:<!-- -->)?d MA/);
+  assert.match(html, /Back to workspace/);
+  assert.doesNotMatch(html, /href="\/ifp"/);
+  assert.doesNotMatch(html, /<h1>[^<]*\bIFP\b/);
+  const nav = html.match(/<nav class="desk-nav"[\s\S]*?<\/nav>/);
+  assert.ok(nav);
+  assert.match(nav[0], /href="\/cex-netflow"/);
+  assert.doesNotMatch(nav[0], /CryptoQuant|Inter-exchange Flow Pulse|\bIFP\b/);
+
+  const api = await app.fetch(new Request(`http://localhost/api/cex-netflow?${forgedQuery}`), env, context);
+  assert.equal(api.status, 200);
+  assert.match(api.headers.get("cache-control") ?? "", /max-age=60/);
+  const body = await api.json();
+  assert.equal(body.kind, "btc_cex_netflow");
+  assert.equal(body.disclaimer, sample.disclaimer);
+  assert.equal(body.series.length, 303);
+  assert.equal(body.series.at(-1).t, "2026-09-29");
+  assert.equal(body.series.at(-1).flowBtc, 2686232.3669);
+  assert.equal(body.series.at(-1).signal, "bull");
+  assert.equal(body.admin, undefined);
+  assert.equal(body.role, undefined);
+  assert.equal(body.entitled, undefined);
+  assert.equal(body.hasMarketHistory, undefined);
+  assert.equal(body.privileged, undefined);
+  assert.equal(body.axes.flowBtc.meaning, undefined);
+  const { disclaimer, ...rest } = body;
+  assert.equal(disclaimer, sample.disclaimer);
+  assert.doesNotMatch(JSON.stringify(rest), /CryptoQuant|Inter-exchange Flow Pulse|\bIFP\b|https?:\/\/|btc_ifp/);
+
+  const posted = await app.fetch(new Request("http://localhost/api/cex-netflow?admin=1", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "btc_ifp", admin: true, series: [{ t: "1999-01-01", flowBtc: 1 }] }),
+  }), env, context);
+  assert.notEqual(posted.status, 200);
+  assert.doesNotMatch(await posted.text(), /1999-01-01|btc_ifp/);
 });
 
 test("server-renders the synchronized Pine editor tab", async () => {

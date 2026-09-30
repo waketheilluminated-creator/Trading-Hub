@@ -1,0 +1,2460 @@
+{
+  "kind": "btc_cex_netflow",
+  "title": "Bitcoin: Exchange Net Flow Pulse (proxy)",
+  "updatedAt": "2026-09-30T19:05:35Z",
+  "source": "coinmetrics_community:SplyExNtv+PriceUSD",
+  "maWindowDays": 90,
+  "disclaimer": "Not CryptoQuant Inter-exchange Flow Pulse. Aggregate CEX netflow/reserve proxy only; no spot→derivatives desk split. Pulse line = CoinMetrics SplyExNtv (BTC held on exchanges / exchange supply). dailyNetBtc = FlowInExNtv − FlowOutExNtv (diagnostic only).",
+  "series": [
+    {
+      "t": "2025-12-01",
+      "flowBtc": 2706106.8135,
+      "flowMa90": null,
+      "priceUsd": 86504.64,
+      "signal": "bear",
+      "dailyNetBtc": -615.0704
+    },
+    {
+      "t": "2025-12-02",
+      "flowBtc": 2697509.8154,
+      "flowMa90": null,
+      "priceUsd": 91528.02,
+      "signal": "bear",
+      "dailyNetBtc": -8596.9981
+    },
+    {
+      "t": "2025-12-03",
+      "flowBtc": 2699678.4853,
+      "flowMa90": null,
+      "priceUsd": 93609.09,
+      "signal": "bear",
+      "dailyNetBtc": 2168.6698
+    },
+    {
+      "t": "2025-12-04",
+      "flowBtc": 2697366.8037,
+      "flowMa90": null,
+      "priceUsd": 92205.59,
+      "signal": "bear",
+      "dailyNetBtc": -2311.6816
+    },
+    {
+      "t": "2025-12-05",
+      "flowBtc": 2689643.3918,
+      "flowMa90": null,
+      "priceUsd": 89279.83,
+      "signal": "bear",
+      "dailyNetBtc": -7723.4119
+    },
+    {
+      "t": "2025-12-06",
+      "flowBtc": 2686988.1932,
+      "flowMa90": null,
+      "priceUsd": 89169.56,
+      "signal": "bear",
+      "dailyNetBtc": -2655.1986
+    },
+    {
+      "t": "2025-12-07",
+      "flowBtc": 2687992.9644,
+      "flowMa90": null,
+      "priceUsd": 90067.85,
+      "signal": "bear",
+      "dailyNetBtc": 1004.7713
+    },
+    {
+      "t": "2025-12-08",
+      "flowBtc": 2686170.788,
+      "flowMa90": null,
+      "priceUsd": 90673.14,
+      "signal": "bear",
+      "dailyNetBtc": -1822.1764
+    },
+    {
+      "t": "2025-12-09",
+      "flowBtc": 2684445.3368,
+      "flowMa90": null,
+      "priceUsd": 92808.85,
+      "signal": "bear",
+      "dailyNetBtc": -1725.4513
+    },
+    {
+      "t": "2025-12-10",
+      "flowBtc": 2680389.0995,
+      "flowMa90": null,
+      "priceUsd": 92102.93,
+      "signal": "bear",
+      "dailyNetBtc": -4056.2373
+    },
+    {
+      "t": "2025-12-11",
+      "flowBtc": 2676803.1928,
+      "flowMa90": null,
+      "priceUsd": 92623.72,
+      "signal": "bear",
+      "dailyNetBtc": -3585.9067
+    },
+    {
+      "t": "2025-12-12",
+      "flowBtc": 2676590.4996,
+      "flowMa90": null,
+      "priceUsd": 90331.61,
+      "signal": "bear",
+      "dailyNetBtc": -212.6932
+    },
+    {
+      "t": "2025-12-13",
+      "flowBtc": 2677738.0964,
+      "flowMa90": null,
+      "priceUsd": 90245.27,
+      "signal": "bear",
+      "dailyNetBtc": 1147.5968
+    },
+    {
+      "t": "2025-12-14",
+      "flowBtc": 2678522.2973,
+      "flowMa90": null,
+      "priceUsd": 88096.38,
+      "signal": "bear",
+      "dailyNetBtc": 784.2009
+    },
+    {
+      "t": "2025-12-15",
+      "flowBtc": 2683043.1413,
+      "flowMa90": null,
+      "priceUsd": 86352.58,
+      "signal": "bear",
+      "dailyNetBtc": 4520.844
+    },
+    {
+      "t": "2025-12-16",
+      "flowBtc": 2685346.509,
+      "flowMa90": null,
+      "priceUsd": 87752.43,
+      "signal": "bear",
+      "dailyNetBtc": 2303.3677
+    },
+    {
+      "t": "2025-12-17",
+      "flowBtc": 2686357.7435,
+      "flowMa90": null,
+      "priceUsd": 86059.55,
+      "signal": "bear",
+      "dailyNetBtc": 1011.2346
+    },
+    {
+      "t": "2025-12-18",
+      "flowBtc": 2690819.0493,
+      "flowMa90": null,
+      "priceUsd": 85434.19,
+      "signal": "bear",
+      "dailyNetBtc": 4461.3057
+    },
+    {
+      "t": "2025-12-19",
+      "flowBtc": 2691003.0389,
+      "flowMa90": null,
+      "priceUsd": 88168.07,
+      "signal": "bear",
+      "dailyNetBtc": 183.9897
+    },
+    {
+      "t": "2025-12-20",
+      "flowBtc": 2691304.9067,
+      "flowMa90": null,
+      "priceUsd": 88292.45,
+      "signal": "bear",
+      "dailyNetBtc": 301.8678
+    },
+    {
+      "t": "2025-12-21",
+      "flowBtc": 2691096.4812,
+      "flowMa90": null,
+      "priceUsd": 88533.43,
+      "signal": "bear",
+      "dailyNetBtc": -208.4255
+    },
+    {
+      "t": "2025-12-22",
+      "flowBtc": 2692520.6707,
+      "flowMa90": null,
+      "priceUsd": 88474.46,
+      "signal": "bear",
+      "dailyNetBtc": 1424.1895
+    },
+    {
+      "t": "2025-12-23",
+      "flowBtc": 2688412.9997,
+      "flowMa90": null,
+      "priceUsd": 87365.99,
+      "signal": "bear",
+      "dailyNetBtc": -4107.671
+    },
+    {
+      "t": "2025-12-24",
+      "flowBtc": 2691113.6944,
+      "flowMa90": null,
+      "priceUsd": 87625.67,
+      "signal": "bear",
+      "dailyNetBtc": 2700.6947
+    },
+    {
+      "t": "2025-12-25",
+      "flowBtc": 2689458.1235,
+      "flowMa90": null,
+      "priceUsd": 87231.3,
+      "signal": "bear",
+      "dailyNetBtc": -1655.5709
+    },
+    {
+      "t": "2025-12-26",
+      "flowBtc": 2692314.594,
+      "flowMa90": null,
+      "priceUsd": 87334.81,
+      "signal": "bear",
+      "dailyNetBtc": 2856.4706
+    },
+    {
+      "t": "2025-12-27",
+      "flowBtc": 2690919.1691,
+      "flowMa90": null,
+      "priceUsd": 87695.42,
+      "signal": "bear",
+      "dailyNetBtc": -1395.425
+    },
+    {
+      "t": "2025-12-28",
+      "flowBtc": 2692712.3965,
+      "flowMa90": null,
+      "priceUsd": 87747.65,
+      "signal": "bear",
+      "dailyNetBtc": 1793.2274
+    },
+    {
+      "t": "2025-12-29",
+      "flowBtc": 2691160.679,
+      "flowMa90": null,
+      "priceUsd": 87133.51,
+      "signal": "bear",
+      "dailyNetBtc": -1551.7174
+    },
+    {
+      "t": "2025-12-30",
+      "flowBtc": 2686050.441,
+      "flowMa90": null,
+      "priceUsd": 88428.49,
+      "signal": "bear",
+      "dailyNetBtc": -5110.238
+    },
+    {
+      "t": "2025-12-31",
+      "flowBtc": 2674746.5975,
+      "flowMa90": null,
+      "priceUsd": 87516.98,
+      "signal": "bear",
+      "dailyNetBtc": -11303.8435
+    },
+    {
+      "t": "2026-01-01",
+      "flowBtc": 2673699.2203,
+      "flowMa90": null,
+      "priceUsd": 88684.22,
+      "signal": "bear",
+      "dailyNetBtc": -1047.3772
+    },
+    {
+      "t": "2026-01-02",
+      "flowBtc": 2671079.7153,
+      "flowMa90": null,
+      "priceUsd": 89940.18,
+      "signal": "bear",
+      "dailyNetBtc": -2619.505
+    },
+    {
+      "t": "2026-01-03",
+      "flowBtc": 2671678.3986,
+      "flowMa90": null,
+      "priceUsd": 90598.13,
+      "signal": "bear",
+      "dailyNetBtc": 598.6833
+    },
+    {
+      "t": "2026-01-04",
+      "flowBtc": 2671681.8033,
+      "flowMa90": null,
+      "priceUsd": 91359.76,
+      "signal": "bear",
+      "dailyNetBtc": 3.4046
+    },
+    {
+      "t": "2026-01-05",
+      "flowBtc": 2666481.3046,
+      "flowMa90": null,
+      "priceUsd": 93948.58,
+      "signal": "bear",
+      "dailyNetBtc": -5200.4986
+    },
+    {
+      "t": "2026-01-06",
+      "flowBtc": 2666349.1527,
+      "flowMa90": null,
+      "priceUsd": 93574.29,
+      "signal": "bear",
+      "dailyNetBtc": -132.1519
+    },
+    {
+      "t": "2026-01-07",
+      "flowBtc": 2666251.4693,
+      "flowMa90": null,
+      "priceUsd": 91208.96,
+      "signal": "bear",
+      "dailyNetBtc": -97.6834
+    },
+    {
+      "t": "2026-01-08",
+      "flowBtc": 2666173.8439,
+      "flowMa90": null,
+      "priceUsd": 91096.92,
+      "signal": "bear",
+      "dailyNetBtc": -77.6254
+    },
+    {
+      "t": "2026-01-09",
+      "flowBtc": 2669276.5604,
+      "flowMa90": null,
+      "priceUsd": 90539.6,
+      "signal": "bear",
+      "dailyNetBtc": 3102.7165
+    },
+    {
+      "t": "2026-01-10",
+      "flowBtc": 2668785.8233,
+      "flowMa90": null,
+      "priceUsd": 90406.14,
+      "signal": "bear",
+      "dailyNetBtc": -490.737
+    },
+    {
+      "t": "2026-01-11",
+      "flowBtc": 2670338.5887,
+      "flowMa90": null,
+      "priceUsd": 90717.21,
+      "signal": "bear",
+      "dailyNetBtc": 1552.7654
+    },
+    {
+      "t": "2026-01-12",
+      "flowBtc": 2667829.4974,
+      "flowMa90": null,
+      "priceUsd": 91141.15,
+      "signal": "bear",
+      "dailyNetBtc": -2509.0913
+    },
+    {
+      "t": "2026-01-13",
+      "flowBtc": 2660572.717,
+      "flowMa90": null,
+      "priceUsd": 95304.5,
+      "signal": "bear",
+      "dailyNetBtc": -7256.7804
+    },
+    {
+      "t": "2026-01-14",
+      "flowBtc": 2649665.1041,
+      "flowMa90": null,
+      "priceUsd": 97043.99,
+      "signal": "bear",
+      "dailyNetBtc": -10907.6128
+    },
+    {
+      "t": "2026-01-15",
+      "flowBtc": 2647833.3636,
+      "flowMa90": null,
+      "priceUsd": 95546.14,
+      "signal": "bear",
+      "dailyNetBtc": -1831.7405
+    },
+    {
+      "t": "2026-01-16",
+      "flowBtc": 2649511.8384,
+      "flowMa90": null,
+      "priceUsd": 95489.13,
+      "signal": "bear",
+      "dailyNetBtc": 1678.4748
+    },
+    {
+      "t": "2026-01-17",
+      "flowBtc": 2647774.5031,
+      "flowMa90": null,
+      "priceUsd": 95106.98,
+      "signal": "bear",
+      "dailyNetBtc": -1737.3353
+    },
+    {
+      "t": "2026-01-18",
+      "flowBtc": 2648010.9097,
+      "flowMa90": null,
+      "priceUsd": 94261.33,
+      "signal": "bear",
+      "dailyNetBtc": 236.4066
+    },
+    {
+      "t": "2026-01-19",
+      "flowBtc": 2649225.3122,
+      "flowMa90": null,
+      "priceUsd": 92526.24,
+      "signal": "bear",
+      "dailyNetBtc": 1214.4025
+    },
+    {
+      "t": "2026-01-20",
+      "flowBtc": 2658447.7862,
+      "flowMa90": null,
+      "priceUsd": 88236.56,
+      "signal": "bear",
+      "dailyNetBtc": 9222.474
+    },
+    {
+      "t": "2026-01-21",
+      "flowBtc": 2667727.0402,
+      "flowMa90": null,
+      "priceUsd": 89599.36,
+      "signal": "bear",
+      "dailyNetBtc": 9279.2541
+    },
+    {
+      "t": "2026-01-22",
+      "flowBtc": 2669684.3602,
+      "flowMa90": null,
+      "priceUsd": 89395.7,
+      "signal": "bear",
+      "dailyNetBtc": 1957.3199
+    },
+    {
+      "t": "2026-01-23",
+      "flowBtc": 2668513.9203,
+      "flowMa90": null,
+      "priceUsd": 89439.77,
+      "signal": "bear",
+      "dailyNetBtc": -1170.4398
+    },
+    {
+      "t": "2026-01-24",
+      "flowBtc": 2668298.4922,
+      "flowMa90": null,
+      "priceUsd": 89185.04,
+      "signal": "bear",
+      "dailyNetBtc": -215.4281
+    },
+    {
+      "t": "2026-01-25",
+      "flowBtc": 2669597.6071,
+      "flowMa90": null,
+      "priceUsd": 86445.67,
+      "signal": "bear",
+      "dailyNetBtc": 1299.1149
+    },
+    {
+      "t": "2026-01-26",
+      "flowBtc": 2667273.512,
+      "flowMa90": null,
+      "priceUsd": 88337.45,
+      "signal": "bear",
+      "dailyNetBtc": -2324.0951
+    },
+    {
+      "t": "2026-01-27",
+      "flowBtc": 2672255.8152,
+      "flowMa90": null,
+      "priceUsd": 89260.38,
+      "signal": "bear",
+      "dailyNetBtc": 4982.3032
+    },
+    {
+      "t": "2026-01-28",
+      "flowBtc": 2672046.0295,
+      "flowMa90": null,
+      "priceUsd": 89177.79,
+      "signal": "bear",
+      "dailyNetBtc": -209.7857
+    },
+    {
+      "t": "2026-01-29",
+      "flowBtc": 2675544.9469,
+      "flowMa90": null,
+      "priceUsd": 84520.4,
+      "signal": "bear",
+      "dailyNetBtc": 3498.9175
+    },
+    {
+      "t": "2026-01-30",
+      "flowBtc": 2679701.4442,
+      "flowMa90": null,
+      "priceUsd": 84017.03,
+      "signal": "bear",
+      "dailyNetBtc": 4156.4973
+    },
+    {
+      "t": "2026-01-31",
+      "flowBtc": 2688743.9089,
+      "flowMa90": null,
+      "priceUsd": 78702.39,
+      "signal": "bear",
+      "dailyNetBtc": 9042.4647
+    },
+    {
+      "t": "2026-02-01",
+      "flowBtc": 2691476.3939,
+      "flowMa90": null,
+      "priceUsd": 76911.05,
+      "signal": "bear",
+      "dailyNetBtc": 2732.4849
+    },
+    {
+      "t": "2026-02-02",
+      "flowBtc": 2690170.3281,
+      "flowMa90": null,
+      "priceUsd": 78716.6,
+      "signal": "bear",
+      "dailyNetBtc": -1306.0657
+    },
+    {
+      "t": "2026-02-03",
+      "flowBtc": 2691556.4837,
+      "flowMa90": null,
+      "priceUsd": 75684.77,
+      "signal": "bear",
+      "dailyNetBtc": 1386.1556
+    },
+    {
+      "t": "2026-02-04",
+      "flowBtc": 2699134.3405,
+      "flowMa90": null,
+      "priceUsd": 73095.19,
+      "signal": "bear",
+      "dailyNetBtc": 7577.8568
+    },
+    {
+      "t": "2026-02-05",
+      "flowBtc": 2713785.5677,
+      "flowMa90": null,
+      "priceUsd": 63494.69,
+      "signal": "bear",
+      "dailyNetBtc": 14651.2272
+    },
+    {
+      "t": "2026-02-06",
+      "flowBtc": 2698712.7637,
+      "flowMa90": null,
+      "priceUsd": 70647.7,
+      "signal": "bear",
+      "dailyNetBtc": -15072.8041
+    },
+    {
+      "t": "2026-02-07",
+      "flowBtc": 2699213.6585,
+      "flowMa90": null,
+      "priceUsd": 69166.26,
+      "signal": "bear",
+      "dailyNetBtc": 500.8949
+    },
+    {
+      "t": "2026-02-08",
+      "flowBtc": 2696504.2087,
+      "flowMa90": null,
+      "priceUsd": 70522.59,
+      "signal": "bear",
+      "dailyNetBtc": -2709.4498
+    },
+    {
+      "t": "2026-02-09",
+      "flowBtc": 2687446.8037,
+      "flowMa90": null,
+      "priceUsd": 70244.1,
+      "signal": "bear",
+      "dailyNetBtc": -10328.7872
+    },
+    {
+      "t": "2026-02-10",
+      "flowBtc": 2684940.4528,
+      "flowMa90": null,
+      "priceUsd": 68688.79,
+      "signal": "bear",
+      "dailyNetBtc": -2506.3509
+    },
+    {
+      "t": "2026-02-11",
+      "flowBtc": 2688801.6833,
+      "flowMa90": null,
+      "priceUsd": 66989.72,
+      "signal": "bear",
+      "dailyNetBtc": 3861.2304
+    },
+    {
+      "t": "2026-02-12",
+      "flowBtc": 2690412.2472,
+      "flowMa90": null,
+      "priceUsd": 66221.54,
+      "signal": "bear",
+      "dailyNetBtc": 1610.5639
+    },
+    {
+      "t": "2026-02-13",
+      "flowBtc": 2688857.3514,
+      "flowMa90": null,
+      "priceUsd": 68860.84,
+      "signal": "bear",
+      "dailyNetBtc": -1554.8957
+    },
+    {
+      "t": "2026-02-14",
+      "flowBtc": 2694111.1927,
+      "flowMa90": null,
+      "priceUsd": 69798.08,
+      "signal": "bear",
+      "dailyNetBtc": 5253.8413
+    },
+    {
+      "t": "2026-02-15",
+      "flowBtc": 2692055.2317,
+      "flowMa90": null,
+      "priceUsd": 68629.96,
+      "signal": "bear",
+      "dailyNetBtc": -2055.961
+    },
+    {
+      "t": "2026-02-16",
+      "flowBtc": 2691691.0401,
+      "flowMa90": null,
+      "priceUsd": 68747.44,
+      "signal": "bear",
+      "dailyNetBtc": -364.1916
+    },
+    {
+      "t": "2026-02-17",
+      "flowBtc": 2695568.7947,
+      "flowMa90": null,
+      "priceUsd": 67471.05,
+      "signal": "bear",
+      "dailyNetBtc": 3877.7546
+    },
+    {
+      "t": "2026-02-18",
+      "flowBtc": 2687744.4487,
+      "flowMa90": null,
+      "priceUsd": 66380.71,
+      "signal": "bear",
+      "dailyNetBtc": -7824.346
+    },
+    {
+      "t": "2026-02-19",
+      "flowBtc": 2690625.4987,
+      "flowMa90": null,
+      "priceUsd": 66932.35,
+      "signal": "bear",
+      "dailyNetBtc": 2881.05
+    },
+    {
+      "t": "2026-02-20",
+      "flowBtc": 2694949.8877,
+      "flowMa90": null,
+      "priceUsd": 67977.31,
+      "signal": "bear",
+      "dailyNetBtc": 4324.389
+    },
+    {
+      "t": "2026-02-21",
+      "flowBtc": 2693646.3899,
+      "flowMa90": null,
+      "priceUsd": 68020.67,
+      "signal": "bear",
+      "dailyNetBtc": -1303.4978
+    },
+    {
+      "t": "2026-02-22",
+      "flowBtc": 2693045.7098,
+      "flowMa90": null,
+      "priceUsd": 67550.02,
+      "signal": "bear",
+      "dailyNetBtc": -600.6801
+    },
+    {
+      "t": "2026-02-23",
+      "flowBtc": 2693866.6567,
+      "flowMa90": null,
+      "priceUsd": 64689.91,
+      "signal": "bear",
+      "dailyNetBtc": 820.9469
+    },
+    {
+      "t": "2026-02-24",
+      "flowBtc": 2694145.7541,
+      "flowMa90": null,
+      "priceUsd": 64123.75,
+      "signal": "bear",
+      "dailyNetBtc": 279.0974
+    },
+    {
+      "t": "2026-02-25",
+      "flowBtc": 2689202.6567,
+      "flowMa90": null,
+      "priceUsd": 68038.52,
+      "signal": "bear",
+      "dailyNetBtc": -4943.0974
+    },
+    {
+      "t": "2026-02-26",
+      "flowBtc": 2684801.3839,
+      "flowMa90": null,
+      "priceUsd": 67519.26,
+      "signal": "bear",
+      "dailyNetBtc": -4401.2728
+    },
+    {
+      "t": "2026-02-27",
+      "flowBtc": 2686567.2006,
+      "flowMa90": null,
+      "priceUsd": 65864.14,
+      "signal": "bear",
+      "dailyNetBtc": 1765.8166
+    },
+    {
+      "t": "2026-02-28",
+      "flowBtc": 2685611.4501,
+      "flowMa90": 2681811.3953,
+      "priceUsd": 66965.64,
+      "signal": "bull",
+      "dailyNetBtc": -955.7504
+    },
+    {
+      "t": "2026-03-01",
+      "flowBtc": 2685170.7163,
+      "flowMa90": 2681578.772,
+      "priceUsd": 65733.52,
+      "signal": "bull",
+      "dailyNetBtc": -440.7338
+    },
+    {
+      "t": "2026-03-02",
+      "flowBtc": 2680142.4366,
+      "flowMa90": 2681385.8012,
+      "priceUsd": 68922.62,
+      "signal": "bear",
+      "dailyNetBtc": -5028.2797
+    },
+    {
+      "t": "2026-03-03",
+      "flowBtc": 2677391.7959,
+      "flowMa90": 2681138.1713,
+      "priceUsd": 68431.17,
+      "signal": "bear",
+      "dailyNetBtc": -2750.6408
+    },
+    {
+      "t": "2026-03-04",
+      "flowBtc": 2645354.2622,
+      "flowMa90": 2680560.2542,
+      "priceUsd": 72667.46,
+      "signal": "bear",
+      "dailyNetBtc": -32037.5336
+    },
+    {
+      "t": "2026-03-05",
+      "flowBtc": 2641226.4693,
+      "flowMa90": 2680022.2884,
+      "priceUsd": 70987.43,
+      "signal": "bear",
+      "dailyNetBtc": -4127.7929
+    },
+    {
+      "t": "2026-03-06",
+      "flowBtc": 2639895.3282,
+      "flowMa90": 2679499.0343,
+      "priceUsd": 68226.71,
+      "signal": "bear",
+      "dailyNetBtc": -1331.1411
+    },
+    {
+      "t": "2026-03-07",
+      "flowBtc": 2640015.5556,
+      "flowMa90": 2678965.952,
+      "priceUsd": 67315.55,
+      "signal": "bear",
+      "dailyNetBtc": 120.2274
+    },
+    {
+      "t": "2026-03-08",
+      "flowBtc": 2641141.1649,
+      "flowMa90": 2678465.6228,
+      "priceUsd": 66202.7,
+      "signal": "bear",
+      "dailyNetBtc": 1125.6093
+    },
+    {
+      "t": "2026-03-09",
+      "flowBtc": 2639702.7806,
+      "flowMa90": 2677968.4833,
+      "priceUsd": 68528.54,
+      "signal": "bear",
+      "dailyNetBtc": -1438.3843
+    },
+    {
+      "t": "2026-03-10",
+      "flowBtc": 2635329.1657,
+      "flowMa90": 2677467.8174,
+      "priceUsd": 69891.82,
+      "signal": "bear",
+      "dailyNetBtc": -4373.6148
+    },
+    {
+      "t": "2026-03-11",
+      "flowBtc": 2628740.8145,
+      "flowMa90": 2676933.791,
+      "priceUsd": 70298.58,
+      "signal": "bear",
+      "dailyNetBtc": -6588.3512
+    },
+    {
+      "t": "2026-03-12",
+      "flowBtc": 2620408.8276,
+      "flowMa90": 2676309.5502,
+      "priceUsd": 70538.11,
+      "signal": "bear",
+      "dailyNetBtc": -8331.9869
+    },
+    {
+      "t": "2026-03-13",
+      "flowBtc": 2614795.804,
+      "flowMa90": 2675610.1914,
+      "priceUsd": 70930.01,
+      "signal": "bear",
+      "dailyNetBtc": -5613.0237
+    },
+    {
+      "t": "2026-03-14",
+      "flowBtc": 2616826.8977,
+      "flowMa90": 2674924.6869,
+      "priceUsd": 71136.22,
+      "signal": "bear",
+      "dailyNetBtc": 2031.0937
+    },
+    {
+      "t": "2026-03-15",
+      "flowBtc": 2614132.1406,
+      "flowMa90": 2674159.0091,
+      "priceUsd": 72712.15,
+      "signal": "bear",
+      "dailyNetBtc": -2694.757
+    },
+    {
+      "t": "2026-03-16",
+      "flowBtc": 2617044.6246,
+      "flowMa90": 2673400.0993,
+      "priceUsd": 74723.96,
+      "signal": "bear",
+      "dailyNetBtc": 2912.484
+    },
+    {
+      "t": "2026-03-17",
+      "flowBtc": 2617029.7397,
+      "flowMa90": 2672629.7882,
+      "priceUsd": 74086.01,
+      "signal": "bear",
+      "dailyNetBtc": -14.8849
+    },
+    {
+      "t": "2026-03-18",
+      "flowBtc": 2614096.0404,
+      "flowMa90": 2671777.3103,
+      "priceUsd": 71253.96,
+      "signal": "bear",
+      "dailyNetBtc": -2933.6993
+    },
+    {
+      "t": "2026-03-19",
+      "flowBtc": 2612535.2853,
+      "flowMa90": 2670905.4463,
+      "priceUsd": 69948.9,
+      "signal": "bear",
+      "dailyNetBtc": -1560.7551
+    },
+    {
+      "t": "2026-03-20",
+      "flowBtc": 2612319.4361,
+      "flowMa90": 2670027.83,
+      "priceUsd": 70510.42,
+      "signal": "bear",
+      "dailyNetBtc": -215.8493
+    },
+    {
+      "t": "2026-03-21",
+      "flowBtc": 2612988.0648,
+      "flowMa90": 2669159.9587,
+      "priceUsd": 69707.29,
+      "signal": "bear",
+      "dailyNetBtc": 668.6288
+    },
+    {
+      "t": "2026-03-22",
+      "flowBtc": 2603945.5961,
+      "flowMa90": 2668175.7912,
+      "priceUsd": 68018.15,
+      "signal": "bear",
+      "dailyNetBtc": -9042.4687
+    },
+    {
+      "t": "2026-03-23",
+      "flowBtc": 2607875.2294,
+      "flowMa90": 2667280.9271,
+      "priceUsd": 70726.21,
+      "signal": "bear",
+      "dailyNetBtc": 3929.6332
+    },
+    {
+      "t": "2026-03-24",
+      "flowBtc": 2612113.6229,
+      "flowMa90": 2666403.1485,
+      "priceUsd": 70610.02,
+      "signal": "bear",
+      "dailyNetBtc": 4238.3935
+    },
+    {
+      "t": "2026-03-25",
+      "flowBtc": 2604285.8226,
+      "flowMa90": 2665456.7896,
+      "priceUsd": 71281.3,
+      "signal": "bear",
+      "dailyNetBtc": -7827.8002
+    },
+    {
+      "t": "2026-03-26",
+      "flowBtc": 2607885.5369,
+      "flowMa90": 2664518.689,
+      "priceUsd": 68722.97,
+      "signal": "bear",
+      "dailyNetBtc": 3599.7143
+    },
+    {
+      "t": "2026-03-27",
+      "flowBtc": 2609399.2687,
+      "flowMa90": 2663612.9123,
+      "priceUsd": 66214.17,
+      "signal": "bear",
+      "dailyNetBtc": 1513.7318
+    },
+    {
+      "t": "2026-03-28",
+      "flowBtc": 2612848.1684,
+      "flowMa90": 2662725.532,
+      "priceUsd": 66351.07,
+      "signal": "bear",
+      "dailyNetBtc": 3448.8997
+    },
+    {
+      "t": "2026-03-29",
+      "flowBtc": 2611319.1253,
+      "flowMa90": 2661838.4036,
+      "priceUsd": 65966.75,
+      "signal": "bear",
+      "dailyNetBtc": -1529.0431
+    },
+    {
+      "t": "2026-03-30",
+      "flowBtc": 2615332.7018,
+      "flowMa90": 2661052.651,
+      "priceUsd": 66651.23,
+      "signal": "bear",
+      "dailyNetBtc": 4013.5765
+    },
+    {
+      "t": "2026-03-31",
+      "flowBtc": 2615374.917,
+      "flowMa90": 2660392.9656,
+      "priceUsd": 68214.87,
+      "signal": "bear",
+      "dailyNetBtc": 42.2152
+    },
+    {
+      "t": "2026-04-01",
+      "flowBtc": 2610492.2435,
+      "flowMa90": 2659690.6659,
+      "priceUsd": 68116.82,
+      "signal": "bear",
+      "dailyNetBtc": -4882.6735
+    },
+    {
+      "t": "2026-04-02",
+      "flowBtc": 2610456.912,
+      "flowMa90": 2659017.0792,
+      "priceUsd": 66908.32,
+      "signal": "bear",
+      "dailyNetBtc": -35.3315
+    },
+    {
+      "t": "2026-04-03",
+      "flowBtc": 2610286.5147,
+      "flowMa90": 2658334.9472,
+      "priceUsd": 66891.74,
+      "signal": "bear",
+      "dailyNetBtc": -170.3973
+    },
+    {
+      "t": "2026-04-04",
+      "flowBtc": 2609647.4701,
+      "flowMa90": 2657645.6768,
+      "priceUsd": 67295.13,
+      "signal": "bear",
+      "dailyNetBtc": -639.0446
+    },
+    {
+      "t": "2026-04-05",
+      "flowBtc": 2610079.7783,
+      "flowMa90": 2657018.9932,
+      "priceUsd": 68921.81,
+      "signal": "bear",
+      "dailyNetBtc": 432.3081
+    },
+    {
+      "t": "2026-04-06",
+      "flowBtc": 2610550.1562,
+      "flowMa90": 2656399.0043,
+      "priceUsd": 68742.91,
+      "signal": "bear",
+      "dailyNetBtc": 470.3779
+    },
+    {
+      "t": "2026-04-07",
+      "flowBtc": 2611856.0825,
+      "flowMa90": 2655794.6111,
+      "priceUsd": 72057.12,
+      "signal": "bear",
+      "dailyNetBtc": 1305.9263
+    },
+    {
+      "t": "2026-04-08",
+      "flowBtc": 2609354.1906,
+      "flowMa90": 2655163.2816,
+      "priceUsd": 71085.06,
+      "signal": "bear",
+      "dailyNetBtc": -2501.8919
+    },
+    {
+      "t": "2026-04-09",
+      "flowBtc": 2605103.6153,
+      "flowMa90": 2654450.2489,
+      "priceUsd": 71788.68,
+      "signal": "bear",
+      "dailyNetBtc": -4250.5753
+    },
+    {
+      "t": "2026-04-10",
+      "flowBtc": 2598095.0832,
+      "flowMa90": 2653664.7963,
+      "priceUsd": 72945.07,
+      "signal": "bear",
+      "dailyNetBtc": -4506.5767
+    },
+    {
+      "t": "2026-04-11",
+      "flowBtc": 2596111.3019,
+      "flowMa90": 2652840.0486,
+      "priceUsd": 73119.11,
+      "signal": "bear",
+      "dailyNetBtc": -2280.2839
+    },
+    {
+      "t": "2026-04-12",
+      "flowBtc": 2596441.3705,
+      "flowMa90": 2652046.8472,
+      "priceUsd": 70685.37,
+      "signal": "bear",
+      "dailyNetBtc": 121.5705
+    },
+    {
+      "t": "2026-04-13",
+      "flowBtc": 2590128.4952,
+      "flowMa90": 2651264.1336,
+      "priceUsd": 74632.75,
+      "signal": "bear",
+      "dailyNetBtc": -6702.6473
+    },
+    {
+      "t": "2026-04-14",
+      "flowBtc": 2583475.6264,
+      "flowMa90": 2650528.695,
+      "priceUsd": 74173.51,
+      "signal": "bear",
+      "dailyNetBtc": -7948.313
+    },
+    {
+      "t": "2026-04-15",
+      "flowBtc": 2575155.9312,
+      "flowMa90": 2649721.168,
+      "priceUsd": 74761.96,
+      "signal": "bear",
+      "dailyNetBtc": -8517.8597
+    },
+    {
+      "t": "2026-04-16",
+      "flowBtc": 2572239.965,
+      "flowMa90": 2648862.5916,
+      "priceUsd": 75095.74,
+      "signal": "bear",
+      "dailyNetBtc": -3990.9721
+    },
+    {
+      "t": "2026-04-17",
+      "flowBtc": 2574735.1472,
+      "flowMa90": 2648051.0432,
+      "priceUsd": 77114.48,
+      "signal": "bear",
+      "dailyNetBtc": 850.1509
+    },
+    {
+      "t": "2026-04-18",
+      "flowBtc": 2574047.5059,
+      "flowMa90": 2647229.2276,
+      "priceUsd": 75792.06,
+      "signal": "bear",
+      "dailyNetBtc": -1031.4032
+    },
+    {
+      "t": "2026-04-19",
+      "flowBtc": 2577308.0544,
+      "flowMa90": 2646430.147,
+      "priceUsd": 73905.2,
+      "signal": "bear",
+      "dailyNetBtc": 2969.8878
+    },
+    {
+      "t": "2026-04-20",
+      "flowBtc": 2572960.2332,
+      "flowMa90": 2645480.2853,
+      "priceUsd": 75814.15,
+      "signal": "bear",
+      "dailyNetBtc": -6196.5118
+    },
+    {
+      "t": "2026-04-21",
+      "flowBtc": 2571263.2877,
+      "flowMa90": 2644408.4658,
+      "priceUsd": 76107.44,
+      "signal": "bear",
+      "dailyNetBtc": -2383.6296
+    },
+    {
+      "t": "2026-04-22",
+      "flowBtc": 2567301.5877,
+      "flowMa90": 2643270.8794,
+      "priceUsd": 78317.74,
+      "signal": "bear",
+      "dailyNetBtc": -4287.9857
+    },
+    {
+      "t": "2026-04-23",
+      "flowBtc": 2564188.7815,
+      "flowMa90": 2642111.7112,
+      "priceUsd": 78233.68,
+      "signal": "bear",
+      "dailyNetBtc": -3435.8733
+    },
+    {
+      "t": "2026-04-24",
+      "flowBtc": 2569529.6583,
+      "flowMa90": 2641014.2797,
+      "priceUsd": 77444.27,
+      "signal": "bear",
+      "dailyNetBtc": 5012.1955
+    },
+    {
+      "t": "2026-04-25",
+      "flowBtc": 2561262.9378,
+      "flowMa90": 2639810.5612,
+      "priceUsd": 77624.71,
+      "signal": "bear",
+      "dailyNetBtc": -8420.2984
+    },
+    {
+      "t": "2026-04-26",
+      "flowBtc": 2561317.2215,
+      "flowMa90": 2638633.2691,
+      "priceUsd": 78538.77,
+      "signal": "bear",
+      "dailyNetBtc": -34.2155
+    },
+    {
+      "t": "2026-04-27",
+      "flowBtc": 2572447.8284,
+      "flowMa90": 2637524.2914,
+      "priceUsd": 77256.3,
+      "signal": "bear",
+      "dailyNetBtc": 10790.5103
+    },
+    {
+      "t": "2026-04-28",
+      "flowBtc": 2574608.548,
+      "flowMa90": 2636441.6527,
+      "priceUsd": 76295.53,
+      "signal": "bear",
+      "dailyNetBtc": 1645.4095
+    },
+    {
+      "t": "2026-04-29",
+      "flowBtc": 2576334.1217,
+      "flowMa90": 2635339.3102,
+      "priceUsd": 75795.01,
+      "signal": "bear",
+      "dailyNetBtc": -847.3374
+    },
+    {
+      "t": "2026-04-30",
+      "flowBtc": 2579624.7876,
+      "flowMa90": 2634227.3474,
+      "priceUsd": 76299.62,
+      "signal": "bear",
+      "dailyNetBtc": 2832.6556
+    },
+    {
+      "t": "2026-05-01",
+      "flowBtc": 2576500.3408,
+      "flowMa90": 2632980.1966,
+      "priceUsd": 78132.64,
+      "signal": "bear",
+      "dailyNetBtc": -3470.4308
+    },
+    {
+      "t": "2026-05-02",
+      "flowBtc": 2578275.327,
+      "flowMa90": 2631722.407,
+      "priceUsd": 78712.54,
+      "signal": "bear",
+      "dailyNetBtc": -1960.6007
+    },
+    {
+      "t": "2026-05-03",
+      "flowBtc": 2576844.1181,
+      "flowMa90": 2630463.2269,
+      "priceUsd": 78649.17,
+      "signal": "bear",
+      "dailyNetBtc": -1498.6862
+    },
+    {
+      "t": "2026-05-04",
+      "flowBtc": 2570607.9858,
+      "flowMa90": 2629119.3547,
+      "priceUsd": 79826.11,
+      "signal": "bear",
+      "dailyNetBtc": -6460.206
+    },
+    {
+      "t": "2026-05-05",
+      "flowBtc": 2571391.1311,
+      "flowMa90": 2627699.9857,
+      "priceUsd": 80936.75,
+      "signal": "bear",
+      "dailyNetBtc": -4968.4278
+    },
+    {
+      "t": "2026-05-06",
+      "flowBtc": 2594026.0502,
+      "flowMa90": 2626369.3244,
+      "priceUsd": 81364.62,
+      "signal": "bear",
+      "dailyNetBtc": 1084.9857
+    },
+    {
+      "t": "2026-05-07",
+      "flowBtc": 2591383.0521,
+      "flowMa90": 2625176.772,
+      "priceUsd": 79989.0,
+      "signal": "bear",
+      "dailyNetBtc": -4710.8888
+    },
+    {
+      "t": "2026-05-08",
+      "flowBtc": 2591688.931,
+      "flowMa90": 2623982.0528,
+      "priceUsd": 80179.69,
+      "signal": "bear",
+      "dailyNetBtc": -3469.5151
+    },
+    {
+      "t": "2026-05-09",
+      "flowBtc": 2591952.2392,
+      "flowMa90": 2622820.3643,
+      "priceUsd": 80663.63,
+      "signal": "bear",
+      "dailyNetBtc": -3227.9607
+    },
+    {
+      "t": "2026-05-10",
+      "flowBtc": 2590615.9722,
+      "flowMa90": 2621744.4662,
+      "priceUsd": 82256.78,
+      "signal": "bear",
+      "dailyNetBtc": -1506.706
+    },
+    {
+      "t": "2026-05-11",
+      "flowBtc": 2593070.1222,
+      "flowMa90": 2620723.6847,
+      "priceUsd": 81714.74,
+      "signal": "bear",
+      "dailyNetBtc": 2228.9594
+    },
+    {
+      "t": "2026-05-12",
+      "flowBtc": 2595993.453,
+      "flowMa90": 2619692.4822,
+      "priceUsd": 80525.56,
+      "signal": "bear",
+      "dailyNetBtc": 2295.7354
+    },
+    {
+      "t": "2026-05-13",
+      "flowBtc": 2597786.6079,
+      "flowMa90": 2618663.3084,
+      "priceUsd": 79291.91,
+      "signal": "bear",
+      "dailyNetBtc": 475.2265
+    },
+    {
+      "t": "2026-05-14",
+      "flowBtc": 2596864.7698,
+      "flowMa90": 2617641.1686,
+      "priceUsd": 81175.83,
+      "signal": "bear",
+      "dailyNetBtc": -1878.5093
+    },
+    {
+      "t": "2026-05-15",
+      "flowBtc": 2596953.9108,
+      "flowMa90": 2616561.6432,
+      "priceUsd": 79063.41,
+      "signal": "bear",
+      "dailyNetBtc": -662.4131
+    },
+    {
+      "t": "2026-05-16",
+      "flowBtc": 2595087.828,
+      "flowMa90": 2615484.2276,
+      "priceUsd": 78164.5,
+      "signal": "bear",
+      "dailyNetBtc": -2094.2426
+    },
+    {
+      "t": "2026-05-17",
+      "flowBtc": 2594731.4407,
+      "flowMa90": 2614406.8988,
+      "priceUsd": 77497.7,
+      "signal": "bear",
+      "dailyNetBtc": -466.3657
+    },
+    {
+      "t": "2026-05-18",
+      "flowBtc": 2600162.8783,
+      "flowMa90": 2613346.833,
+      "priceUsd": 76975.91,
+      "signal": "bear",
+      "dailyNetBtc": 5225.4482
+    },
+    {
+      "t": "2026-05-19",
+      "flowBtc": 2604372.8938,
+      "flowMa90": 2612420.4824,
+      "priceUsd": 76807.46,
+      "signal": "bear",
+      "dailyNetBtc": 631.8899
+    },
+    {
+      "t": "2026-05-20",
+      "flowBtc": 2609228.0959,
+      "flowMa90": 2611516.0668,
+      "priceUsd": 77408.17,
+      "signal": "bear",
+      "dailyNetBtc": 2385.0943
+    },
+    {
+      "t": "2026-05-21",
+      "flowBtc": 2609247.7399,
+      "flowMa90": 2610563.8207,
+      "priceUsd": 77595.39,
+      "signal": "bear",
+      "dailyNetBtc": -305.7086
+    },
+    {
+      "t": "2026-05-22",
+      "flowBtc": 2611943.8457,
+      "flowMa90": 2609656.0147,
+      "priceUsd": 75567.54,
+      "signal": "bull",
+      "dailyNetBtc": 34.7442
+    },
+    {
+      "t": "2026-05-23",
+      "flowBtc": 2612102.5194,
+      "flowMa90": 2608756.6459,
+      "priceUsd": 76619.87,
+      "signal": "bull",
+      "dailyNetBtc": -182.8706
+    },
+    {
+      "t": "2026-05-24",
+      "flowBtc": 2614631.5937,
+      "flowMa90": 2607876.2563,
+      "priceUsd": 76950.99,
+      "signal": "bull",
+      "dailyNetBtc": 2352.739
+    },
+    {
+      "t": "2026-05-25",
+      "flowBtc": 2614338.9764,
+      "flowMa90": 2606989.5144,
+      "priceUsd": 77244.57,
+      "signal": "bull",
+      "dailyNetBtc": -2042.2677
+    },
+    {
+      "t": "2026-05-26",
+      "flowBtc": 2617326.9521,
+      "flowMa90": 2606190.8954,
+      "priceUsd": 75816.04,
+      "signal": "bull",
+      "dailyNetBtc": 432.3593
+    },
+    {
+      "t": "2026-05-27",
+      "flowBtc": 2621787.9766,
+      "flowMa90": 2605490.7464,
+      "priceUsd": 74268.78,
+      "signal": "bull",
+      "dailyNetBtc": 4262.7963
+    },
+    {
+      "t": "2026-05-28",
+      "flowBtc": 2630449.1852,
+      "flowMa90": 2604867.2129,
+      "priceUsd": 73500.53,
+      "signal": "bull",
+      "dailyNetBtc": 6611.0076
+    },
+    {
+      "t": "2026-05-29",
+      "flowBtc": 2629873.0503,
+      "flowMa90": 2604247.8974,
+      "priceUsd": 73322.9,
+      "signal": "bull",
+      "dailyNetBtc": -2369.6792
+    },
+    {
+      "t": "2026-05-30",
+      "flowBtc": 2630989.3126,
+      "flowMa90": 2603645.8818,
+      "priceUsd": 73731.48,
+      "signal": "bull",
+      "dailyNetBtc": 896.913
+    },
+    {
+      "t": "2026-05-31",
+      "flowBtc": 2631828.5575,
+      "flowMa90": 2603109.0609,
+      "priceUsd": 73599.56,
+      "signal": "bull",
+      "dailyNetBtc": 632.5575
+    },
+    {
+      "t": "2026-06-01",
+      "flowBtc": 2639145.1061,
+      "flowMa90": 2602684.0977,
+      "priceUsd": 71328.73,
+      "signal": "bull",
+      "dailyNetBtc": 3514.9015
+    },
+    {
+      "t": "2026-06-02",
+      "flowBtc": 2649929.5633,
+      "flowMa90": 2602734.9344,
+      "priceUsd": 66540.69,
+      "signal": "bull",
+      "dailyNetBtc": 10513.7426
+    },
+    {
+      "t": "2026-06-03",
+      "flowBtc": 2650243.9107,
+      "flowMa90": 2602835.1282,
+      "priceUsd": 64232.58,
+      "signal": "bull",
+      "dailyNetBtc": -187.2771
+    },
+    {
+      "t": "2026-06-04",
+      "flowBtc": 2654609.2408,
+      "flowMa90": 2602998.6161,
+      "priceUsd": 63639.25,
+      "signal": "bull",
+      "dailyNetBtc": 3928.3088
+    },
+    {
+      "t": "2026-06-05",
+      "flowBtc": 2652045.6024,
+      "flowMa90": 2603132.2833,
+      "priceUsd": 60907.61,
+      "signal": "bull",
+      "dailyNetBtc": -2904.6054
+    },
+    {
+      "t": "2026-06-06",
+      "flowBtc": 2649840.4472,
+      "flowMa90": 2603228.942,
+      "priceUsd": 60771.61,
+      "signal": "bull",
+      "dailyNetBtc": -2401.2296
+    },
+    {
+      "t": "2026-06-07",
+      "flowBtc": 2649714.3494,
+      "flowMa90": 2603340.1816,
+      "priceUsd": 63158.25,
+      "signal": "bull",
+      "dailyNetBtc": -336.422
+    },
+    {
+      "t": "2026-06-08",
+      "flowBtc": 2646556.6957,
+      "flowMa90": 2603464.9319,
+      "priceUsd": 63109.62,
+      "signal": "bull",
+      "dailyNetBtc": -3624.3173
+    },
+    {
+      "t": "2026-06-09",
+      "flowBtc": 2649259.2616,
+      "flowMa90": 2603692.9147,
+      "priceUsd": 61640.46,
+      "signal": "bull",
+      "dailyNetBtc": 2397.6476
+    },
+    {
+      "t": "2026-06-10",
+      "flowBtc": 2650601.1325,
+      "flowMa90": 2604028.3847,
+      "priceUsd": 61435.08,
+      "signal": "bull",
+      "dailyNetBtc": 857.0508
+    },
+    {
+      "t": "2026-06-11",
+      "flowBtc": 2651105.5761,
+      "flowMa90": 2604431.8267,
+      "priceUsd": 63475.32,
+      "signal": "bull",
+      "dailyNetBtc": -122.8211
+    },
+    {
+      "t": "2026-06-12",
+      "flowBtc": 2647487.7366,
+      "flowMa90": 2604772.5026,
+      "priceUsd": 63475.64,
+      "signal": "bull",
+      "dailyNetBtc": -3957.8706
+    },
+    {
+      "t": "2026-06-13",
+      "flowBtc": 2646751.316,
+      "flowMa90": 2605134.9379,
+      "priceUsd": 64423.54,
+      "signal": "bull",
+      "dailyNetBtc": -1128.89
+    },
+    {
+      "t": "2026-06-14",
+      "flowBtc": 2645870.6135,
+      "flowMa90": 2605455.2267,
+      "priceUsd": 65615.33,
+      "signal": "bull",
+      "dailyNetBtc": -1166.047
+    },
+    {
+      "t": "2026-06-15",
+      "flowBtc": 2641738.1513,
+      "flowMa90": 2605729.7646,
+      "priceUsd": 66222.59,
+      "signal": "bull",
+      "dailyNetBtc": -4468.9138
+    },
+    {
+      "t": "2026-06-16",
+      "flowBtc": 2640846.0703,
+      "flowMa90": 2606026.9872,
+      "priceUsd": 65638.14,
+      "signal": "bull",
+      "dailyNetBtc": -2961.3071
+    },
+    {
+      "t": "2026-06-17",
+      "flowBtc": 2643606.346,
+      "flowMa90": 2606372.2212,
+      "priceUsd": 64400.73,
+      "signal": "bull",
+      "dailyNetBtc": -1748.1192
+    },
+    {
+      "t": "2026-06-18",
+      "flowBtc": 2644652.5617,
+      "flowMa90": 2606731.4781,
+      "priceUsd": 62835.22,
+      "signal": "bull",
+      "dailyNetBtc": 579.8819
+    },
+    {
+      "t": "2026-06-19",
+      "flowBtc": 2645617.4673,
+      "flowMa90": 2607094.027,
+      "priceUsd": 63307.28,
+      "signal": "bull",
+      "dailyNetBtc": -1964.8425
+    },
+    {
+      "t": "2026-06-20",
+      "flowBtc": 2647450.8979,
+      "flowMa90": 2607577.4193,
+      "priceUsd": 64220.54,
+      "signal": "bull",
+      "dailyNetBtc": -1383.4907
+    },
+    {
+      "t": "2026-06-21",
+      "flowBtc": 2632467.0384,
+      "flowMa90": 2607850.6616,
+      "priceUsd": 63365.44,
+      "signal": "bull",
+      "dailyNetBtc": -15126.6733
+    },
+    {
+      "t": "2026-06-22",
+      "flowBtc": 2634607.7456,
+      "flowMa90": 2608100.5963,
+      "priceUsd": 63923.57,
+      "signal": "bull",
+      "dailyNetBtc": 1654.8548
+    },
+    {
+      "t": "2026-06-23",
+      "flowBtc": 2635474.4823,
+      "flowMa90": 2608447.137,
+      "priceUsd": 62593.35,
+      "signal": "bull",
+      "dailyNetBtc": -3359.4365
+    },
+    {
+      "t": "2026-06-24",
+      "flowBtc": 2637809.161,
+      "flowMa90": 2608779.6217,
+      "priceUsd": 60908.19,
+      "signal": "bull",
+      "dailyNetBtc": 724.9694
+    },
+    {
+      "t": "2026-06-25",
+      "flowBtc": 2645000.8863,
+      "flowMa90": 2609175.1952,
+      "priceUsd": 59863.42,
+      "signal": "bull",
+      "dailyNetBtc": 41.054
+    },
+    {
+      "t": "2026-06-26",
+      "flowBtc": 2648137.3593,
+      "flowMa90": 2609567.2973,
+      "priceUsd": 59961.51,
+      "signal": "bull",
+      "dailyNetBtc": 1552.7477
+    },
+    {
+      "t": "2026-06-27",
+      "flowBtc": 2647425.8925,
+      "flowMa90": 2609968.4836,
+      "priceUsd": 59955.57,
+      "signal": "bull",
+      "dailyNetBtc": -3704.6223
+    },
+    {
+      "t": "2026-06-28",
+      "flowBtc": 2646431.7629,
+      "flowMa90": 2610314.0287,
+      "priceUsd": 59516.67,
+      "signal": "bull",
+      "dailyNetBtc": -5885.0548
+    },
+    {
+      "t": "2026-06-29",
+      "flowBtc": 2652065.2519,
+      "flowMa90": 2610721.6991,
+      "priceUsd": 60175.46,
+      "signal": "bull",
+      "dailyNetBtc": 396.8552
+    },
+    {
+      "t": "2026-06-30",
+      "flowBtc": 2651910.5585,
+      "flowMa90": 2611181.9026,
+      "priceUsd": 58525.08,
+      "signal": "bull",
+      "dailyNetBtc": -2365.8588
+    },
+    {
+      "t": "2026-07-01",
+      "flowBtc": 2652736.8862,
+      "flowMa90": 2611651.6801,
+      "priceUsd": 60065.6,
+      "signal": "bull",
+      "dailyNetBtc": -555.4115
+    },
+    {
+      "t": "2026-07-02",
+      "flowBtc": 2654793.6792,
+      "flowMa90": 2612146.2042,
+      "priceUsd": 61438.19,
+      "signal": "bull",
+      "dailyNetBtc": 445.7722
+    },
+    {
+      "t": "2026-07-03",
+      "flowBtc": 2654381.03,
+      "flowMa90": 2612643.2437,
+      "priceUsd": 62564.61,
+      "signal": "bull",
+      "dailyNetBtc": -781.8081
+    },
+    {
+      "t": "2026-07-04",
+      "flowBtc": 2656147.0563,
+      "flowMa90": 2613155.1024,
+      "priceUsd": 63090.41,
+      "signal": "bull",
+      "dailyNetBtc": 1019.9769
+    },
+    {
+      "t": "2026-07-05",
+      "flowBtc": 2663007.3753,
+      "flowMa90": 2613737.9604,
+      "priceUsd": 63619.88,
+      "signal": "bull",
+      "dailyNetBtc": 4230.9119
+    },
+    {
+      "t": "2026-07-06",
+      "flowBtc": 2658697.8298,
+      "flowMa90": 2614258.4242,
+      "priceUsd": 64063.06,
+      "signal": "bull",
+      "dailyNetBtc": -5036.0394
+    },
+    {
+      "t": "2026-07-07",
+      "flowBtc": 2655441.5993,
+      "flowMa90": 2614770.5065,
+      "priceUsd": 63458.12,
+      "signal": "bull",
+      "dailyNetBtc": -3946.6013
+    },
+    {
+      "t": "2026-07-08",
+      "flowBtc": 2654811.8616,
+      "flowMa90": 2615322.8204,
+      "priceUsd": 62214.04,
+      "signal": "bull",
+      "dailyNetBtc": -1024.7628
+    },
+    {
+      "t": "2026-07-09",
+      "flowBtc": 2655465.005,
+      "flowMa90": 2615960.264,
+      "priceUsd": 63189.39,
+      "signal": "bull",
+      "dailyNetBtc": 14.5013
+    },
+    {
+      "t": "2026-07-10",
+      "flowBtc": 2652603.8684,
+      "flowMa90": 2616587.9591,
+      "priceUsd": 64118.62,
+      "signal": "bull",
+      "dailyNetBtc": -3208.8902
+    },
+    {
+      "t": "2026-07-11",
+      "flowBtc": 2651439.4765,
+      "flowMa90": 2617199.0492,
+      "priceUsd": 63892.71,
+      "signal": "bull",
+      "dailyNetBtc": -1466.3814
+    },
+    {
+      "t": "2026-07-12",
+      "flowBtc": 2652154.6499,
+      "flowMa90": 2617888.2287,
+      "priceUsd": 63752.27,
+      "signal": "bull",
+      "dailyNetBtc": 581.3747
+    },
+    {
+      "t": "2026-07-13",
+      "flowBtc": 2659494.7591,
+      "flowMa90": 2618732.8857,
+      "priceUsd": 62126.53,
+      "signal": "bull",
+      "dailyNetBtc": 7048.286
+    },
+    {
+      "t": "2026-07-14",
+      "flowBtc": 2661194.5772,
+      "flowMa90": 2619688.8707,
+      "priceUsd": 64934.44,
+      "signal": "bull",
+      "dailyNetBtc": 1068.0023
+    },
+    {
+      "t": "2026-07-15",
+      "flowBtc": 2663776.5748,
+      "flowMa90": 2620705.9441,
+      "priceUsd": 64765.06,
+      "signal": "bull",
+      "dailyNetBtc": -830.9632
+    },
+    {
+      "t": "2026-07-16",
+      "flowBtc": 2660187.5336,
+      "flowMa90": 2621655.4151,
+      "priceUsd": 63780.14,
+      "signal": "bull",
+      "dailyNetBtc": -4020.9756
+    },
+    {
+      "t": "2026-07-17",
+      "flowBtc": 2655104.6621,
+      "flowMa90": 2622556.0502,
+      "priceUsd": 63915.92,
+      "signal": "bull",
+      "dailyNetBtc": -5511.6992
+    },
+    {
+      "t": "2026-07-18",
+      "flowBtc": 2652536.3453,
+      "flowMa90": 2623391.9201,
+      "priceUsd": 64777.66,
+      "signal": "bull",
+      "dailyNetBtc": -2766.5696
+    },
+    {
+      "t": "2026-07-19",
+      "flowBtc": 2654180.4995,
+      "flowMa90": 2624294.3675,
+      "priceUsd": 64653.05,
+      "signal": "bull",
+      "dailyNetBtc": 1489.4416
+    },
+    {
+      "t": "2026-07-20",
+      "flowBtc": 2650004.3604,
+      "flowMa90": 2625169.2683,
+      "priceUsd": 65181.92,
+      "signal": "bull",
+      "dailyNetBtc": -8123.8999
+    },
+    {
+      "t": "2026-07-21",
+      "flowBtc": 2646860.1043,
+      "flowMa90": 2626053.2518,
+      "priceUsd": 66403.1,
+      "signal": "bull",
+      "dailyNetBtc": -3550.6001
+    },
+    {
+      "t": "2026-07-22",
+      "flowBtc": 2649847.5719,
+      "flowMa90": 2627005.0161,
+      "priceUsd": 65983.19,
+      "signal": "bull",
+      "dailyNetBtc": -590.9902
+    },
+    {
+      "t": "2026-07-23",
+      "flowBtc": 2648456.5141,
+      "flowMa90": 2627881.9812,
+      "priceUsd": 65094.41,
+      "signal": "bull",
+      "dailyNetBtc": -2142.913
+    },
+    {
+      "t": "2026-07-24",
+      "flowBtc": 2653687.2544,
+      "flowMa90": 2628908.918,
+      "priceUsd": 64100.11,
+      "signal": "bull",
+      "dailyNetBtc": -923.6452
+    },
+    {
+      "t": "2026-07-25",
+      "flowBtc": 2651341.8277,
+      "flowMa90": 2629909.1914,
+      "priceUsd": 64331.33,
+      "signal": "bull",
+      "dailyNetBtc": -2537.3708
+    },
+    {
+      "t": "2026-07-26",
+      "flowBtc": 2651640.2758,
+      "flowMa90": 2630789.1075,
+      "priceUsd": 65328.79,
+      "signal": "bull",
+      "dailyNetBtc": -5483.298
+    },
+    {
+      "t": "2026-07-27",
+      "flowBtc": 2653084.7732,
+      "flowMa90": 2631661.0656,
+      "priceUsd": 63718.24,
+      "signal": "bull",
+      "dailyNetBtc": 1150.0167
+    },
+    {
+      "t": "2026-07-28",
+      "flowBtc": 2646553.6616,
+      "flowMa90": 2632441.2827,
+      "priceUsd": 63728.45,
+      "signal": "bull",
+      "dailyNetBtc": -6817.8777
+    },
+    {
+      "t": "2026-07-29",
+      "flowBtc": 2654863.1097,
+      "flowMa90": 2633277.2641,
+      "priceUsd": 63904.64,
+      "signal": "bull",
+      "dailyNetBtc": 1857.2993
+    },
+    {
+      "t": "2026-07-30",
+      "flowBtc": 2663166.9455,
+      "flowMa90": 2634240.2263,
+      "priceUsd": 64827.57,
+      "signal": "bull",
+      "dailyNetBtc": 6685.5301
+    },
+    {
+      "t": "2026-07-31",
+      "flowBtc": 2665034.4831,
+      "flowMa90": 2635204.217,
+      "priceUsd": 62875.18,
+      "signal": "bull",
+      "dailyNetBtc": 775.352
+    },
+    {
+      "t": "2026-08-01",
+      "flowBtc": 2666330.4001,
+      "flowMa90": 2636198.509,
+      "priceUsd": 62751.88,
+      "signal": "bull",
+      "dailyNetBtc": 952.733
+    },
+    {
+      "t": "2026-08-02",
+      "flowBtc": 2675995.7832,
+      "flowMa90": 2637369.4845,
+      "priceUsd": 63445.68,
+      "signal": "bull",
+      "dailyNetBtc": 5927.4851
+    },
+    {
+      "t": "2026-08-03",
+      "flowBtc": 2676998.0852,
+      "flowMa90": 2638542.8951,
+      "priceUsd": 63460.05,
+      "signal": "bull",
+      "dailyNetBtc": 618.9941
+    },
+    {
+      "t": "2026-08-04",
+      "flowBtc": 2669254.9913,
+      "flowMa90": 2639378.7722,
+      "priceUsd": 64161.47,
+      "signal": "bull",
+      "dailyNetBtc": -10959.0603
+    },
+    {
+      "t": "2026-08-05",
+      "flowBtc": 2667057.7263,
+      "flowMa90": 2640219.6019,
+      "priceUsd": 64610.31,
+      "signal": "bull",
+      "dailyNetBtc": -2509.2093
+    },
+    {
+      "t": "2026-08-06",
+      "flowBtc": 2667540.8886,
+      "flowMa90": 2641062.4015,
+      "priceUsd": 64212.27,
+      "signal": "bull",
+      "dailyNetBtc": -1202.1094
+    },
+    {
+      "t": "2026-08-07",
+      "flowBtc": 2664078.1782,
+      "flowMa90": 2641863.8008,
+      "priceUsd": 64869.17,
+      "signal": "bull",
+      "dailyNetBtc": -3900.3073
+    },
+    {
+      "t": "2026-08-08",
+      "flowBtc": 2665762.6538,
+      "flowMa90": 2642698.7639,
+      "priceUsd": 64906.96,
+      "signal": "bull",
+      "dailyNetBtc": 1582.7478
+    },
+    {
+      "t": "2026-08-09",
+      "flowBtc": 2667827.3839,
+      "flowMa90": 2643529.4002,
+      "priceUsd": 64864.93,
+      "signal": "bull",
+      "dailyNetBtc": 1993.4832
+    },
+    {
+      "t": "2026-08-10",
+      "flowBtc": 2673653.7698,
+      "flowMa90": 2644392.2926,
+      "priceUsd": 63907.75,
+      "signal": "bull",
+      "dailyNetBtc": 5560.2781
+    },
+    {
+      "t": "2026-08-11",
+      "flowBtc": 2679179.3698,
+      "flowMa90": 2645296.6566,
+      "priceUsd": 63547.44,
+      "signal": "bull",
+      "dailyNetBtc": 5234.6383
+    },
+    {
+      "t": "2026-08-12",
+      "flowBtc": 2681208.676,
+      "flowMa90": 2646233.8111,
+      "priceUsd": 63359.4,
+      "signal": "bull",
+      "dailyNetBtc": 801.8899
+    },
+    {
+      "t": "2026-08-13",
+      "flowBtc": 2728162.92,
+      "flowMa90": 2647691.689,
+      "priceUsd": 63395.01,
+      "signal": "bull",
+      "dailyNetBtc": 3191.6816
+    },
+    {
+      "t": "2026-08-14",
+      "flowBtc": 2731026.6062,
+      "flowMa90": 2649202.1199,
+      "priceUsd": 62924.7,
+      "signal": "bull",
+      "dailyNetBtc": 383.3564
+    },
+    {
+      "t": "2026-08-15",
+      "flowBtc": 2732483.4981,
+      "flowMa90": 2650732.6983,
+      "priceUsd": 63034.43,
+      "signal": "bull",
+      "dailyNetBtc": 1224.6801
+    },
+    {
+      "t": "2026-08-16",
+      "flowBtc": 2731860.0345,
+      "flowMa90": 2652196.0,
+      "priceUsd": 62818.41,
+      "signal": "bull",
+      "dailyNetBtc": -842.6673
+    },
+    {
+      "t": "2026-08-17",
+      "flowBtc": 2729656.2542,
+      "flowMa90": 2653588.0373,
+      "priceUsd": 64434.14,
+      "signal": "bull",
+      "dailyNetBtc": -2679.3898
+    },
+    {
+      "t": "2026-08-18",
+      "flowBtc": 2732030.1152,
+      "flowMa90": 2654952.5042,
+      "priceUsd": 64696.18,
+      "signal": "bull",
+      "dailyNetBtc": -6348.2387
+    },
+    {
+      "t": "2026-08-19",
+      "flowBtc": 2729211.7598,
+      "flowMa90": 2656285.4378,
+      "priceUsd": 69267.83,
+      "signal": "bull",
+      "dailyNetBtc": -7056.0462
+    },
+    {
+      "t": "2026-08-20",
+      "flowBtc": 2710644.7732,
+      "flowMa90": 2657382.1147,
+      "priceUsd": 73070.93,
+      "signal": "bull",
+      "dailyNetBtc": -19113.9143
+    },
+    {
+      "t": "2026-08-21",
+      "flowBtc": 2711043.5913,
+      "flowMa90": 2658481.46,
+      "priceUsd": 78359.17,
+      "signal": "bull",
+      "dailyNetBtc": 58.631
+    },
+    {
+      "t": "2026-08-22",
+      "flowBtc": 2714042.9251,
+      "flowMa90": 2659586.0303,
+      "priceUsd": 77020.13,
+      "signal": "bull",
+      "dailyNetBtc": 2755.4417
+    },
+    {
+      "t": "2026-08-23",
+      "flowBtc": 2715632.8582,
+      "flowMa90": 2660711.5179,
+      "priceUsd": 77593.03,
+      "signal": "bull",
+      "dailyNetBtc": -3882.0031
+    },
+    {
+      "t": "2026-08-24",
+      "flowBtc": 2707426.2365,
+      "flowMa90": 2661712.6211,
+      "priceUsd": 78894.5,
+      "signal": "bull",
+      "dailyNetBtc": -8736.6755
+    },
+    {
+      "t": "2026-08-25",
+      "flowBtc": 2706882.2885,
+      "flowMa90": 2662658.1134,
+      "priceUsd": 78601.4,
+      "signal": "bull",
+      "dailyNetBtc": -730.6614
+    },
+    {
+      "t": "2026-08-26",
+      "flowBtc": 2703241.6763,
+      "flowMa90": 2663466.9189,
+      "priceUsd": 78955.04,
+      "signal": "bull",
+      "dailyNetBtc": -4041.1882
+    },
+    {
+      "t": "2026-08-27",
+      "flowBtc": 2696997.8018,
+      "flowMa90": 2664212.7495,
+      "priceUsd": 80297.4,
+      "signal": "bull",
+      "dailyNetBtc": -6538.4578
+    },
+    {
+      "t": "2026-08-28",
+      "flowBtc": 2701665.1442,
+      "flowMa90": 2664998.0365,
+      "priceUsd": 77716.59,
+      "signal": "bull",
+      "dailyNetBtc": 4556.7153
+    },
+    {
+      "t": "2026-08-29",
+      "flowBtc": 2704815.8285,
+      "flowMa90": 2665809.0062,
+      "priceUsd": 78243.93,
+      "signal": "bull",
+      "dailyNetBtc": -733.2041
+    },
+    {
+      "t": "2026-08-30",
+      "flowBtc": 2703796.4344,
+      "flowMa90": 2666527.3542,
+      "priceUsd": 77689.19,
+      "signal": "bull",
+      "dailyNetBtc": -2645.2862
+    },
+    {
+      "t": "2026-08-31",
+      "flowBtc": 2704339.4196,
+      "flowMa90": 2667131.9082,
+      "priceUsd": 78533.89,
+      "signal": "bull",
+      "dailyNetBtc": 327.7686
+    },
+    {
+      "t": "2026-09-01",
+      "flowBtc": 2705334.793,
+      "flowMa90": 2667744.0291,
+      "priceUsd": 77407.7,
+      "signal": "bull",
+      "dailyNetBtc": 813.8371
+    },
+    {
+      "t": "2026-09-02",
+      "flowBtc": 2706447.7138,
+      "flowMa90": 2668320.0122,
+      "priceUsd": 77188.7,
+      "signal": "bull",
+      "dailyNetBtc": 879.692
+    },
+    {
+      "t": "2026-09-03",
+      "flowBtc": 2704499.6485,
+      "flowMa90": 2668902.8349,
+      "priceUsd": 81243.24,
+      "signal": "bull",
+      "dailyNetBtc": -3046.5259
+    },
+    {
+      "t": "2026-09-04",
+      "flowBtc": 2701495.386,
+      "flowMa90": 2669476.7787,
+      "priceUsd": 79681.56,
+      "signal": "bull",
+      "dailyNetBtc": -3172.0402
+    },
+    {
+      "t": "2026-09-05",
+      "flowBtc": 2700752.5058,
+      "flowMa90": 2670043.8693,
+      "priceUsd": 79817.32,
+      "signal": "bull",
+      "dailyNetBtc": -949.8799
+    },
+    {
+      "t": "2026-09-06",
+      "flowBtc": 2701286.6577,
+      "flowMa90": 2670651.98,
+      "priceUsd": 80319.97,
+      "signal": "bull",
+      "dailyNetBtc": -3684.3274
+    },
+    {
+      "t": "2026-09-07",
+      "flowBtc": 2703303.0155,
+      "flowMa90": 2671252.4661,
+      "priceUsd": 79073.02,
+      "signal": "bull",
+      "dailyNetBtc": 1786.3061
+    },
+    {
+      "t": "2026-09-08",
+      "flowBtc": 2704208.1517,
+      "flowMa90": 2671848.0997,
+      "priceUsd": 78445.68,
+      "signal": "bull",
+      "dailyNetBtc": -3547.0279
+    },
+    {
+      "t": "2026-09-09",
+      "flowBtc": 2706262.4612,
+      "flowMa90": 2672460.9539,
+      "priceUsd": 78207.48,
+      "signal": "bull",
+      "dailyNetBtc": -2110.2619
+    },
+    {
+      "t": "2026-09-10",
+      "flowBtc": 2705198.7489,
+      "flowMa90": 2673102.1874,
+      "priceUsd": 76675.77,
+      "signal": "bull",
+      "dailyNetBtc": -5073.8579
+    },
+    {
+      "t": "2026-09-11",
+      "flowBtc": 2708701.8528,
+      "flowMa90": 2673790.5267,
+      "priceUsd": 77176.82,
+      "signal": "bull",
+      "dailyNetBtc": -297.0975
+    },
+    {
+      "t": "2026-09-12",
+      "flowBtc": 2710330.2251,
+      "flowMa90": 2674506.7446,
+      "priceUsd": 77252.41,
+      "signal": "bull",
+      "dailyNetBtc": 290.4427
+    },
+    {
+      "t": "2026-09-13",
+      "flowBtc": 2708335.058,
+      "flowMa90": 2675246.7103,
+      "priceUsd": 76759.26,
+      "signal": "bull",
+      "dailyNetBtc": -2187.4968
+    },
+    {
+      "t": "2026-09-14",
+      "flowBtc": 2707442.1063,
+      "flowMa90": 2675986.6662,
+      "priceUsd": 78278.79,
+      "signal": "bull",
+      "dailyNetBtc": -3175.131
+    },
+    {
+      "t": "2026-09-15",
+      "flowBtc": 2717458.4078,
+      "flowMa90": 2676807.2447,
+      "priceUsd": 75650.43,
+      "signal": "bull",
+      "dailyNetBtc": 5532.5484
+    },
+    {
+      "t": "2026-09-16",
+      "flowBtc": 2715643.2525,
+      "flowMa90": 2677596.0301,
+      "priceUsd": 76082.38,
+      "signal": "bull",
+      "dailyNetBtc": -2106.9125
+    },
+    {
+      "t": "2026-09-17",
+      "flowBtc": 2717241.3493,
+      "flowMa90": 2678391.851,
+      "priceUsd": 76386.9,
+      "signal": "bull",
+      "dailyNetBtc": -1001.901
+    },
+    {
+      "t": "2026-09-18",
+      "flowBtc": 2718781.1529,
+      "flowMa90": 2679184.4094,
+      "priceUsd": 80944.16,
+      "signal": "bull",
+      "dailyNetBtc": -1051.3086
+    },
+    {
+      "t": "2026-09-19",
+      "flowBtc": 2718047.4042,
+      "flowMa90": 2680135.3024,
+      "priceUsd": 81262.35,
+      "signal": "bull",
+      "dailyNetBtc": -1486.1907
+    },
+    {
+      "t": "2026-09-20",
+      "flowBtc": 2721135.9412,
+      "flowMa90": 2681096.7268,
+      "priceUsd": 81194.74,
+      "signal": "bull",
+      "dailyNetBtc": -24.698
+    },
+    {
+      "t": "2026-09-21",
+      "flowBtc": 2719494.2201,
+      "flowMa90": 2682030.2794,
+      "priceUsd": 86505.3,
+      "signal": "bull",
+      "dailyNetBtc": -3866.9799
+    },
+    {
+      "t": "2026-09-22",
+      "flowBtc": 2705076.0747,
+      "flowMa90": 2682777.6896,
+      "priceUsd": 86205.27,
+      "signal": "bull",
+      "dailyNetBtc": -16906.8135
+    },
+    {
+      "t": "2026-09-23",
+      "flowBtc": 2695208.7936,
+      "flowMa90": 2683335.5552,
+      "priceUsd": 84434.32,
+      "signal": "bull",
+      "dailyNetBtc": -10056.8972
+    },
+    {
+      "t": "2026-09-24",
+      "flowBtc": 2690688.9825,
+      "flowMa90": 2683808.351,
+      "priceUsd": 84386.58,
+      "signal": "bull",
+      "dailyNetBtc": -7661.3491
+    },
+    {
+      "t": "2026-09-25",
+      "flowBtc": 2685118.6597,
+      "flowMa90": 2684227.1595,
+      "priceUsd": 84062.16,
+      "signal": "bull",
+      "dailyNetBtc": -7159.9538
+    },
+    {
+      "t": "2026-09-26",
+      "flowBtc": 2682220.887,
+      "flowMa90": 2684624.8165,
+      "priceUsd": 84386.5,
+      "signal": "bear",
+      "dailyNetBtc": -5944.9248
+    },
+    {
+      "t": "2026-09-27",
+      "flowBtc": 2682330.4366,
+      "flowMa90": 2684961.0963,
+      "priceUsd": 84392.47,
+      "signal": "bear",
+      "dailyNetBtc": -3462.5062
+    },
+    {
+      "t": "2026-09-28",
+      "flowBtc": 2683692.0886,
+      "flowMa90": 2685314.2244,
+      "priceUsd": 83516.76,
+      "signal": "bear",
+      "dailyNetBtc": -2240.5241
+    },
+    {
+      "t": "2026-09-29",
+      "flowBtc": 2686232.3669,
+      "flowMa90": 2685686.3964,
+      "priceUsd": 83674.66,
+      "signal": "bull",
+      "dailyNetBtc": 1869.0399
+    }
+  ],
+  "axes": {
+    "flowBtc": {
+      "label": "CEX net flow / reserve proxy",
+      "unit": "BTC",
+      "meaning": "Exchange supply level (SplyExNtv); not IFP"
+    },
+    "priceUsd": {
+      "label": "BTC Price",
+      "unit": "USD"
+    }
+  },
+  "signalRule": "bull iff flowBtc >= flowMa90; bear otherwise (including while flowMa90 is null until 90 observations). flowBtc is exchange reserve LEVEL (SplyExNtv), not daily net. Note: rising exchange reserves are often read as sell-side pressure — this rule mirrors IFP-style above-MA shading for UI parity, not a CQ-certified regime definition.",
+  "meta": {
+    "start": "2025-12-01",
+    "end": "2026-09-29",
+    "nRaw": 303,
+    "nSeries": 303,
+    "maReadyFrom": "2026-02-28",
+    "metrics": [
+      "SplyExNtv",
+      "PriceUSD",
+      "FlowInExNtv",
+      "FlowOutExNtv"
+    ],
+    "provider": "https://community-api.coinmetrics.io/v4"
+  }
+}
