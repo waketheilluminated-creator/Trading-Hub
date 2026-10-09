@@ -69,7 +69,9 @@ import {
   type LargeTrade,
 } from "@/lib/market-trades.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
-import { loadAllMarketCatalogs, loadChartHistory, mergeLiveCandle, openKlineStream } from "@/lib/market-feed.ts";
+import { loadAllMarketCatalogs, loadChartHistory, loadOlderCandles, mergeLiveCandle, openKlineStream, prependOlderCandles } from "@/lib/market-feed.ts";
+import { CHART_BAR_COUNT_OPTIONS, DEFAULT_CHART_BARS, LAZY_LOAD_BARS, MAX_LOADED_BARS } from "@/lib/kline-history.ts";
+import { readBarCountPref, subscribeBarCountPref, writeBarCountPref } from "@/lib/bar-count-pref.ts";
 import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
 import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
@@ -151,6 +153,11 @@ const CVD_SERIES_OPTIONS = {
   lastValueVisible: true,
   priceFormat: { type: "volume" as const, precision: 2, minMove: 0.01 },
 };
+/** Bars in view right after a history load; older history is reached by scrolling / zooming out. */
+const INITIAL_VISIBLE_BARS = 220;
+/** Start fetching older bars when the left edge is within this many bars of the oldest loaded bar. */
+const LAZY_LOAD_TRIGGER = 40;
+
 const OI_SERIES_OPTIONS = {
   color: "#62d6e8",
   lineWidth: 2 as const,
@@ -468,6 +475,12 @@ export function TradingWorkspace() {
   const [visiblePriceSpan, setVisiblePriceSpan] = useState<PriceSpan | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
+  const barCount = useSyncExternalStore(subscribeBarCountPref, readBarCountPref, () => DEFAULT_CHART_BARS);
+  const [olderLoading, setOlderLoading] = useState(false);
+  // Lazy-load bookkeeping: which feed the loaded candles belong to, and whether it has older bars.
+  const historyFeedRef = useRef<{ token: number; venue: MarketVenue; symbol: string; interval: Interval; exhausted: boolean; loading: boolean } | null>(null);
+  const candlesRef = useRef<Candle[]>([]);
+  const feedTokenRef = useRef(0);
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
   const [derivativesExchange, setDerivativesExchange] = useState<MarketVenue>("bybit");
   const [alerts, setAlerts] = useState<{ id: number; direction: "above" | "below"; price: number; triggered: boolean }[]>([]);
@@ -519,8 +532,10 @@ export function TradingWorkspace() {
   }, [chartVersion, showOiPane, theme]);
 
   const last = candles.at(-1);
-  const first = candles.at(0);
-  const change = last && first ? ((last.close - first.open) / first.open) * 100 : 0;
+  // TradingView legend semantics: change of the last bar vs the previous close. Measuring from the first
+  // loaded bar would make the number depend on how much history (300 vs 5000 bars) happens to be loaded.
+  const previous = candles.at(-2);
+  const change = last && previous && previous.close ? ((last.close - previous.close) / previous.close) * 100 : 0;
   const cvdModel = useMemo(() => cvdPaneModel(cvd), [cvd]);
   const oiModel = useMemo(() => oiPaneModel({
     history: oiHistory,
@@ -594,7 +609,7 @@ export function TradingWorkspace() {
       },
       grid: { vertLines: { color: "#17202b" }, horzLines: { color: "#17202b" } },
       rightPriceScale: { borderColor: "#27313f", scaleMargins: { top: 0.09, bottom: 0.08 } },
-      timeScale: { borderColor: "#27313f", timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7 },
+      timeScale: { borderColor: "#27313f", timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7, minBarSpacing: 0.1 },
       crosshair: { vertLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" }, horzLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" } },
       handleScale: true, handleScroll: true,
     });
@@ -1025,15 +1040,25 @@ export function TradingWorkspace() {
       }
     };
 
-    loadChartHistory(chartVenue, symbol, interval)
+    feedTokenRef.current += 1;
+    const feedToken = feedTokenRef.current;
+    historyFeedRef.current = null;
+    loadChartHistory(chartVenue, symbol, interval, fetch, { limit: barCount })
       .then((result) => {
         if (cancelled) return;
         setActiveVenue(result.venue);
         setDerivativesExchange(result.venue);
-        setCandles(result.candles.map(toChartCandle));
+        const loaded = result.candles.map(toChartCandle);
+        setCandles(loaded);
+        historyFeedRef.current = { token: feedToken, venue: result.venue, symbol, interval, exhausted: result.exhausted, loading: false };
         setLoading(false);
-        setMarketStatus({ phase: "polling", notice: result.notice, error: null });
-        requestAnimationFrame(() => chartRef.current?.timeScale().fitContent());
+        setMarketStatus({ phase: "polling", notice: result.notice ?? result.warning, error: null });
+        // Open on the most recent bars (like TradingView); the full history is a scroll / zoom away.
+        requestAnimationFrame(() => {
+          const count = loaded.length;
+          if (count > INITIAL_VISIBLE_BARS) chartRef.current?.timeScale().setVisibleLogicalRange({ from: count - INITIAL_VISIBLE_BARS, to: count + 4 });
+          else chartRef.current?.timeScale().fitContent();
+        });
         stream = openKlineStream(result.venue, symbol, interval, {
           onCandle: applyLiveCandle,
           onOpen: () => {
@@ -1075,7 +1100,40 @@ export function TradingWorkspace() {
       stream?.close();
       setConnected(false);
     };
-  }, [symbol, interval, chartVenue]);
+  }, [symbol, interval, chartVenue, barCount]);
+
+  useEffect(() => { candlesRef.current = candles; }, [candles]);
+
+  // TradingView-style lazy history: when the left edge comes within LAZY_LOAD_TRIGGER bars, fetch older bars.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const timeScale = chart.timeScale();
+    const onRange = (range: { from: number; to: number } | null) => {
+      const feed = historyFeedRef.current;
+      const current = candlesRef.current;
+      if (!range || !feed || feed.exhausted || feed.loading || !current.length) return;
+      if (range.from > LAZY_LOAD_TRIGGER || current.length >= MAX_LOADED_BARS) return;
+      feed.loading = true;
+      setOlderLoading(true);
+      const oldest = Number(current[0].time);
+      loadOlderCandles(feed.venue, feed.symbol, feed.interval, oldest, LAZY_LOAD_BARS)
+        .then((older) => {
+          if (historyFeedRef.current?.token !== feed.token) return;
+          feed.exhausted = older.exhausted;
+          if (older.candles.length) setCandles((prev) => prependOlderCandles(prev, older.candles.map(toChartCandle)));
+        })
+        .catch(() => {
+          // Leave the loaded range visible; the next scroll to the edge retries.
+        })
+        .finally(() => {
+          feed.loading = false;
+          if (historyFeedRef.current?.token === feed.token || !historyFeedRef.current) setOlderLoading(false);
+        });
+    };
+    timeScale.subscribeVisibleLogicalRangeChange(onRange);
+    return () => timeScale.unsubscribeVisibleLogicalRangeChange(onRange);
+  }, [chartVersion]);
 
   useEffect(() => {
     let active = true;
@@ -1368,7 +1426,7 @@ export function TradingWorkspace() {
               <span className="toolbar-separator" />
               <IndicatorsMenu added={studyAdded} pineApplied={pineApplied} onToggleStudy={toggleStudyFromMenu} onAddPine={runPine} open={indicatorsOpen} onOpenChange={setIndicatorsOpen} />
             </div>
-            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
+            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><select aria-label="History bars" title="Bars of history to load" className="toolbar-venue-select toolbar-bars-select" value={barCount} onChange={(event) => writeBarCountPref(Number(event.target.value))}>{CHART_BAR_COUNT_OPTIONS.map((count) => <option key={count} value={count}>{count.toLocaleString("en-US")} bars</option>)}</select><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
           </div>
 
           <div className="chart-region">
@@ -1556,7 +1614,7 @@ export function TradingWorkspace() {
               : null,
         }}
       />
-      <footer className="footer"><div className="status-group"><span className="tiny-dot" /><span>{venueLabel(activeVenue)} public feed</span><span>CCXT normalized</span><span>Pine v5 subset</span><span>AI context ready</span></div><span>UTC · Data for analysis only</span></footer>
+      <footer className="footer"><div className="status-group"><span className="tiny-dot" /><span>{venueLabel(activeVenue)} public feed</span><span data-bar-count={candles.length}>{candles.length.toLocaleString("en-US")} bars{olderLoading ? " · loading older…" : ""}</span><span>CCXT normalized</span><span>Pine v5 subset</span><span>AI context ready</span></div><span>UTC · Data for analysis only</span></footer>
     </main>
   );
 }

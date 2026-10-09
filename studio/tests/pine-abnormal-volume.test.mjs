@@ -131,3 +131,17 @@ test("empty runtime yields no output and default study title", () => {
   assert.equal(pineModelHasOutput(model), false);
   assert.equal(model.title, "Pine script");
 });
+
+test("TH-FEAT-09: fixture computes over 5000 bars within a time budget", async () => {
+  const bars = syntheticBars(5000);
+  const started = performance.now();
+  const { runtime } = await runFixture(bars);
+  const model = buildPineRenderModel(runtime, bars.time.map((ms) => ms / 1000));
+  const elapsed = performance.now() - started;
+  assert.equal(runtime.plots.Volume.data.length, 5000);
+  assert.equal(runtime.plots["Volume EMA"].data.length, 5000);
+  assert.ok(Number.isFinite(runtime.plots["Volume EMA"].data[4999]));
+  assert.ok(pineModelHasOutput(model));
+  // Generous ceiling for slow CI boxes; measured locally in the PR description.
+  assert.ok(elapsed < 4000, `5000-bar Pine run took ${elapsed.toFixed(0)}ms`);
+});
