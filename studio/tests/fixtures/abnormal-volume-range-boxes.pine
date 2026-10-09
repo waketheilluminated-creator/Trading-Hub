@@ -1,0 +1,249 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0
+// © WakeTheIllumi
+
+//@version=6
+indicator(
+     "地藏经 - Abnormal Volume Range Boxes",
+     overlay=false,
+     precision=2,
+     max_bars_back=4096,
+     max_boxes_count=500
+)
+
+//====================================================
+// 1. VOLUME SETTINGS
+//====================================================
+int baselineLength = input.int(96, "Volume baseline bars", minval=2, maxval=720, group="1. Volume")
+float abnormalMultiplier = input.float(2.0, "Abnormal volume multiplier", minval=1.0, step=0.1, group="1. Volume")
+int volumeEmaLength = input.int(6, "Volume EMA Length", minval=1, maxval=1000, group="1. Volume")
+color buyVolumeColor = input.color(color.green, "Buy-side Volume Color", group="1. Volume")
+color sellVolumeColor = input.color(color.red, "Sell-side Volume Color", group="1. Volume")
+color volumeEmaColor = input.color(color.orange, "Volume EMA Color", group="1. Volume")
+int volumeEmaWidth = input.int(2, "Volume EMA Width", minval=1, maxval=4, group="1. Volume")
+
+//====================================================
+// 2. H / L SETTINGS
+//====================================================
+color hColor = input.color(color.red, "H Color", group="2. H / L")
+color lColor = input.color(color.green, "L Color", group="2. H / L")
+int hlLineWidth = input.int(2, "H / L Line Width", minval=1, maxval=4, group="2. H / L")
+
+//====================================================
+// 3. BOX SETTINGS
+//====================================================
+bool showBoxes = input.bool(true, "Show Abnormal-Volume Range Boxes", group="3. Boxes")
+color greenBoxColor = input.color(color.green, "Big Buy Range Box Color", group="3. Boxes")
+color redBoxColor = input.color(color.red, "Big Sell Range Box Color", group="3. Boxes")
+int boxTransparency = input.int(88, "Box Fill Transparency", minval=0, maxval=100, group="3. Boxes")
+
+//====================================================
+// 4. CHART BACKGROUND SETTINGS
+//====================================================
+bool showBigVolumeBackground = input.bool(true, "Show Big Buy / Sell Background", group="4. Chart Background")
+int backgroundTransparency = input.int(88, "Background Transparency", minval=0, maxval=100, group="4. Chart Background")
+
+//====================================================
+// 5. ABNORMAL VOLUME AND BIG BUY / SELL
+//====================================================
+float volumeEma = ta.ema(volume, volumeEmaLength)
+
+// Current candle cannot raise its own abnormal-volume baseline.
+float baseline = ta.sma(volume, baselineLength)[1]
+float rvol = not na(baseline) and baseline > 0.0 ? volume / baseline : na
+bool abnormalVolume = barstate.isconfirmed and not na(rvol) and rvol >= abnormalMultiplier
+
+bool buySide = close >= open
+bool sellSide = close < open
+bool bigBuy = abnormalVolume and buySide
+bool bigSell = abnormalVolume and sellSide
+
+//====================================================
+// 6. VOLUME PANE AND PRICE-CHART BACKGROUND
+//====================================================
+color baseVolumeColor = buySide ? buyVolumeColor : sellVolumeColor
+color volumeBarColor = color.new(baseVolumeColor, abnormalVolume ? 0 : 88)
+
+color bigVolumeBackground =
+     not showBigVolumeBackground
+     ? na
+     : bigBuy
+     ? color.new(buyVolumeColor, backgroundTransparency)
+     : bigSell
+     ? color.new(sellVolumeColor, backgroundTransparency)
+     : na
+
+bgcolor(bigVolumeBackground, title="Big Buy / Big Sell Background", force_overlay=true)
+
+plot(
+     volume,
+     title="Volume",
+     color=volumeBarColor,
+     style=plot.style_columns,
+     histbase=0.0
+)
+
+plot(
+     volumeEma,
+     title="Volume EMA",
+     color=volumeEmaColor,
+     linewidth=volumeEmaWidth
+)
+
+//====================================================
+// 7. H / L LOGIC
+//====================================================
+var int lastBigSide = 0
+
+bool firstBigBuy = bigBuy and lastBigSide != 1
+bool firstBigSell = bigSell and lastBigSide != -1
+
+var float h = na
+var float l = na
+var bool waitingForCloseAboveH = false
+var bool waitingForCloseBelowL = false
+
+if firstBigSell
+    h := high
+    waitingForCloseAboveH := true
+
+if firstBigBuy
+    l := low
+    waitingForCloseBelowL := true
+
+bool first_close_above_h = barstate.isconfirmed and waitingForCloseAboveH and not na(h) and close > h
+bool first_close_below_l = barstate.isconfirmed and waitingForCloseBelowL and not na(l) and close < l
+
+if first_close_above_h
+    waitingForCloseAboveH := false
+
+if first_close_below_l
+    waitingForCloseBelowL := false
+
+if bigBuy
+    lastBigSide := 1
+else if bigSell
+    lastBigSide := -1
+
+plot(
+     h,
+     title="H",
+     color=hColor,
+     linewidth=hlLineWidth,
+     style=plot.style_stepline,
+     force_overlay=true
+)
+
+plot(
+     l,
+     title="L",
+     color=lColor,
+     linewidth=hlLineWidth,
+     style=plot.style_stepline,
+     force_overlay=true
+)
+
+plotshape(
+     first_close_above_h,
+     title="First Close Above H",
+     style=shape.triangleup,
+     location=location.belowbar,
+     color=color.green,
+     size=size.small,
+     force_overlay=true
+)
+
+plotshape(
+     first_close_below_l,
+     title="First Close Below L",
+     style=shape.triangledown,
+     location=location.abovebar,
+     color=color.red,
+     size=size.small,
+     force_overlay=true
+)
+
+//====================================================
+// 8. RANGE BOXES BETWEEN OPPOSITE ABNORMAL-VOLUME RUNS
+//
+// Red → Green → Green → Red:
+// draw green box from the first red endpoint to the
+// final green endpoint.
+//
+// Green → Red → Red → Green:
+// draw red box using the symmetric rule.
+//
+// High and low include every candle in the time range.
+//====================================================
+var int lastAbnormalSide = 0
+var int lastAbnormalBar = na
+
+var float bridgeHigh = na
+var float bridgeLow = na
+
+var int candidateSide = 0
+var int candidateStartBar = na
+var int candidateEndBar = na
+var float candidateHigh = na
+var float candidateLow = na
+
+// Number of same-direction Big Buy / Big Sell candles
+// within the candidate box.
+var int candidateBigCount = 0
+
+// Prevent runtime errors after reaching the 500-box limit.
+var array<box> completedBoxes = array.new_box()
+
+int currentBigSide = bigBuy ? 1 : bigSell ? -1 : 0
+
+// Normal candles affect the price range but not endpoints.
+if currentBigSide == 0 and not na(lastAbnormalBar)
+    bridgeHigh := math.max(bridgeHigh, high)
+    bridgeLow := math.min(bridgeLow, low)
+
+if currentBigSide != 0
+    bool sideChanged = lastAbnormalSide != 0 and currentBigSide != lastAbnormalSide
+
+    // The incoming opposite-color abnormal candle closes
+    // the previous candidate. It is excluded from that box.
+    if sideChanged and showBoxes and candidateSide != 0 and not na(candidateStartBar) and not na(candidateEndBar)
+        color completedBoxColor = candidateSide == 1 ? greenBoxColor : redBoxColor
+
+        if array.size(completedBoxes) >= 500
+            box.delete(array.shift(completedBoxes))
+
+        box completedBox = box.new(
+             left=candidateStartBar,
+             top=candidateHigh,
+             right=candidateEndBar,
+             bottom=candidateLow,
+             xloc=xloc.bar_index,
+             border_color=completedBoxColor,
+             border_width=candidateBigCount > 1 ? 3 : 1,
+             bgcolor=color.new(completedBoxColor, boxTransparency),
+             force_overlay=true
+        )
+
+        array.push(completedBoxes, completedBox)
+
+    if sideChanged
+        // New candidate begins at the previous opposite-color
+        // abnormal candle and extends through the current candle.
+        candidateSide := currentBigSide
+        candidateStartBar := lastAbnormalBar
+        candidateEndBar := bar_index
+        candidateHigh := math.max(bridgeHigh, high)
+        candidateLow := math.min(bridgeLow, low)
+        candidateBigCount := 1
+
+    else if lastAbnormalSide != 0 and currentBigSide == lastAbnormalSide and candidateSide == currentBigSide
+        // Same-color abnormal candle extends the run.
+        candidateEndBar := bar_index
+        candidateHigh := math.max(candidateHigh, math.max(bridgeHigh, high))
+        candidateLow := math.min(candidateLow, math.min(bridgeLow, low))
+        candidateBigCount += 1
+
+    // Start measuring the next bridge from this abnormal candle.
+    lastAbnormalSide := currentBigSide
+    lastAbnormalBar := bar_index
+    bridgeHigh := high
+    bridgeLow := low

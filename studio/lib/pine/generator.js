@@ -446,14 +446,28 @@ class CodeGenerator {
     this.write('    return { r: lerp(c1.r ?? 0, c2.r ?? 0), g: lerp(c1.g ?? 0, c2.g ?? 0), b: lerp(c1.b ?? 0, c2.b ?? 0), a: lerp(c1.a ?? 255, c2.a ?? 255) };\n');
     this.write('  },\n');
     this.write('  rgb: function(r, g, b, a) { return { r, g, b, a: a ?? 255 }; },\n');
-    this.write('  new: function(c, transp) { return { ...(c || {}), transp: transp ?? 0 }; },\n');
+    this.write('  new: function(c, transp) { if (c === null || c === undefined) return null; const base = typeof c === "string" ? (/^#rgb\\(/.test(c) ? (function(m) { return { r: +m[1], g: +m[2], b: +m[3], a: 255 }; })(c.match(/(\\d+),(\\d+),(\\d+)/)) : pinescript.color.hex(c)) : c; return { ...base, transp: transp ?? 0 }; },\n');
     this.write('  r: function(c) { return c?.r ?? 0; },\n');
     this.write('  g: function(c) { return c?.g ?? 0; },\n');
     this.write('  b: function(c) { return c?.b ?? 0; },\n');
-    this.write('  red: { r: 255, g: 0, b: 0, a: 255 },\n');
-    this.write('  green: { r: 0, g: 255, b: 0, a: 255 },\n');
-    this.write('  blue: { r: 0, g: 0, b: 255, a: 255 },\n');
-    this.write('  gray: { r: 128, g: 128, b: 128, a: 255 },\n');
+    // TradingView built-in palette (color.green is #4CAF50, color.orange #FF9800, ...).
+    this.write('  aqua: { r: 0, g: 188, b: 212, a: 255 },\n');
+    this.write('  black: { r: 54, g: 58, b: 69, a: 255 },\n');
+    this.write('  blue: { r: 41, g: 98, b: 255, a: 255 },\n');
+    this.write('  fuchsia: { r: 224, g: 64, b: 251, a: 255 },\n');
+    this.write('  gray: { r: 120, g: 123, b: 134, a: 255 },\n');
+    this.write('  green: { r: 76, g: 175, b: 80, a: 255 },\n');
+    this.write('  lime: { r: 0, g: 230, b: 118, a: 255 },\n');
+    this.write('  maroon: { r: 136, g: 14, b: 79, a: 255 },\n');
+    this.write('  navy: { r: 49, g: 27, b: 146, a: 255 },\n');
+    this.write('  olive: { r: 128, g: 128, b: 0, a: 255 },\n');
+    this.write('  orange: { r: 255, g: 152, b: 0, a: 255 },\n');
+    this.write('  purple: { r: 156, g: 39, b: 176, a: 255 },\n');
+    this.write('  red: { r: 255, g: 82, b: 82, a: 255 },\n');
+    this.write('  silver: { r: 178, g: 181, b: 190, a: 255 },\n');
+    this.write('  teal: { r: 0, g: 137, b: 123, a: 255 },\n');
+    this.write('  white: { r: 255, g: 255, b: 255, a: 255 },\n');
+    this.write('  yellow: { r: 255, g: 235, b: 59, a: 255 },\n');
     this.write('};\n\n');
 
     // Shape, size, location, and position constants that Pine plotting functions expect.
@@ -560,7 +574,8 @@ function run(data, options = {}) {
 
   // Reset all persistent and per-run state so repeated runs are independent.
   globalThis.__pineState = {};
-  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, alerts: [], bars: n, inputs: options.inputs || {} };
+  globalThis.__pineStudyMeta = undefined;
+  globalThis.__pineRuntime = { plots: {}, plotshapes: {}, bgcolors: {}, boxes: [], alerts: [], bars: n, inputs: options.inputs || {} };
   pinescript.__rt = {};
   pinescript.__bar = 0;
 
@@ -585,6 +600,7 @@ function run(data, options = {}) {
     rt.__barIndex = i;
     rt.__plotIdx = 0;
     rt.__shapeIdx = 0;
+    rt.__bgIdx = 0;
     globalThis.bar_index = i;
     globalThis.last_bar_index = n - 1;
     globalThis.time_tradingday = inTime[i];
@@ -608,6 +624,20 @@ function run(data, options = {}) {
     const d = rt.plotshapes[k].data;
     for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = false;
   }
+  for (const k of Object.keys(rt.bgcolors)) {
+    const d = rt.bgcolors[k].data;
+    for (let i = 0; i < n; i++) if (d[i] === undefined) d[i] = null;
+  }
+  for (const k of Object.keys(rt.plots)) {
+    const c = rt.plots[k].colors;
+    if (c) for (let i = 0; i < n; i++) if (c[i] === undefined) c[i] = null;
+  }
+  // Boxes removed with box.delete() (e.g. the 500-box cap) are not drawn.
+  rt.boxes = (rt.boxes || []).filter((b) => !b._deleted).map((b) => ({
+    left: b.left, top: b.top, right: b.right, bottom: b.bottom, xloc: b.xloc,
+    borderColor: b.borderColor, borderWidth: b.borderWidth, bgcolor: b.bgcolor, forceOverlay: b.forceOverlay,
+  }));
+  rt.indicator = globalThis.__pineStudyMeta || rt.indicator || null;
   return rt;
 }
 
@@ -641,7 +671,10 @@ function run(data, options = {}) {
       // var/varip declarations persist across bars, so we store them in the state object
       // and only initialize on the very first bar.
       this.context.stateVars.add(name);
-      this.writeln(`if (state.${name} === undefined) state.${name} = ${this.generate(node.value)};`);
+      // Snapshot series (e.g. `var float h = high`) to the current-bar scalar: a
+      // persistent var must keep the value from the bar it was assigned on, not a
+      // live reference that keeps tracking the newest bar.
+      this.writeln(`if (state.${name} === undefined) state.${name} = pinescript.__scalar(${this.generate(node.value)});`);
       return;
     }
 
@@ -659,7 +692,7 @@ function run(data, options = {}) {
     if (node.target && node.target.type === 'Identifier') {
       const name = this.getSafeName(node.target.name);
       if (this.context.stateVars.has(name)) {
-        this.writeln(`state.${name} = ${this.generate(node.value)};`);
+        this.writeln(`state.${name} = pinescript.__scalar(${this.generate(node.value)});`);
         return;
       }
       if (!this.scopeDeclared(name) && !this.reservedNamespaces.has(name)) {
@@ -810,6 +843,14 @@ function run(data, options = {}) {
     this.context.inStrategy = node.isStrategy;
     this.writeln(`// ${node.isStrategy ? 'Strategy' : 'Study'}: ${node.title}`);
     this.writeln(`// Options: ${JSON.stringify(node.options)}`);
+    // Expose declaration metadata so chart hosts know whether plots belong on the
+    // price pane (overlay=true) or in a separate pane (overlay=false, Pine's default).
+    const meta = {
+      title: node.title || '',
+      overlay: node.options && typeof node.options.overlay === 'boolean' ? node.options.overlay : false,
+      isStrategy: !!node.isStrategy,
+    };
+    this.writeln(`globalThis.__pineStudyMeta = ${JSON.stringify(meta)};`);
   }
 
   // Transpiles a Pine function declaration into a plain JS function.
