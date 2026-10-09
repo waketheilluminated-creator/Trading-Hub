@@ -90,6 +90,8 @@ import { buildPineRenderModel, describePineModel, pineModelHasOutput, type PineM
 import { PineOverlayPrimitive } from "@/lib/pine-overlay-primitive.ts";
 import { ChartStudyLegend, type ChartLegendRow } from "@/components/chart-study-legend";
 import { IndicatorsMenu } from "@/components/indicators-menu";
+import { applyTheme, currentDocumentTheme, subscribeTheme, type ThemeName } from "@/lib/theme.ts";
+import { candleThemeOptions, chartPalette, chartThemeOptions } from "@/lib/chart-theme.ts";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { LargeOrderDock } from "@/components/large-order-dock";
@@ -308,6 +310,22 @@ function toChartMarkers(markers: readonly PineMarkerModel[]): SeriesMarker<Time>
     }));
 }
 
+function ThemeIcon({ theme }: { theme: ThemeName }) {
+  // Shows the theme you would switch to: sun in dark mode, moon in light mode.
+  return theme === "dark"
+    ? (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" data-icon="sun">
+        <circle cx="9" cy="9" r="3.2" />
+        <path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1 5 13M13 5l1.1-1.1" />
+      </svg>
+    )
+    : (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" data-icon="moon">
+        <path d="M14.8 11.2A6.2 6.2 0 0 1 6.8 3.2a6.2 6.2 0 1 0 8 8Z" />
+      </svg>
+    );
+}
+
 function PanelRightIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" data-icon={collapsed ? "panel-expand" : "panel-collapse"}>
@@ -372,6 +390,7 @@ export function TradingWorkspace() {
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const sidePanelWidth = useSyncExternalStore(subscribePanePrefs, readLiveSidePanelWidth, () => SIDE_PANEL_DEFAULT_WIDTH);
   const sidePanelCollapsed = useSyncExternalStore(subscribePanePrefs, readLiveSidePanelCollapsed, () => false);
+  const theme = useSyncExternalStore(subscribeTheme, currentDocumentTheme, (): ThemeName => "dark");
   const [activeTab, setActiveTab] = useState<"pine" | "console">("pine");
   const pine = usePineSource();
   const [consoleText, setConsoleText] = useState("Ready. Pine Script v5 subset loaded.");
@@ -487,6 +506,18 @@ export function TradingWorkspace() {
     }
   }, [applyDrawingTool, clearDrawingTextEntry]);
 
+  useEffect(() => {
+    const palette = chartPalette(theme);
+    chartRef.current?.applyOptions(chartThemeOptions(theme));
+    candleSeriesRef.current?.applyOptions(candleThemeOptions(theme));
+    fastSeriesRef.current?.applyOptions({ color: palette.ema9 });
+    slowSeriesRef.current?.applyOptions({ color: palette.ema21 });
+  }, [chartVersion, theme]);
+
+  useEffect(() => {
+    oiSeriesRef.current?.applyOptions({ color: chartPalette(theme).oi });
+  }, [chartVersion, showOiPane, theme]);
+
   const last = candles.at(-1);
   const first = candles.at(0);
   const change = last && first ? ((last.close - first.open) / first.open) * 100 : 0;
@@ -567,7 +598,10 @@ export function TradingWorkspace() {
       crosshair: { vertLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" }, horzLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" } },
       handleScale: true, handleScroll: true,
     });
-    const candleSeries = chart.addSeries(CandlestickSeries, { upColor: "#53c990", downColor: "#e76770", wickUpColor: "#53c990", wickDownColor: "#e76770", borderVisible: false });
+    // Apply the saved theme synchronously so a light reload never paints a dark chart frame.
+    const initialTheme = currentDocumentTheme();
+    chart.applyOptions(chartThemeOptions(initialTheme));
+    const candleSeries = chart.addSeries(CandlestickSeries, { ...candleThemeOptions(initialTheme), borderVisible: false });
     const drawingPrimitive = new DrawingPrimitive();
     const largeOrderPrimitive = new LargeOrderSrPrimitive();
     const largeTradePrimitive = new LargeTradeMarkersPrimitive();
@@ -1322,7 +1356,7 @@ export function TradingWorkspace() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link><Link className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
+        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link><Link className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-pressed={theme === "light"} data-theme-current={theme} onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}><ThemeIcon theme={theme} /></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
       </header>
 
       <section className={`workspace${sidePanelCollapsed ? " side-collapsed" : ""}`} style={{ ["--side-panel-width" as string]: `${sidePanelCollapsed ? 0 : sidePanelWidth}px` }}>
