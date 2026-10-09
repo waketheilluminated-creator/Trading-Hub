@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  BaselineSeries, CandlestickSeries, ColorType, createChart, LineSeries, LineStyle,
-  type CandlestickData, type IChartApi, type ISeriesApi,
-  type LineData, type MouseEventParams, type Time, type UTCTimestamp,
+  BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle, LineType,
+  type CandlestickData, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi,
+  type LineData, type MouseEventParams, type SeriesMarker, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import {
   applyIndicatorPaneStretch,
@@ -75,6 +75,21 @@ import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
 import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
+import {
+  SIDE_PANEL_DEFAULT_WIDTH,
+  SIDE_PANEL_KEYBOARD_STEP,
+  SIDE_PANEL_MIN_WIDTH,
+  clampSidePanelWidth,
+  maxSidePanelWidth,
+  readSidePanelPrefs,
+  resolveSidePanelDrag,
+  writeSidePanelPrefs,
+} from "@/lib/side-panel-layout.js";
+import { legendEntries, studyDefinition, type StudyId } from "@/lib/chart-studies.ts";
+import { buildPineRenderModel, describePineModel, pineModelHasOutput, type PineMarkerModel, type PineRenderModel, type PineRuntimeOutput } from "@/lib/pine-chart-model.ts";
+import { PineOverlayPrimitive } from "@/lib/pine-overlay-primitive.ts";
+import { ChartStudyLegend, type ChartLegendRow } from "@/components/chart-study-legend";
+import { IndicatorsMenu } from "@/components/indicators-menu";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { LargeOrderDock } from "@/components/large-order-dock";
@@ -256,6 +271,53 @@ function SideSection({
   );
 }
 
+function useStoredFlag(key: string): [boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
+  const value = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readClientPaneFlag(window.localStorage, key, false),
+    () => false,
+  );
+  const setValue = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, key, false);
+    writeStoredFlag(window.localStorage, key, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, [key]);
+  return [value, setValue];
+}
+
+function readLiveSidePanelWidth(): number {
+  if (!panePrefsAreLive()) return SIDE_PANEL_DEFAULT_WIDTH;
+  return readSidePanelPrefs(window.localStorage).width;
+}
+
+function readLiveSidePanelCollapsed(): boolean {
+  if (!panePrefsAreLive()) return false;
+  return readSidePanelPrefs(window.localStorage).collapsed;
+}
+
+function toChartMarkers(markers: readonly PineMarkerModel[]): SeriesMarker<Time>[] {
+  return [...markers]
+    .sort((left, right) => left.time - right.time)
+    .map((marker) => ({
+      time: marker.time as UTCTimestamp,
+      position: marker.position,
+      shape: marker.shape,
+      color: marker.color,
+      size: marker.size,
+      ...(marker.text ? { text: marker.text } : {}),
+    }));
+}
+
+function PanelRightIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" data-icon={collapsed ? "panel-expand" : "panel-collapse"}>
+      <rect x="2" y="3" width="14" height="12" rx="2" />
+      <path d="M11.5 3v12" />
+      {collapsed ? <path d="m8 7-2 2 2 2" /> : <path d="m6 7 2 2-2 2" />}
+    </svg>
+  );
+}
+
 export function TradingWorkspace() {
   const chartHost = useRef<HTMLDivElement>(null);
   const editorBodyRef = useRef<HTMLDivElement>(null);
@@ -266,6 +328,9 @@ export function TradingWorkspace() {
   const slowSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const cvdSeriesRef = useRef<ISeriesApi<"Baseline"> | null>(null);
   const oiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const pineSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]);
+  const pineMarkersRef = useRef<ISeriesMarkersPluginApi<Time>[]>([]);
+  const pineOverlaysRef = useRef<{ series: ISeriesApi<SeriesType>; primitive: PineOverlayPrimitive }[]>([]);
   const drawingPrimitiveRef = useRef<DrawingPrimitive | null>(null);
   const largeOrderPrimitiveRef = useRef<LargeOrderSrPrimitive | null>(null);
   const largeTradePrimitiveRef = useRef<LargeTradeMarkersPrimitive | null>(null);
@@ -296,8 +361,17 @@ export function TradingWorkspace() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showFast, setShowFast] = useState(false);
-  const [showSlow, setShowSlow] = useState(false);
+  const [showFast, setShowFast] = useStoredFlag(studyDefinition("ema9").addedKey);
+  const [showSlow, setShowSlow] = useStoredFlag(studyDefinition("ema21").addedKey);
+  const [fastHidden, setFastHidden] = useStoredFlag(studyDefinition("ema9").hiddenKey);
+  const [slowHidden, setSlowHidden] = useStoredFlag(studyDefinition("ema21").hiddenKey);
+  const [cvdHidden, setCvdHidden] = useStoredFlag(studyDefinition("cvd").hiddenKey);
+  const [oiHidden, setOiHidden] = useStoredFlag(studyDefinition("oi").hiddenKey);
+  const [pineModel, setPineModel] = useState<PineRenderModel | null>(null);
+  const [pineHidden, setPineHidden] = useState(false);
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const sidePanelWidth = useSyncExternalStore(subscribePanePrefs, readLiveSidePanelWidth, () => SIDE_PANEL_DEFAULT_WIDTH);
+  const sidePanelCollapsed = useSyncExternalStore(subscribePanePrefs, readLiveSidePanelCollapsed, () => false);
   const [activeTab, setActiveTab] = useState<"pine" | "console">("pine");
   const pine = usePineSource();
   const [consoleText, setConsoleText] = useState("Ready. Pine Script v5 subset loaded.");
@@ -579,6 +653,11 @@ export function TradingWorkspace() {
   }, [candles, showFast, showSlow]);
 
   useEffect(() => {
+    fastSeriesRef.current?.applyOptions({ visible: !fastHidden });
+    slowSeriesRef.current?.applyOptions({ visible: !slowHidden });
+  }, [chartVersion, fastHidden, slowHidden]);
+
+  useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     if (cvdSeriesRef.current) {
@@ -600,6 +679,67 @@ export function TradingWorkspace() {
     }
     applyIndicatorPaneStretch(chart.panes());
   }, [chartVersion, showCvdPane, showOiPane]);
+
+  useEffect(() => {
+    cvdSeriesRef.current?.applyOptions({ visible: !cvdHidden });
+    oiSeriesRef.current?.applyOptions({ visible: !oiHidden });
+  }, [chartVersion, cvdHidden, oiHidden, showCvdPane, showOiPane]);
+
+  // Pine output: overlay=false plots get their own study pane below CVD/OI;
+  // force_overlay plots, shapes, bgcolor and boxes are drawn on the price pane.
+  // Runs after the CVD/OI pane effect so the study pane always sits last.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries) return;
+    const clear = () => {
+      for (const markers of pineMarkersRef.current) { try { markers.detach(); } catch { /* chart already torn down */ } }
+      pineMarkersRef.current = [];
+      for (const overlay of pineOverlaysRef.current) { try { overlay.series.detachPrimitive(overlay.primitive); } catch { /* chart already torn down */ } }
+      pineOverlaysRef.current = [];
+      for (const series of pineSeriesRef.current) { try { chart.removeSeries(series); } catch { /* chart already torn down */ } }
+      pineSeriesRef.current = [];
+    };
+    clear();
+    if (!pineModel) {
+      applyIndicatorPaneStretch(chart.panes());
+      return clear;
+    }
+    const studyPane = 1 + indicatorPaneStack({ cvd: showCvdPane, oi: showOiPane }).length;
+    let firstStudySeries: ISeriesApi<SeriesType> | null = null;
+    for (const model of pineModel.series) {
+      const paneIndex = model.pane === "price" ? 0 : studyPane;
+      const data = model.points.map((point) => (point.value == null
+        ? { time: point.time as UTCTimestamp }
+        : { time: point.time as UTCTimestamp, value: point.value, ...(point.color ? { color: point.color } : {}) }));
+      const series: ISeriesApi<SeriesType> = model.kind === "histogram"
+        ? chart.addSeries(HistogramSeries, { color: model.color, priceLineVisible: false, lastValueVisible: true, visible: !pineHidden, priceFormat: { type: "volume" } }, paneIndex)
+        : chart.addSeries(LineSeries, { color: model.color, lineWidth: model.lineWidth as 1 | 2 | 3 | 4, lineType: model.stepped ? LineType.WithSteps : LineType.Simple, priceLineVisible: false, lastValueVisible: model.pane !== "price", visible: !pineHidden }, paneIndex);
+      series.setData(data);
+      pineSeriesRef.current.push(series);
+      if (model.pane === "study" && !firstStudySeries) firstStudySeries = series;
+    }
+    if (!pineHidden) {
+      const priceMarkers = pineModel.markers.filter((marker) => marker.pane === "price");
+      if (priceMarkers.length) pineMarkersRef.current.push(createSeriesMarkers(candleSeries, toChartMarkers(priceMarkers)));
+      const studyMarkers = pineModel.markers.filter((marker) => marker.pane === "study");
+      if (studyMarkers.length && firstStudySeries) pineMarkersRef.current.push(createSeriesMarkers(firstStudySeries, toChartMarkers(studyMarkers)));
+      const attachOverlay = (series: ISeriesApi<SeriesType> | null, pane: "price" | "study") => {
+        if (!series) return;
+        const backgrounds = pineModel.backgrounds.filter((bg) => bg.pane === pane);
+        const boxes = pineModel.boxes.filter((box) => box.pane === pane);
+        if (!backgrounds.length && !boxes.length) return;
+        const primitive = new PineOverlayPrimitive();
+        series.attachPrimitive(primitive);
+        primitive.setData(backgrounds, boxes);
+        pineOverlaysRef.current.push({ series, primitive });
+      };
+      attachOverlay(candleSeries, "price");
+      attachOverlay(firstStudySeries, "study");
+    }
+    applyIndicatorPaneStretch(chart.panes());
+    return clear;
+  }, [chartVersion, pineHidden, pineModel, showCvdPane, showOiPane]);
 
   useEffect(() => {
     if (!showCvdPane) return;
@@ -976,18 +1116,110 @@ export function TradingWorkspace() {
         analysisGlobals.cvd_perp = cvd?.perp.available ? cvd.perp.cvd : null;
         analysisGlobals.cvd_spot = cvd?.spot.available ? cvd.spot.cvd : null;
         analysisGlobals.cvd_spread = cvd?.comparison.perpMinusSpotDelta ?? null;
-        const runtime = generatedScript.run(data);
-        const plots = Object.values(runtime.plots || {}) as PinePlot[];
+        if (typeof generatedScript.run !== "function") throw new Error("Pine runtime error: compiled script has no run() entry point.");
+        let runtime: PineRuntimeOutput & { alerts?: unknown[] };
+        try {
+          runtime = generatedScript.run(data);
+        } catch (error) {
+          throw new Error(`Pine runtime error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        const plots = (Object.values(runtime.plots || {}) as PinePlot[]).map((plot) => ({ title: plot.title, data: plot.data }));
         setPinePlots(plots);
-        const seriesData = (values: (number | null)[]) => values.map((value, i) => value == null ? null : { time: candles[i].time, value }).filter(Boolean) as LineData<Time>[];
-        if (plots[0]?.data) fastSeriesRef.current?.setData(seriesData(plots[0].data));
-        if (plots[1]?.data) slowSeriesRef.current?.setData(seriesData(plots[1].data));
+        const model = buildPineRenderModel(runtime, candles.map((candle) => Number(candle.time)));
+        setPineModel(model);
+        setPineHidden(false);
         setPineApplied(true);
-        setConsoleKind("success"); setConsoleText(`Compiled successfully · ${candles.length} bars · ${plots.length} plot${plots.length === 1 ? "" : "s"} · ${runtime.alerts?.length || 0} alert events`);
+        if (pineModelHasOutput(model)) {
+          setConsoleKind("success");
+          setConsoleText(`Compiled successfully · ${model.title} · ${describePineModel(model, candles.length)} · ${runtime.alerts?.length || 0} alert events`);
+        } else {
+          setConsoleKind("error");
+          setConsoleText(`Compiled, but the script produced nothing to draw (no plot / plotshape / bgcolor / box output) over ${candles.length} bars.`);
+          setActiveTab("console");
+        }
       } finally { URL.revokeObjectURL(moduleUrl); }
-    } catch (error) { setConsoleKind("error"); setConsoleText(error instanceof Error ? error.message : "Pine execution failed"); }
+    } catch (error) {
+      setConsoleKind("error");
+      const message = error instanceof Error ? error.message : "Pine execution failed";
+      setConsoleText(/^Pine (runtime|compile) error/.test(message) ? message : `Pine compile error: ${message}`);
+      setActiveTab("console");
+      setPanelHeight((height) => (isPanelCollapsed(height) ? lastExpandedPanelHeightRef.current : height));
+    }
     finally { setRunning(false); }
   }, [pine, candles, derivatives, cvd]);
+
+  const removePine = useCallback(() => {
+    setPineModel(null);
+    setPineApplied(false);
+    setPinePlots([]);
+    setPineHidden(false);
+  }, []);
+
+  const setSidePanelPrefs = useCallback((prefs: { width?: number | null; collapsed?: boolean }) => {
+    writeSidePanelPrefs(window.localStorage, prefs);
+    notifyPanePrefs();
+  }, []);
+
+  const toggleSidePanel = useCallback(() => {
+    setSidePanelPrefs({ collapsed: !sidePanelCollapsed });
+  }, [setSidePanelPrefs, sidePanelCollapsed]);
+
+  const startSidePanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    document.body.classList.add("side-panel-resizing");
+    // Collapsing by drag passes through the minimum width; remember the width the
+    // drag started from so expanding again restores it instead of the minimum.
+    const restoreWidth = sidePanelWidth;
+    const move = (pointer: PointerEvent) => {
+      const next = resolveSidePanelDrag(window.innerWidth, pointer.clientX);
+      setSidePanelPrefs(next.collapsed ? { width: restoreWidth, collapsed: true } : { width: next.width, collapsed: false });
+    };
+    const stop = () => {
+      document.body.classList.remove("side-panel-resizing");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", stop);
+  };
+
+  const resizeSidePanelWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleSidePanel(); return; }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    if (sidePanelCollapsed) {
+      if (event.key === "ArrowLeft") setSidePanelPrefs({ collapsed: false });
+      return;
+    }
+    const next = sidePanelWidth + (event.key === "ArrowLeft" ? SIDE_PANEL_KEYBOARD_STEP : -SIDE_PANEL_KEYBOARD_STEP);
+    if (next < SIDE_PANEL_MIN_WIDTH) setSidePanelPrefs({ collapsed: true });
+    else setSidePanelPrefs({ width: clampSidePanelWidth(next, window.innerWidth), collapsed: false });
+  };
+
+  const studyAdded: Record<StudyId, boolean> = { ema9: showFast, ema21: showSlow, cvd: showCvdPane, oi: showOiPane };
+  const studyHidden: Record<StudyId, boolean> = { ema9: fastHidden, ema21: slowHidden, cvd: cvdHidden, oi: oiHidden };
+  const legendRows: ChartLegendRow[] = [
+    ...legendEntries(
+      Object.fromEntries((Object.keys(studyAdded) as StudyId[]).map((id) => [id, { added: studyAdded[id], hidden: studyHidden[id] }])),
+      { cvd: cvdModel.label, oi: oiModel.label },
+    ).map((entry) => ({ id: entry.id, title: entry.title, params: entry.id === "cvd" || entry.id === "oi" ? undefined : entry.params, color: entry.color, visible: entry.visible })),
+    ...(pineModel ? [{ id: "pine", title: pineModel.title, params: pineModel.overlay ? undefined : "pane", color: "#b48cf2", visible: !pineHidden }] : []),
+  ];
+  const setStudyAdded: Record<StudyId, (next: boolean) => void> = { ema9: setShowFast, ema21: setShowSlow, cvd: setShowCvdPane, oi: setShowOiPane };
+  const setStudyHidden: Record<StudyId, (next: boolean | ((current: boolean) => boolean)) => void> = { ema9: setFastHidden, ema21: setSlowHidden, cvd: setCvdHidden, oi: setOiHidden };
+  const toggleStudyVisible = (id: string) => {
+    if (id === "pine") { setPineHidden((value) => !value); return; }
+    setStudyHidden[id as StudyId]((value) => !value);
+  };
+  const removeStudy = (id: string) => {
+    if (id === "pine") { removePine(); return; }
+    setStudyAdded[id as StudyId](false);
+    setStudyHidden[id as StudyId](false);
+  };
+  const toggleStudyFromMenu = (id: StudyId) => {
+    if (studyAdded[id]) { removeStudy(id); return; }
+    setStudyHidden[id](false);
+    setStudyAdded[id](true);
+  };
 
   useEffect(() => {
     const handleWorkspaceShortcut = (event: KeyboardEvent) => {
@@ -1002,6 +1234,12 @@ export function TradingWorkspace() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSymbolSearchOpen(true);
+      }
+      if (event.key === "Escape" && indicatorsOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setIndicatorsOpen(false);
+        return;
       }
       if (event.key === "Escape") {
         handleWorkspaceEscape({
@@ -1023,7 +1261,7 @@ export function TradingWorkspace() {
     };
     window.addEventListener("keydown", handleWorkspaceShortcut, true);
     return () => window.removeEventListener("keydown", handleWorkspaceShortcut, true);
-  }, [clearDrawingTextEntry, runPine, sourcesSheetOpen, symbolSearchOpen]);
+  }, [clearDrawingTextEntry, indicatorsOpen, runPine, sourcesSheetOpen, symbolSearchOpen]);
 
   const commitDrawingText = (event: ReactFormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1084,15 +1322,17 @@ export function TradingWorkspace() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link><Link className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button></div>
+        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link><Link className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
       </header>
 
-      <section className="workspace">
+      <section className={`workspace${sidePanelCollapsed ? " side-collapsed" : ""}`} style={{ ["--side-panel-width" as string]: `${sidePanelCollapsed ? 0 : sidePanelWidth}px` }}>
         <section className="main-area" style={{ gridTemplateRows: `45px minmax(220px, 1fr) ${panelHeight}px` }}>
           <div className="chart-toolbar">
             <div className="toolbar-cluster">
               <button className="toolbar-symbol-button" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><strong>{symbol.replace("USDT", " / USDT")}</strong><span>⌄</span></button><span className="toolbar-separator" />
               {INTERVALS.map((item) => <button key={item.value} onClick={() => { beginMarketLoad(); setInterval(item.value); }} className={`time-button ${interval === item.value ? "active" : ""}`}>{item.label}</button>)}
+              <span className="toolbar-separator" />
+              <IndicatorsMenu added={studyAdded} pineApplied={pineApplied} onToggleStudy={toggleStudyFromMenu} onAddPine={runPine} open={indicatorsOpen} onOpenChange={setIndicatorsOpen} />
             </div>
             <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
           </div>
@@ -1112,10 +1352,7 @@ export function TradingWorkspace() {
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
-              {showFast && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />EMA 9</span><button className="indicator-remove" aria-label="Remove EMA 9 indicator" title="Remove indicator" onClick={() => setShowFast(false)}>×</button></div>}
-              {showSlow && <div className="indicator-label"><span><i style={{ background: "var(--amber)" }} />EMA 21</span><button className="indicator-remove" aria-label="Remove EMA 21 indicator" title="Remove indicator" onClick={() => setShowSlow(false)}>×</button></div>}
-              {showCvdPane && <div className="indicator-label"><span><i style={{ background: "var(--accent)" }} />{cvdModel.label}</span><button className="indicator-remove" aria-label="Remove CVD pane" title="Remove CVD pane" onClick={() => setShowCvdPane(false)}>×</button></div>}
-              {showOiPane && <div className="indicator-label"><span><i style={{ background: "var(--cyan)" }} />{oiModel.label}</span><button className="indicator-remove" aria-label="Remove open interest pane" title="Remove open interest pane" onClick={() => setShowOiPane(false)}>×</button></div>}
+              <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
               {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span><button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
@@ -1176,7 +1413,9 @@ export function TradingWorkspace() {
           </section>
         </section>
 
-        <aside className="right-panel">
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- ARIA separators become interactive when focusable and expose aria-valuenow. */}
+        <div className="side-panel-resize-handle" role="separator" aria-label="Resize right panel" aria-orientation="vertical" aria-controls="th-right-panel" aria-valuemin={0} aria-valuemax={maxSidePanelWidth(typeof window === "undefined" ? 0 : window.innerWidth)} aria-valuenow={sidePanelCollapsed ? 0 : sidePanelWidth} tabIndex={0} onPointerDown={startSidePanelResize} onKeyDown={resizeSidePanelWithKeyboard} onDoubleClick={toggleSidePanel}><span /></div>
+        <aside className="right-panel" id="th-right-panel" hidden={sidePanelCollapsed}>
           <SideSection
             title="Derivatives pulse"
             storageKey={DERIVATIVES_SECTION_KEY}
@@ -1224,14 +1463,6 @@ export function TradingWorkspace() {
             <div className="data-source"><span>CVD from public trades</span><code>{venueLabel(cvd?.venue || derivativesExchange)} · {INTERVALS.find((item) => item.value === interval)?.label}</code></div>
           </SideSection>
           <section className="side-section">
-            <h2 className="section-kicker">Indicators</h2>
-            <div className="indicator-row"><div className="indicator-copy"><strong>EMA 9</strong><span>Built-in · close</span></div><button aria-label="Toggle EMA 9" className={`metric-toggle ${showFast ? "active" : ""}`} onClick={() => setShowFast(!showFast)} /></div>
-            <div className="indicator-row"><div className="indicator-copy"><strong>EMA 21</strong><span>Built-in · close</span></div><button aria-label="Toggle EMA 21" className={`metric-toggle ${showSlow ? "active" : ""}`} onClick={() => setShowSlow(!showSlow)} /></div>
-            <div className="indicator-row"><div className="indicator-copy"><strong>CVD</strong><span>Order flow · separate pane</span></div><button type="button" aria-label="Toggle CVD pane" className={`metric-toggle ${showCvdPane ? "active" : ""}`} aria-pressed={showCvdPane} onClick={() => setShowCvdPane((value) => !value)} /></div>
-            <div className="indicator-row"><div className="indicator-copy"><strong>Open interest</strong><span>Derivatives · separate pane</span></div><button type="button" aria-label="Toggle open interest pane" className={`metric-toggle ${showOiPane ? "active" : ""}`} aria-pressed={showOiPane} onClick={() => setShowOiPane((value) => !value)} /></div>
-            <div className="indicator-row"><div className="indicator-copy"><strong>Custom Pine</strong><span>Editor output · overlay</span></div><button aria-label="Run custom Pine" className="metric-toggle active" onClick={runPine} /></div>
-          </section>
-          <section className="side-section">
             <h2 className="section-kicker">Alerts</h2>
             {alerts.length === 0 && <div style={{ color: "var(--faint)", fontSize: 10, lineHeight: 1.5 }}>No active alerts for this market.</div>}
             {alerts.map((alert) => <div className="alert-row" key={alert.id}><div className="alert-copy"><strong>{symbol} {alert.direction} {formatPrice(alert.price)}</strong><span className={alert.triggered ? "positive" : ""}>{alert.triggered ? "Triggered" : "Watching live price"}</span></div><button className="tool-button" style={{ width: 25, height: 25 }} onClick={() => setAlerts((items) => items.filter((item) => item.id !== alert.id))}>×</button></div>)}
@@ -1259,8 +1490,8 @@ export function TradingWorkspace() {
           derivativesVenue: derivativesExchange,
           candles,
           lastPrice: last?.close ?? null,
-          ema9Visible: showFast,
-          ema21Visible: showSlow,
+          ema9Visible: showFast && !fastHidden,
+          ema21Visible: showSlow && !slowHidden,
           pineSource: pine,
           pinePlots,
           derivatives: derivatives ? {

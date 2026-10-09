@@ -159,6 +159,44 @@ export const builtins = new Map([
     return p;
   }],
 
+
+  // ---- Chart-output helpers ------------------------------------------------
+  // Named arguments are generated as a trailing plain object, e.g.
+  // plot(x, ({ title: "H", force_overlay: true })). Split positional args from it.
+  ['__splitArgs', function(rest, names) {
+    const args = Array.from(rest || []);
+    let named = {};
+    const last = args[args.length - 1];
+    if (last && typeof last === 'object' && !Array.isArray(last) && !('r' in last) && !last._type && Object.getPrototypeOf(last) === Object.prototype) {
+      named = last;
+      args.pop();
+    }
+    const out = {};
+    names.forEach((name, i) => { if (args[i] !== undefined) out[name] = args[i]; });
+    return Object.assign(out, named);
+  }],
+
+  // Normalize any Pine colour value (hex string, "#rgb(r,g,b)" token, {r,g,b,a,transp}
+  // object from color.new/rgb) to a CSS rgba() string, or null for na.
+  ['__cssColor', function(c) {
+    if (c === null || c === undefined || c === false) return null;
+    let r, g, b, alpha = 1;
+    if (typeof c === 'string') {
+      const rgb = c.match(/^#rgb\((\d+),(\d+),(\d+)\)$/);
+      if (rgb) { r = +rgb[1]; g = +rgb[2]; b = +rgb[3]; }
+      else if (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c)) {
+        r = parseInt(c.slice(1, 3), 16); g = parseInt(c.slice(3, 5), 16); b = parseInt(c.slice(5, 7), 16);
+        if (c.length === 9) alpha = parseInt(c.slice(7, 9), 16) / 255;
+      } else return null;
+    } else if (typeof c === 'object' && 'r' in c) {
+      r = +c.r || 0; g = +c.g || 0; b = +c.b || 0;
+      if (c.a !== undefined && c.a !== null) alpha = Math.max(0, Math.min(1, (+c.a > 1 ? +c.a / 255 : +c.a)));
+      if (c.t !== undefined && c.t !== null) alpha = 1 - Math.max(0, Math.min(100, +c.t)) / 100;
+    } else return null;
+    if (c && typeof c === 'object' && c.transp !== undefined && c.transp !== null) alpha = 1 - Math.max(0, Math.min(100, +c.transp)) / 100;
+    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + (Math.round(alpha * 1000) / 1000) + ')';
+  }],
+
   // Visual-output built-ins. We don't render charts, so these record the call and
   // return safely instead of throwing, letting indicators that use them still run.
   ['alertcondition', function(condition, title, message) {
@@ -201,8 +239,6 @@ export const builtins = new Map([
     p.data[bar] = this.__scalar(series);
     return series;
   }],
-
-  ['bgcolor', function(color, opts) { return null; }],
 
   ['fill', function(plot1, plot2, color, opts) { return null; }],
 
@@ -893,15 +929,30 @@ export const builtins = new Map([
   // we append the current-bar value into a named series (rt.plots[name].data[bar]),
   // building up a full output series instead of a single final value. The plot
   // ordinal is reset each bar by the engine so untitled plots get stable names.
-  ['plot', function(series, title = '', color = null, linewidth = 1) {
+  ['plot', function(series, ...rest) {
     const rt = globalThis.__pineRuntime;
     if (!rt) return series;
+    const a = this.__splitArgs(rest, ['title', 'color', 'linewidth', 'style', 'trackprice', 'histbase', 'offset', 'join', 'editable', 'show_last', 'display', 'format', 'precision', 'force_overlay']);
     const bar = rt.__barIndex | 0;
     const ord = (rt.__plotIdx = (rt.__plotIdx | 0) + 1) - 1;
-    const key = (title && String(title)) || ('plot_' + ord);
+    const key = (a.title && String(a.title)) || ('plot_' + ord);
     let p = rt.plots[key];
-    if (!p) p = rt.plots[key] = { title: key, color, linewidth, data: [] };
-    p.data[bar] = this.__scalar(series);
+    if (!p) {
+      p = rt.plots[key] = {
+        title: key,
+        color: this.__cssColor(a.color),
+        linewidth: Number(a.linewidth) || 1,
+        style: typeof a.style === 'string' ? a.style : 'line',
+        histbase: Number.isFinite(Number(a.histbase)) ? Number(a.histbase) : 0,
+        forceOverlay: a.force_overlay === true,
+        order: ord,
+        data: [],
+        colors: [],
+      };
+    }
+    const value = this.__scalar(series);
+    p.data[bar] = typeof value === 'number' && Number.isFinite(value) ? value : null;
+    p.colors[bar] = this.__cssColor(a.color);
     return series;
   }],
 
@@ -952,11 +1003,24 @@ export const builtins = new Map([
   }],
 
   // Box drawing functions for creating rectangular shapes on the chart
-  ['boxNew', function(left, top, right, bottom, opts = {}) {
-    return this.__decDraw({ left, top, right, bottom, opts, _type: 'box' });
+  ['boxNew', function(...args) {
+    const a = this.__splitArgs(args, ['left', 'top', 'right', 'bottom', 'border_color', 'border_width', 'border_style', 'extend', 'xloc', 'bgcolor', 'text', 'text_size', 'text_color', 'text_halign', 'text_valign', 'text_wrap', 'text_font_family', 'force_overlay']);
+    const box = {
+      left: this.__scalar(a.left), top: this.__scalar(a.top), right: this.__scalar(a.right), bottom: this.__scalar(a.bottom),
+      xloc: a.xloc === 'bar_time' ? 'bar_time' : 'bar_index',
+      borderColor: this.__cssColor(a.border_color === undefined ? '#2962FF' : a.border_color),
+      borderWidth: Number(a.border_width) || 1,
+      bgcolor: this.__cssColor(a.bgcolor === undefined ? '#2962FF33' : a.bgcolor),
+      forceOverlay: a.force_overlay === true,
+      _type: 'box',
+    };
+    const rt = globalThis.__pineRuntime;
+    if (rt) (rt.boxes = rt.boxes || []).push(box);
+    return this.__decDraw(box);
   }],
 
   ['boxDelete', function(box) {
+    if (box && typeof box === 'object') box._deleted = true;
     return null;
   }],
 
@@ -986,15 +1050,23 @@ export const builtins = new Map([
   ['plotshape', function(condition, ...rest) {
     const rt = globalThis.__pineRuntime;
     if (!rt) return condition;
+    const a = this.__splitArgs(rest, ['title', 'style', 'location', 'color', 'offset', 'text', 'textcolor', 'editable', 'size', 'show_last', 'display', 'format', 'precision', 'force_overlay']);
     const bar = rt.__barIndex | 0;
     const ord = (rt.__shapeIdx = (rt.__shapeIdx | 0) + 1) - 1;
-    let key = 'shape_' + ord;
-    for (const r of rest) {
-      if (typeof r === 'string') { key = r; break; }
-      if (r && typeof r === 'object' && r.title) { key = String(r.title); break; }
-    }
+    const key = (a.title && String(a.title)) || ('shape_' + ord);
     let s = rt.plotshapes[key];
-    if (!s) s = rt.plotshapes[key] = { title: key, data: [] };
+    if (!s) {
+      s = rt.plotshapes[key] = {
+        title: key,
+        style: typeof a.style === 'string' ? a.style : 'xcross',
+        location: typeof a.location === 'string' ? a.location : 'abovebar',
+        color: this.__cssColor(a.color === undefined ? '#2962FF' : a.color),
+        size: typeof a.size === 'string' ? a.size : 'auto',
+        text: typeof a.text === 'string' ? a.text : '',
+        forceOverlay: a.force_overlay === true,
+        data: [],
+      };
+    }
     s.data[bar] = !!this.__scalar(condition);
     return condition;
   }],
@@ -1033,7 +1105,17 @@ export const builtins = new Map([
   }],
 
   // Background color and fill stubs for visual styling of chart regions
-  ['bgcolor', function(color, title, editable, showLast) {
+  ['bgcolor', function(color, ...rest) {
+    const rt = globalThis.__pineRuntime;
+    if (!rt) return null;
+    const a = this.__splitArgs(rest, ['offset', 'editable', 'show_last', 'title', 'display', 'overlay', 'force_overlay']);
+    const bar = rt.__barIndex | 0;
+    const ord = (rt.__bgIdx = (rt.__bgIdx | 0) + 1) - 1;
+    const key = (a.title && String(a.title)) || ('bgcolor_' + ord);
+    rt.bgcolors = rt.bgcolors || {};
+    let bg = rt.bgcolors[key];
+    if (!bg) bg = rt.bgcolors[key] = { title: key, forceOverlay: a.force_overlay === true, data: [] };
+    bg.data[bar] = this.__cssColor(color);
     return null;
   }],
 

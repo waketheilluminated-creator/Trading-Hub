@@ -81,19 +81,30 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.doesNotMatch(html, /Wall price range/);
   assert.doesNotMatch(html, /aria-label="Unfilled large orders"/);
   assert.doesNotMatch(html, /aria-label="Executed large trades"/);
-  assert.match(html, /Order flow · separate pane/);
-  assert.match(html, /Derivatives · separate pane/);
+  // TH-UI-06: the right-panel INDICATORS list is replaced by a TradingView-style
+  // toolbar "Indicators" menu plus a chart legend.
+  assert.doesNotMatch(html, /<h2 class="section-kicker">Indicators<\/h2>/);
+  assert.doesNotMatch(html, /Order flow · separate pane/);
+  assert.doesNotMatch(html, /Derivatives · separate pane/);
+  assert.doesNotMatch(html, /aria-label="Run custom Pine"/);
+  assert.match(buttonOpeningTag(html, "Indicators"), /aria-expanded="false"/);
+  assert.ok(html.indexOf('aria-label="Indicators"') < html.indexOf('class="chart-region"'), "Indicators button lives in the chart toolbar");
+  assert.match(html, /aria-label="Resize right panel"[^>]*aria-orientation="vertical"/);
+  assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-expanded="true"/);
+  assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-controls="th-right-panel"/);
+  assert.match(html, /<aside class="right-panel" id="th-right-panel">/);
+  assert.match(html, /--side-panel-width:292px/);
   assert.match(html, /Futures vs spot|Futures − spot/);
   assert.match(html, /Backend data packs are ready/);
   assert.match(html, /Pine Editor/);
   assert.match(html, /Open Pine editor in new tab/);
   assert.match(html, /Collapse bottom panel/);
-  assert.match(html, /Toggle EMA 9/);
-  assert.match(html, /Toggle EMA 21/);
-  assert.doesNotMatch(buttonOpeningTag(html, "Toggle EMA 9"), /\bactive\b/);
-  assert.doesNotMatch(buttonOpeningTag(html, "Toggle EMA 21"), /\bactive\b/);
-  assert.doesNotMatch(html, /Remove EMA 9 indicator/);
-  assert.doesNotMatch(html, /Remove EMA 21 indicator/);
+  assert.doesNotMatch(html, /Toggle EMA 9/);
+  assert.doesNotMatch(html, /Toggle EMA 21/);
+  // Nothing is added by default, so the server-rendered legend is empty.
+  assert.doesNotMatch(html, /aria-label="Chart indicators"/);
+  assert.doesNotMatch(html, /Remove EMA 9/);
+  assert.doesNotMatch(html, /Remove EMA 21/);
   assert.match(html, /Add to chart/);
   assert.match(html, /Create alert \(Alt\+A\)/);
   assert.match(html, /Search symbols \(Cmd\/Ctrl\+K\)/);
