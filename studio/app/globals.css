@@ -42,6 +42,8 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-
 .side-panel-resize-handle:hover span, .side-panel-resize-handle:focus-visible span, body.side-panel-resizing .side-panel-resize-handle span { background:var(--accent); }
 body.side-panel-resizing { cursor:col-resize; user-select:none; }
 body.side-panel-resizing .chart-canvas { pointer-events:none; }
+.theme-toggle { width:30px; height:30px; display:grid; place-items:center; padding:0; color:var(--muted); border:1px solid transparent; border-radius:7px; background:transparent; cursor:pointer; }
+.theme-toggle:hover, .theme-toggle:focus-visible { color:var(--ink); background:var(--panel-2); }
 .side-panel-toggle { width:30px; height:30px; display:grid; place-items:center; padding:0; color:var(--muted); border:1px solid transparent; border-radius:7px; background:transparent; cursor:pointer; }
 .side-panel-toggle:hover, .side-panel-toggle:focus-visible { color:var(--ink); background:var(--panel-2); }
 .side-panel-toggle.collapsed { color:var(--accent); }

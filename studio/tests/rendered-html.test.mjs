@@ -94,6 +94,12 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-controls="th-right-panel"/);
   assert.match(html, /<aside class="right-panel" id="th-right-panel">/);
   assert.match(html, /--side-panel-width:292px/);
+  // TH-UI-07: theme toggle next to the panel toggle + pre-paint bootstrap in <head>.
+  assert.match(buttonOpeningTag(html, "Switch to light theme"), /aria-pressed="false"/);
+  assert.ok(html.indexOf('aria-label="Switch to light theme"') < html.indexOf('aria-label="Collapse right panel"'));
+  const bootstrap = html.indexOf('id="th-theme-bootstrap"');
+  assert.ok(bootstrap !== -1 && bootstrap < html.indexOf("<body"), "theme bootstrap runs in <head> before body paint");
+  assert.match(html, /localStorage\.getItem\("th-theme"\)/);
   assert.match(html, /Futures vs spot|Futures − spot/);
   assert.match(html, /Backend data packs are ready/);
   assert.match(html, /Pine Editor/);
