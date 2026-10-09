@@ -232,16 +232,12 @@ function isTextEditingElement(target: EventTarget | null): boolean {
 const DERIVATIVES_SECTION_KEY = "th-section-derivatives-open";
 const ORDER_FLOW_SECTION_KEY = "th-section-order-flow-open";
 
-function readSectionOpen(key: string, fallback = true): boolean {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (stored === "0") return false;
-    if (stored === "1") return true;
-  } catch {
-    return fallback;
-  }
-  return fallback;
+const ALERTS_SECTION_KEY = "th-section-alerts-open";
+
+/** Sections start expanded; before pane prefs are live (SSR + hydration) every section renders open. */
+function readLiveSectionOpen(key: string): boolean {
+  if (!panePrefsAreLive()) return true;
+  return readStoredFlag(window.localStorage, key, true);
 }
 
 function shortCopy(value: string | null | undefined, fallback = ""): string {
@@ -252,25 +248,30 @@ function SideSection({
   title,
   storageKey,
   extra,
+  badge,
   children,
 }: {
   title: string;
   storageKey: string;
   extra?: ReactNode;
+  /** Shown next to the title while collapsed (e.g. active alert count). */
+  badge?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(() => readSectionOpen(storageKey, true));
-  useEffect(() => {
-    try { window.localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore quota / private mode */ }
-  }, [open, storageKey]);
+  const open = useSyncExternalStore(subscribePanePrefs, () => readLiveSectionOpen(storageKey), () => true);
+  const toggle = useCallback(() => {
+    writeStoredFlag(window.localStorage, storageKey, !readStoredFlag(window.localStorage, storageKey, true));
+    notifyPanePrefs();
+  }, [storageKey]);
   const panelId = `${storageKey}-body`;
   return (
-    <section className={`side-section${open ? "" : " collapsed"}`}>
+    <section className={`side-section${open ? "" : " collapsed"}`} data-section-key={storageKey}>
       <div className="section-title-row">
         <h2 className="section-kicker">
-          <button type="button" className="section-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
+          <button type="button" className="section-toggle" aria-expanded={open} aria-controls={panelId} title={open ? `Collapse ${title}` : `Expand ${title}`} onClick={toggle}>
             <span className={`section-chevron${open ? " open" : ""}`} aria-hidden="true">›</span>
-            {title}
+            <span className="section-toggle-label">{title}</span>
+            {badge != null && !open ? <span className="section-badge">{badge}</span> : null}
           </button>
         </h2>
         {extra}
@@ -1554,12 +1555,11 @@ export function TradingWorkspace() {
             {cvd?.notice ? <p className="force-read muted">{shortCopy(cvd.notice)}</p> : null}
             <div className="data-source"><span>CVD from public trades</span><code>{venueLabel(cvd?.venue || derivativesExchange)} · {INTERVALS.find((item) => item.value === interval)?.label}</code></div>
           </SideSection>
-          <section className="side-section">
-            <h2 className="section-kicker">Alerts</h2>
+          <SideSection title="Alerts" storageKey={ALERTS_SECTION_KEY} badge={alerts.length ? alerts.length : null}>
             {alerts.length === 0 && <div style={{ color: "var(--faint)", fontSize: 10, lineHeight: 1.5 }}>No active alerts for this market.</div>}
             {alerts.map((alert) => <div className="alert-row" key={alert.id}><div className="alert-copy"><strong>{symbol} {alert.direction} {formatPrice(alert.price)}</strong><span className={alert.triggered ? "positive" : ""}>{alert.triggered ? "Triggered" : "Watching live price"}</span></div><button className="tool-button" style={{ width: 25, height: 25 }} onClick={() => setAlerts((items) => items.filter((item) => item.id !== alert.id))}>×</button></div>)}
             {showAlertForm ? <div className="alert-form"><select value={alertDirection} onChange={(e) => setAlertDirection(e.target.value as "above" | "below")}><option value="above">Crosses above</option><option value="below">Crosses below</option></select><input aria-label="Alert price" inputMode="decimal" placeholder={last ? formatPrice(last.close) : "Price"} value={alertPrice} onChange={(e) => setAlertPrice(e.target.value)} /><button onClick={createAlert}>Create price alert</button></div> : <button className="add-alert" onClick={() => setShowAlertForm(true)}>＋ Create alert</button>}
-          </section>
+          </SideSection>
         </aside>
       </section>
       <SymbolSearchDialog

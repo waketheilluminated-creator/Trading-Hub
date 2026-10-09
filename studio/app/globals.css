@@ -276,7 +276,12 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .section-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
 .section-title-row .section-kicker { margin:0; }
 .side-section.collapsed .section-title-row { margin-bottom:0; }
-.section-toggle { display:flex; align-items:center; gap:6px; margin:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit; cursor:pointer; }
+.section-title-row h2.section-kicker { flex:1 1 auto; min-width:0; }
+.section-toggle { display:flex; align-items:center; gap:6px; width:100%; margin:0; padding:2px 4px; margin-left:-4px; border:0; border-radius:5px; background:transparent; color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit; text-align:left; cursor:pointer; }
+.section-toggle:hover { color:var(--ink); }
+.section-toggle:hover .section-chevron { color:var(--ink); }
+.section-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.section-badge { margin-left:4px; padding:0 5px; border-radius:8px; background:var(--panel-2); color:var(--ink); font-size:9px; letter-spacing:0; }
 .section-chevron { display:inline-block; width:10px; color:var(--faint); transform:rotate(0deg); transition:transform .15s; }
 .section-chevron.open { transform:rotate(90deg); }
 .section-title-row select { padding:4px 6px; color:var(--ink); background:#111720; border:1px solid var(--line); border-radius:6px; font-size:10px; }

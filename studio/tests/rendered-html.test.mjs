@@ -94,6 +94,18 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-controls="th-right-panel"/);
   assert.match(html, /<aside class="right-panel" id="th-right-panel">/);
   assert.match(html, /--side-panel-width:292px/);
+  // TH-UI-08: every right-panel section has a title-row toggle that starts expanded on SSR.
+  const sectionToggles = html.match(/<button\b[^>]*class="section-toggle"[^>]*>/g) ?? [];
+  assert.equal(sectionToggles.length, 3, "Derivatives pulse, Order flow, Alerts");
+  for (const key of ["th-section-derivatives-open", "th-section-order-flow-open", "th-section-alerts-open"]) {
+    const tag = sectionToggles.find((t) => t.includes(`aria-controls="${key}-body"`));
+    assert.ok(tag, `missing toggle for ${key}`);
+    assert.match(tag, /aria-expanded="true"/);
+    assert.match(tag, /type="button"/);
+    assert.ok(html.includes(`id="${key}-body"`), `missing body for ${key}`);
+  }
+  const panel = html.slice(html.indexOf('id="th-right-panel"'));
+  assert.equal((panel.match(/class="side-section/g) ?? []).length, (panel.match(/class="section-toggle"/g) ?? []).length, "no right-panel section without a toggle");
   // TH-UI-07: theme toggle next to the panel toggle + pre-paint bootstrap in <head>.
   assert.match(buttonOpeningTag(html, "Switch to light theme"), /aria-pressed="false"/);
   assert.ok(html.indexOf('aria-label="Switch to light theme"') < html.indexOf('aria-label="Collapse right panel"'));
