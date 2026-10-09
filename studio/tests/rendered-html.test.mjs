@@ -83,7 +83,7 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.doesNotMatch(html, /aria-label="Executed large trades"/);
   // TH-UI-06: the right-panel INDICATORS list is replaced by a TradingView-style
   // toolbar "Indicators" menu plus a chart legend.
-  assert.doesNotMatch(html, /<h2 class="section-kicker">Indicators<\/h2>/);
+  assert.doesNotMatch(html, /<h[23] class="section-kicker">Indicators<\/h[23]>/);
   assert.doesNotMatch(html, /Order flow · separate pane/);
   assert.doesNotMatch(html, /Derivatives · separate pane/);
   assert.doesNotMatch(html, /aria-label="Run custom Pine"/);
@@ -92,8 +92,15 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /aria-label="Resize right panel"[^>]*aria-orientation="vertical"/);
   assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-expanded="true"/);
   assert.match(buttonOpeningTag(html, "Collapse right panel"), /aria-controls="th-right-panel"/);
-  assert.match(html, /<aside class="right-panel" id="th-right-panel">/);
+  assert.match(html, /<aside class="right-panel" id="th-right-panel" aria-labelledby="th-right-panel-title">/);
   assert.match(html, /--side-panel-width:292px/);
+  // TH-UI-09: one "Advanced Analytics" panel title (h2) above the demoted h3 subsection headings.
+  const panelHtml = html.slice(html.indexOf('id="th-right-panel"'));
+  assert.match(panelHtml, /<h2 class="right-panel-title" id="th-right-panel-title">Advanced Analytics<\/h2>/);
+  assert.match(html, /aria-labelledby="th-right-panel-title"/);
+  assert.ok(panelHtml.indexOf("right-panel-title") < panelHtml.indexOf('class="section-kicker"'));
+  assert.equal((panelHtml.match(/<h3 class="section-kicker">/g) ?? []).length, 3);
+  assert.doesNotMatch(panelHtml.slice(0, panelHtml.indexOf("</aside>")), /<h2 class="section-kicker"/);
   // TH-UI-08: every right-panel section has a title-row toggle that starts expanded on SSR.
   const sectionToggles = html.match(/<button\b[^>]*class="section-toggle"[^>]*>/g) ?? [];
   assert.equal(sectionToggles.length, 3, "Derivatives pulse, Order flow, Alerts");

@@ -272,11 +272,13 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 
 .right-panel { border-left:1px solid var(--line); background:#0d1219; min-height:0; overflow:auto; }
 .side-section { padding:10px 12px; border-bottom:1px solid var(--line); }
-.section-kicker { margin:0 0 8px; color:var(--muted); font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
+.right-panel-header { position:sticky; top:0; z-index:2; display:flex; align-items:center; min-height:40px; padding:0 12px; border-bottom:1px solid var(--line); background:var(--panel); }
+.right-panel-title { margin:0; color:var(--ink); font-size:14px; font-weight:650; letter-spacing:-.01em; line-height:1.2; }
+.section-kicker { margin:0 0 8px; color:var(--muted); font-size:9.5px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
 .section-title-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
 .section-title-row .section-kicker { margin:0; }
 .side-section.collapsed .section-title-row { margin-bottom:0; }
-.section-title-row h2.section-kicker { flex:1 1 auto; min-width:0; }
+.section-title-row .section-kicker { flex:1 1 auto; min-width:0; }
 .section-toggle { display:flex; align-items:center; gap:6px; width:100%; margin:0; padding:2px 4px; margin-left:-4px; border:0; border-radius:5px; background:transparent; color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit; text-align:left; cursor:pointer; }
 .section-toggle:hover { color:var(--ink); }
 .section-toggle:hover .section-chevron { color:var(--ink); }

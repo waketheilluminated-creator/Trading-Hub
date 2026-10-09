@@ -32,3 +32,17 @@ test("toggle is a real button with aria-expanded/aria-controls, the body is hidd
   const toggleRules = css.split("\n").filter((line) => /^\.section-(toggle|badge|chevron)/.test(line));
   for (const rule of toggleRules) assert.doesNotMatch(rule, /#[0-9a-f]{3,8}\b|rgba?\(/i, rule);
 });
+
+test("TH-UI-09: panel title is clearly larger and heavier than subsection headings", () => {
+  const rule = (sel) => css.split("\n").find((line) => line.startsWith(`${sel} {`)) ?? "";
+  const size = (r) => Number(/font-size:([\d.]+)px/.exec(r)?.[1]);
+  const weight = (r) => Number(/font-weight:(\d+)/.exec(r)?.[1] ?? 400);
+  const title = rule(".right-panel-title");
+  const kicker = rule(".section-kicker");
+  assert.ok(size(title) >= size(kicker) * 1.4, `${size(title)} vs ${size(kicker)}`);
+  assert.ok(weight(title) > weight(kicker));
+  assert.match(title, /color:var\(--ink\)/);
+  assert.match(kicker, /color:var\(--muted\)/);
+  assert.match(rule(".right-panel-header"), /position:sticky/);
+  assert.match(rule(".right-panel-header"), /background:var\(--panel\)/);
+});
