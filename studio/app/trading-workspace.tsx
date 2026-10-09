@@ -267,13 +267,13 @@ function SideSection({
   return (
     <section className={`side-section${open ? "" : " collapsed"}`} data-section-key={storageKey}>
       <div className="section-title-row">
-        <h2 className="section-kicker">
+        <h3 className="section-kicker">
           <button type="button" className="section-toggle" aria-expanded={open} aria-controls={panelId} title={open ? `Collapse ${title}` : `Expand ${title}`} onClick={toggle}>
             <span className={`section-chevron${open ? " open" : ""}`} aria-hidden="true">›</span>
             <span className="section-toggle-label">{title}</span>
             {badge != null && !open ? <span className="section-badge">{badge}</span> : null}
           </button>
-        </h2>
+        </h3>
         {extra}
       </div>
       <div id={panelId} hidden={!open}>{children}</div>
@@ -1508,7 +1508,8 @@ export function TradingWorkspace() {
 
         {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- ARIA separators become interactive when focusable and expose aria-valuenow. */}
         <div className="side-panel-resize-handle" role="separator" aria-label="Resize right panel" aria-orientation="vertical" aria-controls="th-right-panel" aria-valuemin={0} aria-valuemax={maxSidePanelWidth(typeof window === "undefined" ? 0 : window.innerWidth)} aria-valuenow={sidePanelCollapsed ? 0 : sidePanelWidth} tabIndex={0} onPointerDown={startSidePanelResize} onKeyDown={resizeSidePanelWithKeyboard} onDoubleClick={toggleSidePanel}><span /></div>
-        <aside className="right-panel" id="th-right-panel" hidden={sidePanelCollapsed}>
+        <aside className="right-panel" id="th-right-panel" hidden={sidePanelCollapsed} aria-labelledby="th-right-panel-title">
+          <header className="right-panel-header"><h2 className="right-panel-title" id="th-right-panel-title">Advanced Analytics</h2></header>
           <SideSection
             title="Derivatives pulse"
             storageKey={DERIVATIVES_SECTION_KEY}
