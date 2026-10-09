@@ -1,5 +1,6 @@
 import { classifyMarketFailure, compactSymbol, formatVenueFallbackNotice, isMarketVenue, MARKET_VENUES, toBinanceInterval, toBitgetBar, toOkxBar, toOkxSwapInstId, venueFallbackOrder, venueLabel, type ChartInterval, type MarketCandle, type MarketRequestFailure, type MarketVenue } from "./market-venues.ts";
 import { fallbackCatalog, tagMarket } from "./market-symbols.js";
+import { DEFAULT_CHART_BARS, LAZY_LOAD_BARS, MAX_KLINE_BARS, MAX_LOADED_BARS, mergeCandles } from "./kline-history.ts";
 
 export type ChartHistoryResult = {
   venue: MarketVenue;
@@ -7,6 +8,10 @@ export type ChartHistoryResult = {
   notice: string | null;
   fallbackFrom: MarketVenue | null;
   source: "official" | "public-mirror";
+  /** Venue has no older bars than the first candle. */
+  exhausted: boolean;
+  /** A later history page failed; candles are what loaded before it. */
+  warning: string | null;
 };
 
 export type LiveConnection = {
@@ -27,12 +32,46 @@ type SocketCtor = {
   };
 };
 
-export function mergeLiveCandle<T extends { time: unknown }>(current: T[], next: T): T[] {
+export function mergeLiveCandle<T extends { time: unknown }>(current: T[], next: T, maxBars = MAX_LOADED_BARS): T[] {
   if (!current.length) return [next];
   const last = current.at(-1);
   if (last && last.time === next.time) return [...current.slice(0, -1), next];
   if (last && Number(next.time) < Number(last.time)) return current;
-  return [...current.slice(-499), next];
+  return [...current.slice(-(Math.max(1, maxBars) - 1)), next];
+}
+
+/** Clamp a user/stored bar-count to 1..MAX_KLINE_BARS, defaulting to DEFAULT_CHART_BARS. */
+export function normalizeBarCount(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(String(value ?? ""));
+  if (!Number.isInteger(n) || n < 1) return DEFAULT_CHART_BARS;
+  return Math.min(MAX_KLINE_BARS, n);
+}
+
+/** Merge lazily loaded older bars in front of the current series (dedupe by time), capped at MAX_LOADED_BARS keeping the newest. */
+export function prependOlderCandles<T extends { time: unknown }>(current: T[], older: T[], maxBars = MAX_LOADED_BARS): T[] {
+  const byTime = new Map<number, T>();
+  for (const candle of older) byTime.set(Number(candle.time), candle);
+  for (const candle of current) byTime.set(Number(candle.time), candle);
+  const merged = [...byTime.entries()].sort((a, b) => a[0] - b[0]).map((entry) => entry[1]);
+  return merged.slice(-maxBars);
+}
+
+export async function loadOlderCandles(
+  venue: MarketVenue,
+  symbol: string,
+  interval: ChartInterval,
+  beforeTime: number,
+  limit = LAZY_LOAD_BARS,
+  fetchImpl: FetchImpl = fetch,
+): Promise<{ candles: MarketCandle[]; exhausted: boolean }> {
+  const end = Math.floor(beforeTime) - 1;
+  if (!Number.isFinite(end) || end <= 0) return { candles: [], exhausted: true };
+  const response = await fetchImpl(`/api/klines?exchange=${venue}&symbol=${encodeURIComponent(compactSymbol(symbol))}&interval=${interval}&limit=${normalizeBarCount(limit)}&end=${end}`);
+  const body = await response.text();
+  if (!response.ok) throw classifyMarketFailure(venue, response.status, body);
+  const payload = parseJson(body) as { candles?: unknown; exhausted?: unknown } | null;
+  const candles = Array.isArray(payload?.candles) ? mergeCandles((payload.candles as MarketCandle[]).filter((c) => Number(c?.time) < beforeTime)) : [];
+  return { candles, exhausted: Boolean(payload?.exhausted) || candles.length === 0 };
 }
 
 export function parseLiveKline(venue: MarketVenue, payload: unknown): MarketCandle | null {
@@ -63,12 +102,14 @@ export async function loadChartHistory(
   symbol: string,
   interval: ChartInterval,
   fetchImpl: FetchImpl = fetch,
+  options: { limit?: number } = {},
 ): Promise<ChartHistoryResult> {
   const compact = compactSymbol(symbol);
+  const limit = normalizeBarCount(options.limit ?? DEFAULT_CHART_BARS);
   const failures: MarketRequestFailure[] = [];
   for (const venue of venueFallbackOrder(preferred)) {
     try {
-      const response = await fetchImpl(`/api/klines?exchange=${venue}&symbol=${encodeURIComponent(compact)}&interval=${interval}&limit=300`);
+      const response = await fetchImpl(`/api/klines?exchange=${venue}&symbol=${encodeURIComponent(compact)}&interval=${interval}&limit=${limit}`);
       const body = await response.text();
       const payload = parseJson(body);
       if (!response.ok) {
@@ -90,6 +131,8 @@ export async function loadChartHistory(
         fallbackFrom,
         source: (payload as { source?: "official" | "public-mirror" }).source === "public-mirror" ? "public-mirror" : "official",
         notice: fallbackFrom ? formatVenueFallbackNotice(preferred, venue, blocked) : null,
+        exhausted: Boolean((payload as { exhausted?: unknown }).exhausted),
+        warning: typeof (payload as { warning?: unknown }).warning === "string" ? (payload as { warning: string }).warning : null,
       };
     } catch (error) {
       failures.push(classifyMarketFailure(venue, 0, error instanceof Error ? error.message : "Failed to fetch"));

@@ -139,7 +139,8 @@ test("parses OKX swap catalogs into compact USDT symbols", () => {
 
 test("keeps market fetch errors out of the Pine compiler console", () => {
   const source = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
-  const marketEffect = source.slice(source.indexOf("loadChartHistory(chartVenue"), source.indexOf("}, [symbol, interval, chartVenue]"));
+  const marketEffect = source.slice(source.indexOf("loadChartHistory(chartVenue"), source.indexOf("}, [symbol, interval, chartVenue, barCount]"));
+  assert.ok(marketEffect.length > 0 && marketEffect.length < 6000, "market effect slice must stay bounded");
   assert.doesNotMatch(marketEffect, /setConsoleText|setConsoleKind/);
   assert.match(source, /Compiler output/);
   assert.match(source, /market-feed-error/);

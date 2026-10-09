@@ -1,4 +1,4 @@
-import { fetchVenueKlines } from "@/lib/market-rest.ts";
+import { fetchVenueKlineHistory, MAX_KLINE_BARS, parseKlineQuery } from "@/lib/kline-history.ts";
 import { compactSymbol, isChartInterval, isMarketVenue, supportedExchangesMessage } from "@/lib/market-venues.ts";
 
 export async function GET(request: Request) {
@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const exchange = (url.searchParams.get("exchange") || "bybit").toLowerCase();
   const symbol = compactSymbol(url.searchParams.get("symbol") || "BTCUSDT");
   const interval = url.searchParams.get("interval") || "15";
-  const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get("limit") || 300) || 300));
+  const query = parseKlineQuery(url.searchParams);
 
   if (!isMarketVenue(exchange)) {
     return Response.json({ error: supportedExchangesMessage() }, { status: 400 });
@@ -17,10 +17,13 @@ export async function GET(request: Request) {
   if (!isChartInterval(interval)) {
     return Response.json({ error: "Supported intervals: 1, 5, 15, 60, 240, D" }, { status: 400 });
   }
+  if ("error" in query) {
+    return Response.json({ error: query.error, maxLimit: MAX_KLINE_BARS }, { status: 400 });
+  }
 
   try {
-    const result = await fetchVenueKlines(exchange, symbol, interval, limit);
-    if (!result.candles.length) {
+    const result = await fetchVenueKlineHistory(exchange, symbol, interval, query);
+    if (!result.candles.length && query.endTime == null) {
       return Response.json({ error: `${exchange} returned no candles`, exchange, symbol, interval }, { status: 502 });
     }
     return Response.json({
@@ -29,7 +32,11 @@ export async function GET(request: Request) {
       interval: result.interval,
       source: result.source,
       candles: result.candles,
-    }, { headers: { "Cache-Control": "public, max-age=5, s-maxage=5" } });
+      exhausted: result.exhausted,
+      partial: result.partial,
+      warning: result.warning,
+      pages: result.pages,
+    }, { headers: { "Cache-Control": query.endTime == null ? "public, max-age=5, s-maxage=5" : "public, max-age=60, s-maxage=60" } });
   } catch (error) {
     const failure = error && typeof error === "object" ? error as { message?: string; blocked?: boolean; status?: number; venue?: string } : {};
     return Response.json({

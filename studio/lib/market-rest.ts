@@ -29,7 +29,7 @@ export type RestMarketsResult = {
   source: "official" | "public-mirror";
 };
 
-const BINANCE_KLINE_HOSTS = [
+export const BINANCE_KLINE_HOSTS = [
   { source: "official" as const, klines: "https://fapi.binance.com/fapi/v1/klines", markets: "https://fapi.binance.com/fapi/v1/exchangeInfo" },
   { source: "public-mirror" as const, klines: "https://data-api.binance.vision/api/v3/klines", markets: "https://data-api.binance.vision/api/v3/exchangeInfo" },
 ];
@@ -163,7 +163,7 @@ async function fetchFirstWorking<T extends { source: "official" | "public-mirror
   throw lastFailure ?? classifyMarketFailure(venue, 502, "Market request failed");
 }
 
-async function requestJson(fetchImpl: FetchImpl, url: string, venue: MarketVenue): Promise<unknown> {
+export async function requestJson(fetchImpl: FetchImpl, url: string, venue: MarketVenue): Promise<unknown> {
   let response: Response;
   try {
     response = await fetchImpl(url);
@@ -179,7 +179,7 @@ async function requestJson(fetchImpl: FetchImpl, url: string, venue: MarketVenue
   }
 }
 
-function assertVenuePayload(venue: MarketVenue, payload: unknown): void {
+export function assertVenuePayload(venue: MarketVenue, payload: unknown): void {
   if (venue === "bybit") {
     const code = (payload as { retCode?: unknown })?.retCode;
     if (code != null && Number(code) !== 0) {
@@ -253,7 +253,7 @@ function uniqueMarkets(markets: RestMarketOption[]): RestMarketOption[] {
   return [...unique.values()].sort((left, right) => left.symbol.localeCompare(right.symbol));
 }
 
-function asFailure(error: unknown, venue: MarketVenue): MarketRequestFailure {
+export function asFailure(error: unknown, venue: MarketVenue): MarketRequestFailure {
   if (error && typeof error === "object" && "blocked" in error && "venue" in error) {
     return error as MarketRequestFailure;
   }
