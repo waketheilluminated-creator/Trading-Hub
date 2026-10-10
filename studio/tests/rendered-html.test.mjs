@@ -1,6 +1,12 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+
+// Isolate from any on-demand liquidation refresh output left on this machine (TH-FEAT-11 last-good store).
+process.env.LIQ_REFRESH_OUT_DIR = mkdtempSync(join(tmpdir(), "th-liq-test-"));
 
 async function worker() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
