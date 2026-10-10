@@ -41,6 +41,9 @@ import {
   formatLiqBandTooltip,
   liqSymbolsMatch,
   loadLiqHeatmapBands,
+  bandsOutsideZones,
+  formatLiqZoneTooltip,
+  type LiqZone,
   type LiqBand,
 } from "@/lib/liq-heatmap.ts";
 import {
@@ -153,6 +156,9 @@ const CVD_SERIES_OPTIONS = {
   lastValueVisible: true,
   priceFormat: { type: "volume" as const, precision: 2, minMove: 0.01 },
 };
+/** Empty bars kept right of the latest candle while liquidation zone boxes are shown. */
+const LIQ_ZONE_RIGHT_OFFSET_BARS = 40;
+
 /** Bars in view right after a history load; older history is reached by scrolling / zooming out. */
 const INITIAL_VISIBLE_BARS = 220;
 /** Start fetching older bars when the left edge is within this many bars of the oldest loaded bar. */
@@ -461,9 +467,11 @@ export function TradingWorkspace() {
     writeStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
   }, []);
-  const [liqModel, setLiqModel] = useState<{ symbol: string; bands: LiqBand[]; notice: string | null } | null>(null);
+  const [liqModel, setLiqModel] = useState<{ symbol: string; bands: LiqBand[]; zones: LiqZone[]; notice: string | null } | null>(null);
   const liqForChart = showLiqHeatmap && liqModel && liqSymbolsMatch(liqModel.symbol, symbol) ? liqModel : null;
-  const liqBands = useMemo(() => liqForChart?.bands ?? [], [liqForChart]);
+  const liqZones = useMemo(() => liqForChart?.zones ?? [], [liqForChart]);
+  // Single high/extreme buckets keep the band rendering; buckets merged into a zone are drawn only as the zone box.
+  const liqBands = useMemo(() => bandsOutsideZones(liqForChart?.bands ?? [], liqZones), [liqForChart, liqZones]);
   const liqNotice = liqForChart?.notice ?? null;
   liqBandsRef.current = liqBands;
   const [largeOrderWalls, setLargeOrderWalls] = useState<TrackedWall[]>([]);
@@ -832,6 +840,26 @@ export function TradingWorkspace() {
     liqHeatmapPrimitiveRef.current?.setBands(showLiqHeatmap ? liqBands : []);
   }, [chartVersion, liqBands, showLiqHeatmap]);
 
+  const latestCandleTime = candles.at(-1)?.time ?? null;
+  const liqZonesVisible = showLiqHeatmap && liqZones.length > 0;
+  // Zone boxes live right of the latest bar, so leave room for them (and their labels) when they are on.
+  const hasCandles = candles.length > 0;
+  useEffect(() => {
+    const timeScale = chartRef.current?.timeScale();
+    if (!timeScale) return;
+    timeScale.applyOptions({ rightOffset: liqZonesVisible ? LIQ_ZONE_RIGHT_OFFSET_BARS : 8 });
+    // The history load pins the view to the latest bars; slide it so the zone area is actually on screen.
+    const count = candlesRef.current.length;
+    const range = timeScale.getVisibleLogicalRange();
+    if (!liqZonesVisible || !hasCandles || !range || !count) return;
+    const targetTo = count - 1 + LIQ_ZONE_RIGHT_OFFSET_BARS;
+    if (range.to >= targetTo - 1) return;
+    timeScale.setVisibleLogicalRange({ from: range.from + (targetTo - range.to), to: targetTo });
+  }, [chartVersion, hasCandles, liqZonesVisible, symbol]);
+  useEffect(() => {
+    liqHeatmapPrimitiveRef.current?.setZones(showLiqHeatmap ? liqZones : [], latestCandleTime);
+  }, [chartVersion, latestCandleTime, liqZones, showLiqHeatmap]);
+
   useEffect(() => {
     if (!showLiqHeatmap) return;
     let active = true;
@@ -839,11 +867,11 @@ export function TradingWorkspace() {
     loadLiqHeatmapBands(symbol, fetch, { sample })
       .then((result) => {
         if (!active) return;
-        setLiqModel({ symbol, bands: result.bands, notice: result.notice });
+        setLiqModel({ symbol, bands: result.bands, zones: result.zones, notice: result.notice });
       })
       .catch(() => {
         if (!active) return;
-        setLiqModel({ symbol, bands: [], notice: LIQ_HEATMAP_UNAVAILABLE });
+        setLiqModel({ symbol, bands: [], zones: [], notice: LIQ_HEATMAP_UNAVAILABLE });
       });
     return () => { active = false; };
   }, [showLiqHeatmap, symbol]);
@@ -865,8 +893,9 @@ export function TradingWorkspace() {
         return;
       }
       const price = series.coordinateToPrice(point.y);
-      const band = price == null ? null : findLiqBandAtPrice(liqBandsRef.current, price);
-      if (!band) {
+      const zone = liqHeatmapPrimitiveRef.current?.zoneAt(point.x, price) ?? null;
+      const band = zone || price == null ? null : findLiqBandAtPrice(liqBandsRef.current, price);
+      if (!zone && !band) {
         node.hidden = true;
         return;
       }
@@ -874,8 +903,15 @@ export function TradingWorkspace() {
       const width = host?.clientWidth ?? 0;
       const height = host?.clientHeight ?? 0;
       node.hidden = false;
-      node.dataset.side = band.side;
-      node.textContent = formatLiqBandTooltip(band);
+      if (zone) {
+        node.dataset.side = zone.role === "support" ? "short" : "long";
+        node.dataset.zone = zone.role;
+        node.textContent = formatLiqZoneTooltip(zone);
+      } else if (band) {
+        node.dataset.side = band.side;
+        delete node.dataset.zone;
+        node.textContent = formatLiqBandTooltip(band);
+      }
       node.style.left = `${Math.min(point.x + 12, Math.max(8, width - 240))}px`;
       node.style.top = `${Math.min(point.y + 14, Math.max(8, height - 32))}px`;
     };
@@ -884,7 +920,7 @@ export function TradingWorkspace() {
       chart.unsubscribeCrosshairMove(onMove);
       tip.hidden = true;
     };
-  }, [chartVersion, showLiqHeatmap, liqBands]);
+  }, [chartVersion, showLiqHeatmap, liqBands, liqZones]);
 
   useEffect(() => {
     if (!showLargeOrderSr) return;
@@ -1057,7 +1093,10 @@ export function TradingWorkspace() {
         // Open on the most recent bars (like TradingView); the full history is a scroll / zoom away.
         requestAnimationFrame(() => {
           const count = loaded.length;
-          if (count > INITIAL_VISIBLE_BARS) chartRef.current?.timeScale().setVisibleLogicalRange({ from: count - INITIAL_VISIBLE_BARS, to: count + 4 });
+          const timeScale = chartRef.current?.timeScale();
+          // Respect the current right offset (wider while liquidation zones are shown).
+          const pad = Math.max(4, timeScale?.options().rightOffset ?? 4);
+          if (count > INITIAL_VISIBLE_BARS) timeScale?.setVisibleLogicalRange({ from: count - INITIAL_VISIBLE_BARS, to: count - 1 + pad });
           else chartRef.current?.timeScale().fitContent();
         });
         stream = openKlineStream(result.venue, symbol, interval, {
@@ -1446,7 +1485,7 @@ export function TradingWorkspace() {
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span><button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}><i style={{ background: "rgba(83, 201, 144, 0.45)", outline: "1px solid #53c990" }} />Support zone <i style={{ background: "rgba(231, 103, 112, 0.45)", outline: "1px solid #e76770" }} />Resistance zone</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}

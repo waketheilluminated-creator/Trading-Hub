@@ -1,0 +1,272 @@
+{
+  "kind": "liq_heatmap_bands",
+  "schemaVersion": 1,
+  "venue": "multi",
+  "symbol": "ZECUSDT",
+  "asOf": "2026-10-10T14:11:05-04:00",
+  "markPrice": 1385.28,
+  "mid": 1385.28,
+  "bucket_pct": 0.5,
+  "updatedAt": 1791655865942,
+  "source": "oi_liq_estimator",
+  "unit": "usd_millions",
+  "zoneRule": "Merge runs of >=2 price-adjacent 0.5%-of-mid buckets with risk 高 or 极高, same side of markPrice, same liquidation side (long|short). Isolated 高/极高 buckets are not zones. Below markPrice = support (green); above = resistance (red). Boxes drawn from the latest candle rightward only (boxStart=latest_candle).",
+  "boxStart": "latest_candle",
+  "bands": [
+    {
+      "lo": 1523.808,
+      "hi": 1530.7344,
+      "side": "short",
+      "liq_m": 234.04,
+      "risk": "极高",
+      "dist_pct": 10.25
+    },
+    {
+      "lo": 1246.752,
+      "hi": 1253.6784,
+      "side": "long",
+      "liq_m": 219.87,
+      "risk": "极高",
+      "dist_pct": -9.75
+    },
+    {
+      "lo": 1662.336,
+      "hi": 1669.2624,
+      "side": "short",
+      "liq_m": 149.55,
+      "risk": "极高",
+      "dist_pct": 20.25
+    },
+    {
+      "lo": 1108.224,
+      "hi": 1115.1504,
+      "side": "long",
+      "liq_m": 140.28,
+      "risk": "极高",
+      "dist_pct": -19.75
+    },
+    {
+      "lo": 1544.5872,
+      "hi": 1551.5136,
+      "side": "short",
+      "liq_m": 82.35,
+      "risk": "极高",
+      "dist_pct": 11.75
+    },
+    {
+      "lo": 1426.8383999999999,
+      "hi": 1433.7648,
+      "side": "long",
+      "liq_m": 69.64,
+      "risk": "极高",
+      "dist_pct": 3.25
+    },
+    {
+      "lo": 1516.8816,
+      "hi": 1523.808,
+      "side": "short",
+      "liq_m": 63.78,
+      "risk": "极高",
+      "dist_pct": 9.75
+    },
+    {
+      "lo": 1634.6304,
+      "hi": 1641.5568,
+      "side": "short",
+      "liq_m": 63.01,
+      "risk": "极高",
+      "dist_pct": 18.25
+    },
+    {
+      "lo": 1440.6912,
+      "hi": 1447.6176,
+      "side": "short",
+      "liq_m": 58.13,
+      "risk": "极高",
+      "dist_pct": 4.25
+    },
+    {
+      "lo": 1329.8688,
+      "hi": 1336.7952,
+      "side": "long",
+      "liq_m": 54.35,
+      "risk": "极高",
+      "dist_pct": -3.75
+    },
+    {
+      "lo": 1842.4224,
+      "hi": 1849.3488,
+      "side": "short",
+      "liq_m": 53.22,
+      "risk": "极高",
+      "dist_pct": 33.25
+    },
+    {
+      "lo": 921.2112,
+      "hi": 928.1375999999999,
+      "side": "long",
+      "liq_m": 52.37,
+      "risk": "极高",
+      "dist_pct": -33.25
+    },
+    {
+      "lo": 1336.7952,
+      "hi": 1343.7216,
+      "side": "long",
+      "liq_m": 50.19,
+      "risk": "极高",
+      "dist_pct": -3.25
+    },
+    {
+      "lo": 1454.5439999999999,
+      "hi": 1461.4704,
+      "side": "long",
+      "liq_m": 49.18,
+      "risk": "高",
+      "dist_pct": 5.25
+    },
+    {
+      "lo": 1357.5744,
+      "hi": 1364.5008,
+      "side": "long",
+      "liq_m": 41.18,
+      "risk": "高",
+      "dist_pct": -1.75
+    },
+    {
+      "lo": 1412.9856,
+      "hi": 1419.912,
+      "side": "short",
+      "liq_m": 40.03,
+      "risk": "高",
+      "dist_pct": 2.25
+    },
+    {
+      "lo": 1496.1024,
+      "hi": 1503.0288,
+      "side": "short",
+      "liq_m": 37.47,
+      "risk": "高",
+      "dist_pct": 8.25
+    },
+    {
+      "lo": 1613.8512,
+      "hi": 1620.7776000000001,
+      "side": "short",
+      "liq_m": 24.62,
+      "risk": "高",
+      "dist_pct": 16.75
+    },
+    {
+      "lo": 1399.1327999999999,
+      "hi": 1406.0592,
+      "side": "short",
+      "liq_m": 24.33,
+      "risk": "高",
+      "dist_pct": 1.25
+    },
+    {
+      "lo": 1586.1456,
+      "hi": 1593.0720000000001,
+      "side": "long",
+      "liq_m": 22.75,
+      "risk": "高",
+      "dist_pct": 14.75
+    },
+    {
+      "lo": 1468.3968,
+      "hi": 1475.3232,
+      "side": "long",
+      "liq_m": 21.68,
+      "risk": "高",
+      "dist_pct": 6.25
+    },
+    {
+      "lo": 1489.176,
+      "hi": 1496.1024,
+      "side": "long",
+      "liq_m": 20.83,
+      "risk": "高",
+      "dist_pct": 7.75
+    },
+    {
+      "lo": 1475.3232,
+      "hi": 1482.2496,
+      "side": "long",
+      "liq_m": 20.46,
+      "risk": "高",
+      "dist_pct": 6.75
+    },
+    {
+      "lo": 1572.2928,
+      "hi": 1579.2192,
+      "side": "short",
+      "liq_m": 18.98,
+      "risk": "高",
+      "dist_pct": 13.75
+    },
+    {
+      "lo": 1593.072,
+      "hi": 1599.9984,
+      "side": "short",
+      "liq_m": 18.19,
+      "risk": "高",
+      "dist_pct": 15.25
+    },
+    {
+      "lo": 1780.0848,
+      "hi": 1787.0112000000001,
+      "side": "short",
+      "liq_m": 17.3,
+      "risk": "高",
+      "dist_pct": 28.75
+    }
+  ],
+  "zones": [
+    {
+      "lo": 1329.8688,
+      "hi": 1343.7216,
+      "side": "long",
+      "role": "support",
+      "color": "green",
+      "liq_m": 104.54,
+      "risk_max": "极高",
+      "dist_pct": -3.0,
+      "bucket_count": 2,
+      "band_idx": [
+        9,
+        12
+      ]
+    },
+    {
+      "lo": 1468.3968,
+      "hi": 1482.2496,
+      "side": "long",
+      "role": "resistance",
+      "color": "red",
+      "liq_m": 42.14,
+      "risk_max": "高",
+      "dist_pct": 6.0,
+      "bucket_count": 2,
+      "band_idx": [
+        20,
+        22
+      ]
+    },
+    {
+      "lo": 1516.8816,
+      "hi": 1530.7344,
+      "side": "short",
+      "role": "resistance",
+      "color": "red",
+      "liq_m": 297.82,
+      "risk_max": "极高",
+      "dist_pct": 9.5,
+      "bucket_count": 2,
+      "band_idx": [
+        6,
+        0
+      ]
+    }
+  ]
+}
