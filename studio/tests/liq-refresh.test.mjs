@@ -244,3 +244,31 @@ test("UI: refresh button sits next to the flame toggle, no polling timers for re
   assert.ok(!/requestLiqRefresh/.test(timers.join("")), "requestLiqRefresh is never on a timer");
   assert.match(workspace, /readClientPaneFlag\(window\.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn\(symbol\)\)/);
 });
+
+test("anchor: zone boxes start at the bar containing asOf (open <= asOf < next open)", async () => {
+  const { liqZoneAnchorTime, formatLiqComputedAt } = await import("../lib/liq-heatmap.ts");
+  const asOf = "2026-10-10T14:33:56-04:00"; // 18:33:56Z
+  const t = Date.parse(asOf) / 1000;
+  const m15 = Array.from({ length: 200 }, (_, i) => Math.floor(t / 900) * 900 - 150 * 900 + i * 900);
+  assert.equal(liqZoneAnchorTime(m15, asOf), Math.floor(t / 900) * 900, "15m: the 18:30Z bar");
+  const h1 = Array.from({ length: 100 }, (_, i) => Math.floor(t / 3600) * 3600 - 50 * 3600 + i * 3600);
+  assert.equal(liqZoneAnchorTime(h1, asOf), Math.floor(t / 3600) * 3600, "1h: interval switch re-anchors to the 18:00Z bar");
+  assert.equal(liqZoneAnchorTime(m15, "2026-10-10T18:30:00Z"), Date.parse("2026-10-10T18:30:00Z") / 1000, "exactly on an open belongs to that bar");
+  assert.equal(liqZoneAnchorTime(m15, "2020-01-01T00:00:00Z"), m15[0], "older than loaded data → first loaded bar");
+  assert.equal(liqZoneAnchorTime(m15, "2030-01-01T00:00:00Z"), m15.at(-1), "newer than the latest bar → latest bar");
+  assert.equal(liqZoneAnchorTime(m15, null), m15.at(-1));
+  assert.equal(liqZoneAnchorTime(m15, "garbage"), m15.at(-1));
+  assert.equal(liqZoneAnchorTime([], asOf), null);
+  const later = "2026-10-10T16:58:10-04:00";
+  assert.equal(liqZoneAnchorTime(m15, later), Math.floor(Date.parse(later) / 1000 / 900) * 900, "refresh with a new asOf moves the anchor");
+  assert.equal(formatLiqComputedAt(asOf, "America/Toronto"), "计算于 14:33");
+});
+
+test("anchor wiring: workspace passes the asOf anchor (not the latest candle) and a 计算于 marker to the primitive", () => {
+  const workspace = readFileSync(new URL("../app/trading-workspace.tsx", import.meta.url), "utf8");
+  const primitive = readFileSync(new URL("../lib/liq-heatmap-primitive.ts", import.meta.url), "utf8");
+  assert.match(workspace, /liqZoneAnchorTime\(candles\.map\(\(candle\) => Number\(candle\.time\)\), liqAsOf\)/);
+  assert.match(workspace, /setZones\(showLiqHeatmap \? liqZones : \[\], liqAnchorTime as Time \| null, liqComputedLabel\)/);
+  assert.doesNotMatch(workspace, /setZones\([^)]*latestCandleTime/);
+  assert.match(primitive, /drawAnchorMarker\(context, anchorX/);
+});

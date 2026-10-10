@@ -224,7 +224,8 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
     if (mark == null || !(mark > 0)) return { ok: false, error: "Liquidation heatmap markPrice is not finite." };
     markPrice = mark;
   }
-  if (raw.boxStart != null && raw.boxStart !== "latest_candle") return { ok: false, error: "Liquidation heatmap boxStart is unsupported." };
+  // boxStart is informational only: the shell anchors zone boxes at the candle containing asOf (TH-FEAT-11).
+  if (raw.boxStart != null && raw.boxStart !== "latest_candle" && raw.boxStart !== "asOf") return { ok: false, error: "Liquidation heatmap boxStart is unsupported." };
   const asOf = typeof raw.asOf === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw.asOf) ? raw.asOf : null;
   // zones[] is optional: snapshots from before TH-FEAT-10 have none.
   const zones: LiqZone[] = [];
@@ -391,6 +392,35 @@ export function placeLiqZones(
     placed.push({ zone, left, top, width, height, ...liqZoneColors(zone.role) });
   }
   return placed.sort((a, b) => a.zone.liq_m - b.zone.liq_m);
+}
+
+/**
+ * TH-FEAT-11 anchor: zone boxes start at the bar whose open <= asOf < next open (for the loaded interval).
+ * asOf older than the loaded data clamps to the first bar; newer than the latest bar (or missing) uses the latest bar.
+ * `barTimes` are ascending bar open times in UNIX seconds.
+ */
+export function liqZoneAnchorTime(barTimes: readonly number[], asOf: string | null | undefined): number | null {
+  if (!barTimes.length) return null;
+  const last = barTimes[barTimes.length - 1];
+  const ms = asOf ? Date.parse(asOf) : Number.NaN;
+  if (!Number.isFinite(ms)) return last;
+  const at = ms / 1000;
+  if (at < barTimes[0]) return barTimes[0];
+  if (at >= last) return last;
+  let lo = 0;
+  let hi = barTimes.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (barTimes[mid] <= at) lo = mid;
+    else hi = mid - 1;
+  }
+  return barTimes[lo];
+}
+
+/** 「计算于 HH:MM」 marker for the anchor line (viewer's time zone unless one is given). */
+export function formatLiqComputedAt(asOf: string | null | undefined, timeZone?: string): string | null {
+  const label = formatLiqUpdatedAt(asOf, timeZone);
+  return label ? label.replace("更新于", "计算于") : null;
 }
 
 export function findLiqZoneAt(zones: readonly LiqZone[], price: number): LiqZone | null {

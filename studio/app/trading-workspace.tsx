@@ -44,6 +44,8 @@ import {
   bandsOutsideZones,
   formatLiqZoneTooltip,
   formatLiqUpdatedAt,
+  formatLiqComputedAt,
+  liqZoneAnchorTime,
   liqHeatmapDefaultOn,
   requestLiqRefresh,
   chartSupportsLiqSample,
@@ -892,7 +894,10 @@ export function TradingWorkspace() {
     liqHeatmapPrimitiveRef.current?.setBands(showLiqHeatmap ? liqBands : []);
   }, [chartVersion, liqBands, showLiqHeatmap]);
 
-  const latestCandleTime = candles.at(-1)?.time ?? null;
+  // TH-FEAT-11: boxes start at the candle containing the snapshot's asOf (recomputed on refresh and interval switch).
+  const liqAsOf = liqForChart?.asOf ?? null;
+  const liqAnchorTime = useMemo(() => liqZoneAnchorTime(candles.map((candle) => Number(candle.time)), liqAsOf), [candles, liqAsOf]);
+  const liqComputedLabel = formatLiqComputedAt(liqAsOf);
   const liqZonesVisible = showLiqHeatmap && liqZones.length > 0;
   // Zone boxes live right of the latest bar, so leave room for them (and their labels) when they are on.
   const hasCandles = candles.length > 0;
@@ -909,8 +914,8 @@ export function TradingWorkspace() {
     timeScale.setVisibleLogicalRange({ from: range.from + (targetTo - range.to), to: targetTo });
   }, [chartVersion, hasCandles, liqZonesVisible, symbol]);
   useEffect(() => {
-    liqHeatmapPrimitiveRef.current?.setZones(showLiqHeatmap ? liqZones : [], latestCandleTime);
-  }, [chartVersion, latestCandleTime, liqZones, showLiqHeatmap]);
+    liqHeatmapPrimitiveRef.current?.setZones(showLiqHeatmap ? liqZones : [], liqAnchorTime as Time | null, liqComputedLabel);
+  }, [chartVersion, liqAnchorTime, liqComputedLabel, liqZones, showLiqHeatmap]);
 
   useEffect(() => {
     if (!showLiqHeatmap) return;
