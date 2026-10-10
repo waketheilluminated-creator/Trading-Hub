@@ -151,7 +151,7 @@ test("workspace hides zone-covered bands, draws zones from the latest candle and
   assert.match(workspace, /bandsOutsideZones\(liqForChart\?\.bands \?\? \[\], liqZones\)/);
   assert.match(workspace, /setZones\(showLiqHeatmap \? liqZones : \[\], latestCandleTime\)/);
   assert.match(workspace, /rightOffset: liqZonesVisible \? LIQ_ZONE_RIGHT_OFFSET_BARS : 8/);
-  assert.match(workspace, /formatLiqZoneTooltip\(zone\)/);
+  assert.match(workspace, /formatLiqZoneTooltip\(zone, liqDecimalsRef\.current\)/);
 });
 
 test("zone boxes render on the candlestick pane above the candles, semi-transparent", () => {

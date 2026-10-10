@@ -43,7 +43,11 @@ import {
   loadLiqHeatmapBands,
   bandsOutsideZones,
   formatLiqZoneTooltip,
-  type LiqZone,
+  formatLiqUpdatedAt,
+  liqHeatmapDefaultOn,
+  requestLiqRefresh,
+  chartSupportsLiqSample,
+  type LiqHeatmapChartModel,
   type LiqBand,
 } from "@/lib/liq-heatmap.ts";
 import {
@@ -459,20 +463,68 @@ export function TradingWorkspace() {
   }, []);
   const showLiqHeatmap = useSyncExternalStore(
     subscribePanePrefs,
-    () => readClientPaneFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, false),
+    // ZEC/PYTH open with the overlay on; an explicitly saved choice (either way) always wins.
+    () => readClientPaneFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol)),
     () => false,
   );
   const setShowLiqHeatmap = useCallback((next: boolean | ((current: boolean) => boolean)) => {
-    const current = readStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, false);
+    const current = readStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol));
     writeStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
-  }, []);
-  const [liqModel, setLiqModel] = useState<{ symbol: string; bands: LiqBand[]; zones: LiqZone[]; notice: string | null } | null>(null);
+  }, [symbol]);
+  const [liqModel, setLiqModel] = useState<(LiqHeatmapChartModel & { symbol: string }) | null>(null);
+  const [liqRefreshing, setLiqRefreshing] = useState<string | null>(null);
+  const [liqCooldown, setLiqCooldown] = useState<{ symbol: string; until: number } | null>(null);
+  const [liqClock, setLiqClock] = useState(0);
+  const [liqToast, setLiqToast] = useState<string | null>(null);
+  const liqDecimalsRef = useRef<number | null>(null);
   const liqForChart = showLiqHeatmap && liqModel && liqSymbolsMatch(liqModel.symbol, symbol) ? liqModel : null;
   const liqZones = useMemo(() => liqForChart?.zones ?? [], [liqForChart]);
   // Single high/extreme buckets keep the band rendering; buckets merged into a zone are drawn only as the zone box.
   const liqBands = useMemo(() => bandsOutsideZones(liqForChart?.bands ?? [], liqZones), [liqForChart, liqZones]);
   const liqNotice = liqForChart?.notice ?? null;
+  liqDecimalsRef.current = liqForChart?.priceDecimals ?? null;
+  const liqUpdatedLabel = formatLiqUpdatedAt(liqForChart?.asOf ?? null);
+  const liqVenuesFailed = liqForChart?.venuesFailed ?? [];
+  const liqCooldownSec = liqCooldown && liqCooldown.symbol === symbol ? Math.max(0, Math.ceil((liqCooldown.until - liqClock) / 1000)) : 0;
+  const liqRefreshState: "idle" | "loading" | "cooldown" | "unsupported" = !chartSupportsLiqSample(symbol)
+    ? "unsupported"
+    : liqRefreshing === symbol ? "loading" : liqCooldownSec > 0 ? "cooldown" : "idle";
+  // Countdown display only (1 s tick while a cooldown is active); recomputation happens only on click.
+  useEffect(() => {
+    if (!liqCooldown) return;
+    const tick = () => {
+      const now = Date.now();
+      setLiqClock(now);
+      if (now >= liqCooldown.until) setLiqCooldown(null);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [liqCooldown]);
+  useEffect(() => {
+    if (!liqToast) return;
+    const id = window.setTimeout(() => setLiqToast(null), 6000);
+    return () => window.clearTimeout(id);
+  }, [liqToast]);
+  const refreshLiqZones = useCallback(() => {
+    const target = symbol;
+    if (!chartSupportsLiqSample(target) || liqRefreshing) return;
+    setLiqRefreshing(target);
+    setLiqToast(null);
+    if (!showLiqHeatmap) setShowLiqHeatmap(true);
+    requestLiqRefresh(target, fetch)
+      .then((result) => {
+        if (result.ok) {
+          setLiqModel({ symbol: target, ...result.model });
+          setLiqCooldown({ symbol: target, until: Date.now() + result.cooldownSec * 1000 });
+        } else {
+          setLiqToast(result.error);
+          if (result.retryAfterSec) setLiqCooldown({ symbol: target, until: Date.now() + result.retryAfterSec * 1000 });
+        }
+      })
+      .finally(() => setLiqRefreshing(null));
+  }, [liqRefreshing, setShowLiqHeatmap, showLiqHeatmap, symbol]);
   liqBandsRef.current = liqBands;
   const [largeOrderWalls, setLargeOrderWalls] = useState<TrackedWall[]>([]);
   const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
@@ -867,7 +919,7 @@ export function TradingWorkspace() {
     loadLiqHeatmapBands(symbol, fetch, { sample })
       .then((result) => {
         if (!active) return;
-        setLiqModel({ symbol, bands: result.bands, zones: result.zones, notice: result.notice });
+        setLiqModel({ symbol, ...result });
       })
       .catch(() => {
         if (!active) return;
@@ -906,11 +958,11 @@ export function TradingWorkspace() {
       if (zone) {
         node.dataset.side = zone.role === "support" ? "short" : "long";
         node.dataset.zone = zone.role;
-        node.textContent = formatLiqZoneTooltip(zone);
+        node.textContent = formatLiqZoneTooltip(zone, liqDecimalsRef.current);
       } else if (band) {
         node.dataset.side = band.side;
         delete node.dataset.zone;
-        node.textContent = formatLiqBandTooltip(band);
+        node.textContent = formatLiqBandTooltip(band, liqDecimalsRef.current);
       }
       node.style.left = `${Math.min(point.x + 12, Math.max(8, width - 240))}px`;
       node.style.top = `${Math.min(point.y + 14, Math.max(8, height - 32))}px`;
@@ -1479,13 +1531,16 @@ export function TradingWorkspace() {
               onExecutedLargeTradesToggle={() => setShowLargeTrades((value) => !value)}
               liqHeatmapVisible={showLiqHeatmap}
               onLiqHeatmapToggle={() => setShowLiqHeatmap((value) => !value)}
+              liqRefreshState={liqRefreshState}
+              liqRefreshCooldownSec={liqCooldownSec}
+              onLiqRefresh={refreshLiqZones}
             />
             <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}><i style={{ background: "rgba(83, 201, 144, 0.45)", outline: "1px solid #53c990" }} />Support zone <i style={{ background: "rgba(231, 103, 112, 0.45)", outline: "1px solid #e76770" }} />Resistance zone</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}><i style={{ background: "rgba(83, 201, 144, 0.45)", outline: "1px solid #53c990" }} />Support zone <i style={{ background: "rgba(231, 103, 112, 0.45)", outline: "1px solid #e76770" }} />Resistance zone</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}
@@ -1502,6 +1557,8 @@ export function TradingWorkspace() {
             <div className="chart-canvas" ref={chartHost} />
             {showLiqHeatmap && <div ref={liqTipRef} className="liq-heatmap-tip" role="tooltip" hidden />}
             {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
+            {liqRefreshing === symbol && <div className="liq-refresh-status" role="status" data-liq-refreshing>刷新清算中… (10–60 s)</div>}
+            {liqToast && <div className="liq-refresh-toast" role="alert" data-liq-refresh-error><span>{liqToast}</span><button type="button" aria-label="Dismiss" onClick={() => setLiqToast(null)}>×</button></div>}
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
                 {/* eslint-disable-next-line jsx-a11y/no-autofocus -- Text placement is a deliberate inline-edit action and should accept typing immediately. */}

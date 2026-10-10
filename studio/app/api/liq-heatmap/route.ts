@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 import liqHeatmapFixture from "../../../fixtures/liq_heatmap_bands.sample.json";
+import { liqRefresher } from "@/lib/liq-refresh-server.ts";
+import { allowlistedSymbol } from "@/lib/liq-refresh.ts";
 import { LIQ_HEATMAP_NO_SNAPSHOT, buildLiqHeatmapPayload, parseLiqHeatmapQuery, selectLiqSnapshotSource } from "@/lib/liq-heatmap.ts";
 
 // Live per-symbol snapshots (e.g. fixtures/liq_heatmap_bands.ZECUSDT.json, liq_heatmap_bands.PYTHUSDT.json)
@@ -12,6 +14,15 @@ export async function GET(request: Request) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
 
+  // TH-FEAT-11: a snapshot refreshed on demand (validated before swap-in) wins over the bundled fixture.
+  const refreshable = allowlistedSymbol(parsed.symbol);
+  if (refreshable) {
+    const refreshed = await liqRefresher().then((r) => r.restore(refreshable)).catch(() => null);
+    if (refreshed) {
+      const fresh = buildLiqHeatmapPayload(parsed.symbol, null, refreshed);
+      if (fresh.ok) return Response.json(fresh.body, { headers: { "Cache-Control": "no-store" } });
+    }
+  }
   const selected = selectLiqSnapshotSource(parsed.symbol, liveFixtures, liqHeatmapFixture);
   if (!selected) {
     return Response.json({ error: LIQ_HEATMAP_NO_SNAPSHOT }, { status: 404 });
@@ -20,5 +31,5 @@ export async function GET(request: Request) {
   if (!result.ok) {
     return Response.json({ error: "Liquidation heatmap sample is unavailable." }, { status: 500 });
   }
-  return Response.json(result.body, { headers: { "Cache-Control": "public, max-age=60" } });
+  return Response.json(result.body, { headers: { "Cache-Control": "no-cache" } });
 }
