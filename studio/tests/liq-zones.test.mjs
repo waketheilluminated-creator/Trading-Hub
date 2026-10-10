@@ -25,7 +25,7 @@ const legacy = read("../fixtures/liq_heatmap_bands.sample.json");
 const synthetic = read("./fixtures/liq-zones.synthetic.json");
 
 test("delivered ZEC and PYTH estimator snapshots sanitize with every zone and band intact", () => {
-  for (const [raw, bands, zones, outside] of [[zec, 26, 3, 20], [pyth, 24, 6, 8]]) {
+  for (const [raw, bands, zones, outside] of [[zec, 23, 3, 16], [pyth, 24, 6, 8]]) {
     const parsed = sanitizeLiqHeatmapSnapshot(raw);
     assert.equal(parsed.ok, true);
     if (!parsed.ok) continue;
@@ -115,9 +115,9 @@ test("zone boxes start at the latest bar and extend right only, green support / 
 
 test("zone label and tooltip show liq_m, risk_max and dist_pct", () => {
   const [support] = sanitizeLiqHeatmapSnapshot(zec).snapshot.zones;
-  assert.equal(formatLiqZoneLabel(support), "$104.54m · Extreme · -3%");
-  assert.equal(formatLiqZoneTooltip(support), "Support zone · $104.54m · risk Extreme (极高) · -3% · 1329.8688–1343.7216 · 2 buckets");
-  assert.equal(findLiqZoneAt([support], 1335)?.liq_m, 104.54);
+  assert.equal(formatLiqZoneLabel(support), "$151.26m · Extreme · -3%");
+  assert.equal(formatLiqZoneTooltip(support), "Support zone · $151.26m · risk Extreme (极高) · -3% · 1169.5408–1187.9105 · 3 buckets");
+  assert.equal(findLiqZoneAt([support], 1180)?.liq_m, 151.26);
   assert.equal(findLiqZoneAt([support], 1300), null);
 });
 

@@ -394,9 +394,9 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(body.bucket_pct, 0.5);
   // TH-FEAT-10: the delivered ZEC estimator snapshot (fixtures/liq_heatmap_bands.ZECUSDT.json) replaces the old sample.
   assert.equal(body.schemaVersion, 1);
-  assert.equal(body.bands.length, 26);
+  assert.equal(body.bands.length, 23);
   assert.equal(body.zones.length, 3);
-  assert.deepEqual(body.zones.map((zone) => zone.role), ["support", "resistance", "resistance"]);
+  assert.deepEqual(body.zones.map((zone) => zone.role), ["support", "support", "resistance"]);
   const pyth = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=PYTHUSDT"), env, context);
   assert.equal(pyth.status, 200);
   const pythBody = await pyth.json();
