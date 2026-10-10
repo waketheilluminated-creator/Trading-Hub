@@ -153,3 +153,14 @@ test("workspace hides zone-covered bands, draws zones from the latest candle and
   assert.match(workspace, /rightOffset: liqZonesVisible \? LIQ_ZONE_RIGHT_OFFSET_BARS : 8/);
   assert.match(workspace, /formatLiqZoneTooltip\(zone\)/);
 });
+
+test("zone boxes render on the candlestick pane above the candles, semi-transparent", () => {
+  const primitive = readFileSync(new URL("../lib/liq-heatmap-primitive.ts", import.meta.url), "utf8");
+  const workspace = readFileSync(new URL("../app/trading-workspace.tsx", import.meta.url), "utf8");
+  assert.match(primitive, /class LiqZonePaneView[\s\S]*?zOrder\(\): "top"/);
+  assert.match(workspace, /candleSeries\.attachPrimitive\(liqHeatmapPrimitive\)/, "same series / price axis as the candles");
+  for (const role of ["support", "resistance"]) {
+    const alpha = Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(liqZoneColors(role).fill)[1]);
+    assert.ok(alpha > 0 && alpha < 0.5, `${role} fill alpha ${alpha}`);
+  }
+});

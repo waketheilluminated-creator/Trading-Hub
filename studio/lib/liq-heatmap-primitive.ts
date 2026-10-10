@@ -42,9 +42,45 @@ class LiqHeatmapRenderer implements IPrimitivePaneRenderer {
     const placed = placeLiqHeatmapBands(this.getBands(), priceToCoordinate);
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       for (const band of placed) drawLiqBand(context, band, mediaSize.width);
+    });
+  }
+}
+
+/** Zone boxes: drawn on the candlestick pane itself, above the candles (zOrder "top"), semi-transparent. */
+class LiqZoneRenderer implements IPrimitivePaneRenderer {
+  private readonly getZones: () => readonly LiqZone[];
+  private readonly getPriceToCoordinate: () => PriceToCoordinate | null;
+  private readonly getLatestX: LatestX;
+
+  constructor(getZones: () => readonly LiqZone[], getPriceToCoordinate: () => PriceToCoordinate | null, getLatestX: LatestX) {
+    this.getZones = getZones;
+    this.getPriceToCoordinate = getPriceToCoordinate;
+    this.getLatestX = getLatestX;
+  }
+
+  draw(target: CanvasRenderingTarget2D): void {
+    const priceToCoordinate = this.getPriceToCoordinate();
+    if (!priceToCoordinate) return;
+    target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const zones = placeLiqZones(this.getZones(), priceToCoordinate, this.getLatestX(), mediaSize.width);
       for (const zone of zones) drawLiqZone(context, zone);
     });
+  }
+}
+
+class LiqZonePaneView implements IPrimitivePaneView {
+  private readonly paneRenderer: LiqZoneRenderer;
+
+  constructor(paneRenderer: LiqZoneRenderer) {
+    this.paneRenderer = paneRenderer;
+  }
+
+  zOrder(): "top" {
+    return "top";
+  }
+
+  renderer(): IPrimitivePaneRenderer {
+    return this.paneRenderer;
   }
 }
 
@@ -72,7 +108,8 @@ export class LiqHeatmapPrimitive implements ISeriesPrimitive<Time> {
   private timeToCoordinate: ((time: Time) => number | null) | null = null;
   private requestUpdate: (() => void) | null = null;
   private readonly paneRenderer = new LiqHeatmapRenderer(() => this.bands, () => this.priceToCoordinate, () => this.zones, () => this.latestX());
-  private readonly views: readonly IPrimitivePaneView[] = [new LiqHeatmapPaneView(this.paneRenderer)];
+  private readonly zoneRenderer = new LiqZoneRenderer(() => this.zones, () => this.priceToCoordinate, () => this.latestX());
+  private readonly views: readonly IPrimitivePaneView[] = [new LiqHeatmapPaneView(this.paneRenderer), new LiqZonePaneView(this.zoneRenderer)];
 
   attached({ chart, series, requestUpdate }: SeriesAttachedParameter<Time, "Candlestick">): void {
     this.priceToCoordinate = (price) => series.priceToCoordinate(price);
