@@ -665,3 +665,9 @@ html.theme-light .liq-refresh-toast {
     background: rgba(242, 236, 237, 0.96);
     color: #8a232c
 }
+html.theme-light .wall-zone-tip[data-side="bid"] {
+    border-color: rgba(56, 179, 119, 0.75)
+}
+html.theme-light .wall-zone-tip[data-side="ask"] {
+    border-color: rgba(143, 30, 38, 0.75)
+}

@@ -486,3 +486,5 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .rail-pair .tool-button { border-radius:0; border:0; }
 .rail-pair .liq-refresh-button { height:22px; border-top:1px dashed var(--line); }
 .rail-pair .liq-refresh-button svg { width:14px; height:14px; }
+.wall-zone-tip[data-side="bid"] { border-color:rgba(83,201,144,.75); }
+.wall-zone-tip[data-side="ask"] { border-color:rgba(231,103,112,.75); }

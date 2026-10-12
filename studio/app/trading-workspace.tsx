@@ -33,6 +33,7 @@ import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/work
 import { handleWorkspaceEscape } from "@/lib/drawings/workspace-shortcuts.ts";
 import { LargeTradeMarkersPrimitive } from "@/lib/large-trade-markers-primitive.ts";
 import { LargeOrderSrPrimitive } from "@/lib/large-order-sr-primitive.ts";
+import { formatWallZoneTooltip } from "@/lib/wall-zones.ts";
 import { LiqHeatmapPrimitive } from "@/lib/liq-heatmap-primitive.ts";
 import {
   LIQ_HEATMAP_STORAGE_KEY,
@@ -375,6 +376,7 @@ export function TradingWorkspace() {
   const liqHeatmapPrimitiveRef = useRef<LiqHeatmapPrimitive | null>(null);
   const liqBandsRef = useRef<LiqBand[]>([]);
   const liqTipRef = useRef<HTMLDivElement>(null);
+  const wallTipRef = useRef<HTMLDivElement>(null);
   const drawingControllerRef = useRef<DrawingController | null>(null);
   const drawingSaveSchedulerRef = useRef<DrawingSaveScheduler | null>(null);
   const drawingStorageRef = useRef<DrawingStorage | null>(null);
@@ -863,6 +865,7 @@ export function TradingWorkspace() {
     oiSeriesRef.current?.setData(oiModel.points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value })));
   }, [chartVersion, oiModel, showOiPane]);
 
+  const wallAnchorTime = candles.at(-1)?.time ?? null;
   const displayedWalls = useMemo(
     () => filterWallsForRange(largeOrderWalls, wallRange.mode, {
       visible: visiblePriceSpan,
@@ -883,8 +886,39 @@ export function TradingWorkspace() {
   }, []);
 
   useEffect(() => {
-    largeOrderPrimitiveRef.current?.setWalls(showLargeOrderSr ? displayedWalls : []);
-  }, [chartVersion, displayedWalls, showLargeOrderSr]);
+    // TH-FEAT-13: walls render as merged zone boxes anchored at the latest candle.
+    largeOrderPrimitiveRef.current?.setWalls(showLargeOrderSr ? displayedWalls : [], wallAnchorTime);
+  }, [chartVersion, displayedWalls, showLargeOrderSr, wallAnchorTime]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const tip = wallTipRef.current;
+    if (!chart || !tip || !showLargeOrderSr) {
+      if (tip) tip.hidden = true;
+      return;
+    }
+    const onMove = (param: MouseEventParams<Time>) => {
+      const node = wallTipRef.current;
+      if (!node) return;
+      const point = param.point;
+      const zone = point ? largeOrderPrimitiveRef.current?.zoneAt(point.x, point.y) ?? null : null;
+      if (!point || !zone) {
+        node.hidden = true;
+        return;
+      }
+      node.hidden = false;
+      node.dataset.side = zone.side;
+      node.textContent = formatWallZoneTooltip(zone);
+      const width = chartHost.current?.clientWidth ?? 0;
+      node.style.left = `${Math.min(point.x + 12, Math.max(8, width - 360))}px`;
+      node.style.top = `${Math.max(8, point.y + 14)}px`;
+    };
+    chart.subscribeCrosshairMove(onMove);
+    return () => {
+      chart.unsubscribeCrosshairMove(onMove);
+      tip.hidden = true;
+    };
+  }, [chartVersion, showLargeOrderSr]);
 
   useEffect(() => {
     largeTradePrimitiveRef.current?.setTrades(showLargeTrades ? largeTrades : [], interval);
@@ -900,19 +934,21 @@ export function TradingWorkspace() {
   const liqComputedLabel = formatLiqComputedAt(liqAsOf);
   const liqZonesVisible = showLiqHeatmap && liqZones.length > 0;
   // Zone boxes live right of the latest bar, so leave room for them (and their labels) when they are on.
+  // TH-FEAT-13: wall boxes also live right of the latest bar.
+  const zoneBoxesVisible = liqZonesVisible || (showLargeOrderSr && displayedWalls.length > 0);
   const hasCandles = candles.length > 0;
   useEffect(() => {
     const timeScale = chartRef.current?.timeScale();
     if (!timeScale) return;
-    timeScale.applyOptions({ rightOffset: liqZonesVisible ? LIQ_ZONE_RIGHT_OFFSET_BARS : 8 });
+    timeScale.applyOptions({ rightOffset: zoneBoxesVisible ? LIQ_ZONE_RIGHT_OFFSET_BARS : 8 });
     // The history load pins the view to the latest bars; slide it so the zone area is actually on screen.
     const count = candlesRef.current.length;
     const range = timeScale.getVisibleLogicalRange();
-    if (!liqZonesVisible || !hasCandles || !range || !count) return;
+    if (!zoneBoxesVisible || !hasCandles || !range || !count) return;
     const targetTo = count - 1 + LIQ_ZONE_RIGHT_OFFSET_BARS;
     if (range.to >= targetTo - 1) return;
     timeScale.setVisibleLogicalRange({ from: range.from + (targetTo - range.to), to: targetTo });
-  }, [chartVersion, hasCandles, liqZonesVisible, symbol]);
+  }, [chartVersion, hasCandles, zoneBoxesVisible, symbol]);
   useEffect(() => {
     liqHeatmapPrimitiveRef.current?.setZones(showLiqHeatmap ? liqZones : [], liqAnchorTime as Time | null, liqComputedLabel);
   }, [chartVersion, liqAnchorTime, liqComputedLabel, liqZones, showLiqHeatmap]);
@@ -1561,6 +1597,7 @@ export function TradingWorkspace() {
             />}
             <div className="chart-canvas" ref={chartHost} />
             {showLiqHeatmap && <div ref={liqTipRef} className="liq-heatmap-tip" role="tooltip" hidden />}
+            {showLargeOrderSr && <div ref={wallTipRef} className="liq-heatmap-tip wall-zone-tip" role="tooltip" data-wall-zone-tip hidden />}
             {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
             {liqRefreshing === symbol && <div className="liq-refresh-status" role="status" data-liq-refreshing>刷新清算中… (10–60 s)</div>}
             {liqToast && <div className="liq-refresh-toast" role="alert" data-liq-refresh-error><span>{liqToast}</span><button type="button" aria-label="Dismiss" onClick={() => setLiqToast(null)}>×</button></div>}
