@@ -23,6 +23,8 @@ export const WALL_NOTIONAL_PRESETS_USD = [50_000, 100_000, 250_000, 1_000_000] a
 /** Live L2 filter. Omitted or forged notionals cannot drop below MIN_WALL_NOTIONAL_USD. */
 export const DEFAULT_MIN_WALL_NOTIONAL_USD = 100_000;
 export const MIN_WALL_NOTIONAL_USD = 10_000;
+// Binance USDⓈ-M /fapi/v1/depth only accepts 5, 10, 20, 50, 100, 500 or 1000 (200 → HTTP 400 "not valid depth limit").
+export const BINANCE_DEPTH_LIMIT = 500;
 export const MAX_WALL_NOTIONAL_USD = 50_000_000;
 export const DEFAULT_CLUSTER_BPS = 1;
 export const MAX_WALLS_PER_SIDE = 18;
@@ -135,7 +137,7 @@ export function depthRequestUrl(venue: MarketVenue, symbol: string): string {
   if (venue === "bitget") {
     return `https://api.bitget.com/api/v2/mix/market/orderbook?symbol=${compact}&productType=USDT-FUTURES&limit=150`;
   }
-  return `https://fapi.binance.com/fapi/v1/depth?symbol=${compact}&limit=200`;
+  return `https://fapi.binance.com/fapi/v1/depth?symbol=${compact}&limit=${BINANCE_DEPTH_LIMIT}`;
 }
 
 export function okxInstrumentUrl(symbol: string): string {

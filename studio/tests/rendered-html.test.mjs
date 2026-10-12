@@ -394,6 +394,14 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(mismatch.status, 404);
   const mismatchBody = await mismatch.json();
   assert.deepEqual(mismatchBody, { error: "尚未计算，点刷新生成" });
+  // TH-BUG-02: the workspace probe asks with probe=1 and gets 204 (no console error) instead of 404 when nothing is cached.
+  const probe = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=BTCUSDT&probe=1"), env, context);
+  assert.equal(probe.status, 204);
+  assert.equal(await probe.text(), "");
+  const zecProbe = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZECUSDT&probe=1"), env, context);
+  assert.equal(zecProbe.status, 200);
+  const badProbe = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=../x&probe=1"), env, context);
+  assert.equal(badProbe.status, 400);
   const notUsdt = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=BTCUSD"), env, context);
   assert.equal(notUsdt.status, 400);
   const sample = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZECUSDT&liqSample=1&role=admin"), env, context);

@@ -470,8 +470,9 @@ export function TradingWorkspace() {
   useEffect(() => {
     if (!chartSupportsLiqSample(symbol)) return;
     let active = true;
-    fetch(`/api/liq-heatmap?symbol=${encodeURIComponent(compactSymbol(symbol))}`)
-      .then((response) => { if (active) setLiqProbe({ symbol, has: response.ok }); })
+    fetch(`/api/liq-heatmap?symbol=${encodeURIComponent(compactSymbol(symbol))}&probe=1`)
+      // probe=1 answers 204 (not 404) when no snapshot exists, so an unrefreshed symbol does not log a console error.
+      .then((response) => { if (active) setLiqProbe({ symbol, has: response.status === 200 }); })
       .catch(() => {});
     return () => { active = false; };
   }, [symbol]);
@@ -1558,7 +1559,7 @@ export function TradingWorkspace() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link className="desk-link" href="/etf-flows">ETF Flows</Link><Link className="desk-link" href="/cvd-oi">CVD / OI</Link><Link className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-pressed={theme === "light"} data-theme-current={theme} onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}><ThemeIcon theme={theme} /></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
+        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link prefetch={false} className="desk-link" href="/etf-flows">ETF Flows</Link><Link prefetch={false} className="desk-link" href="/cvd-oi">CVD / OI</Link><Link prefetch={false} className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-pressed={theme === "light"} data-theme-current={theme} onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}><ThemeIcon theme={theme} /></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
       </header>
 
       <section className={`workspace${sidePanelCollapsed ? " side-collapsed" : ""}`} style={{ ["--side-panel-width" as string]: `${sidePanelCollapsed ? 0 : sidePanelWidth}px` }}>

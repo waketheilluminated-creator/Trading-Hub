@@ -12,7 +12,7 @@ export function PineEditorTab() {
     <main className="pine-popout-shell">
       <header className="pine-popout-header">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>Pine Editor</small></div>
-        <div className="pine-popout-actions"><span><i /> Synced live</span><Link href="/">Return to chart</Link></div>
+        <div className="pine-popout-actions"><span><i /> Synced live</span><Link prefetch={false} href="/">Return to chart</Link></div>
       </header>
       <section className="pine-popout-toolbar">
         <div><strong>Custom indicator</strong><span>Pine Script v5 subset</span></div>
