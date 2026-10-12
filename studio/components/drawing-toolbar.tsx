@@ -10,7 +10,14 @@ type DrawingToolbarProps = {
   onExecutedLargeTradesToggle(): void;
   liqHeatmapVisible: boolean;
   onLiqHeatmapToggle(): void;
+  liqRefreshState?: "idle" | "loading" | "cooldown" | "unsupported";
+  liqRefreshCooldownSec?: number;
+  onLiqRefresh?(): void;
 };
+
+function LiqRefreshIcon() {
+  return <IconFrame><path d="M15.5 8.5A5.6 5.6 0 0 0 5 6.6M4.5 11.5A5.6 5.6 0 0 0 15 13.4" /><path d="M5 3.4v3.3h3.3M15 16.6v-3.3h-3.3" /></IconFrame>;
+}
 
 const IconFrame = ({ children }: { children: ReactNode }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">{children}</svg>
@@ -92,6 +99,9 @@ export function DrawingToolbar({
   onExecutedLargeTradesToggle,
   liqHeatmapVisible,
   onLiqHeatmapToggle,
+  liqRefreshState = "unsupported",
+  liqRefreshCooldownSec = 0,
+  onLiqRefresh,
 }: DrawingToolbarProps) {
   const tools: { tool: DrawingTool; label: string; Icon: ComponentType }[] = [
     { tool: "select", label: "Select drawing tool", Icon: SelectIcon },
@@ -140,6 +150,19 @@ export function DrawingToolbar({
     >
       <LiqHeatmapIcon />
     </button>
+    {onLiqRefresh && <button
+      type="button"
+      className={`tool-button liq-refresh-button ${liqRefreshState === "loading" ? "loading" : ""}`}
+      aria-label="刷新清算"
+      aria-busy={liqRefreshState === "loading"}
+      disabled={liqRefreshState !== "idle"}
+      data-liq-refresh={liqRefreshState}
+      title={liqRefreshState === "loading" ? "刷新清算中…" : liqRefreshState === "cooldown" ? `刷新清算 · 冷却 ${liqRefreshCooldownSec}s` : liqRefreshState === "unsupported" ? "刷新清算 · 仅 ZEC / PYTH" : "刷新清算 (重新计算清算区域)"}
+      onClick={onLiqRefresh}
+    >
+      <LiqRefreshIcon />
+      {liqRefreshState === "cooldown" && <span className="liq-refresh-countdown">{liqRefreshCooldownSec}</span>}
+    </button>}
     <button type="button" className="tool-button" aria-label="Chart settings" title="Settings"><SettingsIcon /></button>
   </nav>;
 }

@@ -146,12 +146,12 @@ test("client loader returns zones for PYTH and drops forged zone rows", async ()
   assert.match(missing.notice, /No liquidation snapshot/);
 });
 
-test("workspace hides zone-covered bands, draws zones from the latest candle and makes room for them", () => {
+test("workspace hides zone-covered bands, draws zones from the asOf candle and makes room for them", () => {
   const workspace = readFileSync(new URL("../app/trading-workspace.tsx", import.meta.url), "utf8");
   assert.match(workspace, /bandsOutsideZones\(liqForChart\?\.bands \?\? \[\], liqZones\)/);
-  assert.match(workspace, /setZones\(showLiqHeatmap \? liqZones : \[\], latestCandleTime\)/);
+  assert.match(workspace, /setZones\(showLiqHeatmap \? liqZones : \[\], liqAnchorTime as Time \| null, liqComputedLabel\)/);
   assert.match(workspace, /rightOffset: liqZonesVisible \? LIQ_ZONE_RIGHT_OFFSET_BARS : 8/);
-  assert.match(workspace, /formatLiqZoneTooltip\(zone\)/);
+  assert.match(workspace, /formatLiqZoneTooltip\(zone, liqDecimalsRef\.current\)/);
 });
 
 test("zone boxes render on the candlestick pane above the candles, semi-transparent", () => {

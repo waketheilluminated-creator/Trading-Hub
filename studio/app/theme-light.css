@@ -646,3 +646,22 @@ html.theme-light .cvd-oi-legend li {
 html.theme-light .cex-netflow-legend li {
     background: #edf0f3
 }
+html.theme-light .liq-refresh-countdown {
+    color: #1e232b
+}
+html.theme-light .liq-updated {
+    color: #404854
+}
+html.theme-light .liq-venues-warning {
+    color: #8c6721
+}
+html.theme-light .liq-refresh-status {
+    border: 1px solid #c4ccd6;
+    background: rgba(241, 243, 246, 0.94);
+    color: #1e232b
+}
+html.theme-light .liq-refresh-toast {
+    border: 1px solid rgba(143, 30, 38, 0.75);
+    background: rgba(242, 236, 237, 0.96);
+    color: #8a232c
+}

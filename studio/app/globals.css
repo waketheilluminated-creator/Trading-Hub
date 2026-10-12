@@ -469,3 +469,13 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
   .desk-title-row { align-items: flex-start; flex-direction: column; }
   .desk-header { flex-wrap: wrap; padding: 8px 14px; }
 }
+.liq-refresh-button { position:relative; }
+.liq-refresh-button:disabled { opacity:.55; cursor:not-allowed; }
+.liq-refresh-button.loading svg { animation:liq-spin 1s linear infinite; opacity:1; }
+.liq-refresh-countdown { position:absolute; right:1px; bottom:0; font:8px/1 var(--font-geist-mono); color:#d5dce6; }
+@keyframes liq-spin { to { transform:rotate(360deg); } }
+.liq-updated { color:#8b96a7; margin-left:4px; }
+.liq-venues-warning { color:#e0b25b; margin-left:4px; }
+.liq-refresh-status { position:absolute; z-index:9; left:50%; top:10px; transform:translateX(-50%); padding:4px 10px; border:1px solid #3c4b60; border-radius:6px; background:rgba(11,16,23,.94); color:#d5dce6; font:11px var(--font-geist-mono); }
+.liq-refresh-toast { position:absolute; z-index:9; right:76px; bottom:16px; display:flex; gap:8px; align-items:center; max-width:420px; padding:6px 10px; border:1px solid rgba(231,103,112,.75); border-radius:6px; background:rgba(40,16,20,.96); color:#f3c4c8; font:11px var(--font-geist-mono); }
+.liq-refresh-toast button { border:0; background:none; color:inherit; cursor:pointer; }

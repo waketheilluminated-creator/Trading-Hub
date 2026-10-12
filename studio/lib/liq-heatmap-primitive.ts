@@ -51,19 +51,24 @@ class LiqZoneRenderer implements IPrimitivePaneRenderer {
   private readonly getZones: () => readonly LiqZone[];
   private readonly getPriceToCoordinate: () => PriceToCoordinate | null;
   private readonly getLatestX: LatestX;
+  private readonly getMarker: () => string | null;
 
-  constructor(getZones: () => readonly LiqZone[], getPriceToCoordinate: () => PriceToCoordinate | null, getLatestX: LatestX) {
+  constructor(getZones: () => readonly LiqZone[], getPriceToCoordinate: () => PriceToCoordinate | null, getLatestX: LatestX, getMarker: () => string | null) {
     this.getZones = getZones;
     this.getPriceToCoordinate = getPriceToCoordinate;
     this.getLatestX = getLatestX;
+    this.getMarker = getMarker;
   }
 
   draw(target: CanvasRenderingTarget2D): void {
     const priceToCoordinate = this.getPriceToCoordinate();
     if (!priceToCoordinate) return;
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-      const zones = placeLiqZones(this.getZones(), priceToCoordinate, this.getLatestX(), mediaSize.width);
+      const anchorX = this.getLatestX();
+      const zones = placeLiqZones(this.getZones(), priceToCoordinate, anchorX, mediaSize.width);
       for (const zone of zones) drawLiqZone(context, zone);
+      const marker = this.getMarker();
+      if (zones.length && marker && anchorX != null && anchorX >= 0 && anchorX < mediaSize.width) drawAnchorMarker(context, anchorX, mediaSize.height, marker);
     });
   }
 }
@@ -108,7 +113,8 @@ export class LiqHeatmapPrimitive implements ISeriesPrimitive<Time> {
   private timeToCoordinate: ((time: Time) => number | null) | null = null;
   private requestUpdate: (() => void) | null = null;
   private readonly paneRenderer = new LiqHeatmapRenderer(() => this.bands, () => this.priceToCoordinate, () => this.zones, () => this.latestX());
-  private readonly zoneRenderer = new LiqZoneRenderer(() => this.zones, () => this.priceToCoordinate, () => this.latestX());
+  private marker: string | null = null;
+  private readonly zoneRenderer = new LiqZoneRenderer(() => this.zones, () => this.priceToCoordinate, () => this.latestX(), () => this.marker);
   private readonly views: readonly IPrimitivePaneView[] = [new LiqHeatmapPaneView(this.paneRenderer), new LiqZonePaneView(this.zoneRenderer)];
 
   attached({ chart, series, requestUpdate }: SeriesAttachedParameter<Time, "Candlestick">): void {
@@ -129,10 +135,11 @@ export class LiqHeatmapPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  /** Zones draw from the latest candle (boxStart=latest_candle) to the right edge. */
-  setZones(zones: readonly LiqZone[], latestTime: Time | null): void {
+  /** Zones draw from the anchor candle (the bar containing asOf, see liqZoneAnchorTime) to the right edge. */
+  setZones(zones: readonly LiqZone[], anchorTime: Time | null, marker: string | null = null): void {
     this.zones = zones;
-    this.latestTime = latestTime;
+    this.latestTime = anchorTime;
+    this.marker = marker;
     this.requestUpdate?.();
   }
 
@@ -203,6 +210,28 @@ function drawLiqBand(context: CanvasRenderingContext2D, band: PlacedLiqBand, pan
   context.fillRect(0, Math.round(band.top), paneWidth, 1);
   const bottom = band.top + band.height;
   if (Math.abs(bottom - band.top) >= 1) context.fillRect(0, Math.round(bottom), paneWidth, 1);
+}
+
+/** Dashed vertical line at the asOf candle with a 「计算于 HH:MM」 tag at the top. */
+function drawAnchorMarker(context: CanvasRenderingContext2D, x: number, height: number, label: string): void {
+  const px = Math.round(x) + 0.5;
+  context.save();
+  context.strokeStyle = "rgba(240, 185, 80, 0.85)";
+  context.lineWidth = 1;
+  context.setLineDash([4, 3]);
+  context.beginPath();
+  context.moveTo(px, 0);
+  context.lineTo(px, height);
+  context.stroke();
+  context.setLineDash([]);
+  context.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+  context.textBaseline = "middle";
+  const width = context.measureText(label).width + 8;
+  context.fillStyle = "rgba(240, 185, 80, 0.92)";
+  context.fillRect(px + 2, 4, width, 15);
+  context.fillStyle = "#151a21";
+  context.fillText(label, px + 6, 11.5);
+  context.restore();
 }
 
 function drawLiqZone(context: CanvasRenderingContext2D, zone: PlacedLiqZone): void {

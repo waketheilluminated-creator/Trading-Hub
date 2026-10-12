@@ -18,7 +18,7 @@ export const LIQ_SHORT_RGB = "83, 201, 144";
 
 const MIN_LIQ_OPACITY = 0.16;
 const MAX_LIQ_OPACITY = 0.46;
-const SNAPSHOT_KEYS = ["kind", "venue", "symbol", "mid", "bucket_pct", "updatedAt", "source", "unit", "schemaVersion", "asOf", "markPrice", "bands", "zones"] as const;
+const SNAPSHOT_KEYS = ["kind", "venue", "symbol", "mid", "bucket_pct", "updatedAt", "source", "unit", "schemaVersion", "asOf", "markPrice", "bands", "zones", "venuesFailed", "priceDecimals"] as const;
 
 export type LiqSide = "long" | "short";
 
@@ -62,6 +62,10 @@ export type LiqHeatmapSnapshot = {
   markPrice: number;
   bands: LiqBand[];
   zones: LiqZone[];
+  /** Venues the estimator could not reach (TH-FEAT-11); empty when all answered. */
+  venuesFailed?: string[];
+  /** Price rounding the estimator used (ZEC→2, PYTH→6); null when absent. */
+  priceDecimals?: number | null;
 };
 
 export type LiqHeatmapPayload = LiqHeatmapSnapshot & { notice: string | null };
@@ -95,6 +99,11 @@ export function liqSymbolsMatch(left: string, right: string): boolean {
 
 export function chartSupportsLiqSample(symbol: string): boolean {
   return LIQ_HEATMAP_SYMBOLS.some((supported) => liqSymbolsMatch(symbol, supported));
+}
+
+/** TH-FEAT-11: the flame toggle defaults ON for symbols with a liquidation snapshot until the user saves a choice. */
+export function liqHeatmapDefaultOn(symbol: string): boolean {
+  return chartSupportsLiqSample(symbol);
 }
 
 export function parseLiqHeatmapQuery(url: URL): QueryResult {
@@ -159,6 +168,20 @@ export function sanitizeLiqZone(value: unknown, mid: number, bandIndexMap: Reado
   };
 }
 
+/** Estimator venues_failed[]: venue names (or {venue}) the estimator could not reach. */
+export function sanitizeVenuesFailed(value: unknown, unlisted: unknown = null): string[] {
+  const names = Array.isArray(value)
+    ? value.map((item) => (typeof item === "string" ? item : item && typeof item === "object" ? (item as { venue?: unknown }).venue : null))
+    : value && typeof value === "object" ? Object.keys(value) : [];
+  // "Not listed on this venue" is expected (e.g. bitmex/deribit for ZEC), not a failure worth a warning.
+  const skip = new Set(Array.isArray(unlisted) ? unlisted.filter((item): item is string => typeof item === "string") : []);
+  const out: string[] = [];
+  for (const name of names.slice(0, 20)) {
+    if (typeof name === "string" && /^[A-Za-z0-9_.-]{1,32}$/.test(name) && !skip.has(name) && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
 export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, error: "Liquidation heatmap snapshot is invalid." };
@@ -174,7 +197,7 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
   const updatedAt = finiteNumber(raw.updatedAt);
   if (updatedAt == null) return { ok: false, error: "Liquidation heatmap updatedAt is not finite." };
   if (raw.venue !== "multi") return { ok: false, error: "Liquidation heatmap venue is invalid." };
-  if (raw.source !== "oi_liq_estimator") return { ok: false, error: "Liquidation heatmap source is invalid." };
+  if (typeof raw.source !== "string" || !/^oi_liq_estimator(?:\/[a-z_]{1,32})?$/.test(raw.source)) return { ok: false, error: "Liquidation heatmap source is invalid." };
   if (raw.unit !== "usd_millions") return { ok: false, error: "Liquidation heatmap unit is invalid." };
   if (typeof raw.symbol !== "string") return { ok: false, error: "Liquidation heatmap symbol is invalid." };
   const symbol = compactSymbol(raw.symbol);
@@ -201,7 +224,8 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
     if (mark == null || !(mark > 0)) return { ok: false, error: "Liquidation heatmap markPrice is not finite." };
     markPrice = mark;
   }
-  if (raw.boxStart != null && raw.boxStart !== "latest_candle") return { ok: false, error: "Liquidation heatmap boxStart is unsupported." };
+  // boxStart is informational only: the shell anchors zone boxes at the candle containing asOf (TH-FEAT-11).
+  if (raw.boxStart != null && raw.boxStart !== "latest_candle" && raw.boxStart !== "asOf") return { ok: false, error: "Liquidation heatmap boxStart is unsupported." };
   const asOf = typeof raw.asOf === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw.asOf) ? raw.asOf : null;
   // zones[] is optional: snapshots from before TH-FEAT-10 have none.
   const zones: LiqZone[] = [];
@@ -228,14 +252,16 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
     markPrice,
     bands,
     zones,
+    venuesFailed: sanitizeVenuesFailed(raw.venues_failed, raw.venues_unlisted),
+    priceDecimals: Number.isInteger(raw.priceDecimals) && (raw.priceDecimals as number) >= 0 && (raw.priceDecimals as number) <= 10 ? (raw.priceDecimals as number) : null,
   };
   return { ok: true, snapshot, dropped, droppedZones };
 }
 
-export function buildLiqHeatmapPayload(requestedSymbol: string, raw: unknown):
+export function buildLiqHeatmapPayload(requestedSymbol: string, raw: unknown, presanitized: LiqHeatmapSnapshot | null = null):
   | { ok: true; status: 200; body: LiqHeatmapPayload }
   | { ok: false; status: 400; body: { error: string } } {
-  const parsed = sanitizeLiqHeatmapSnapshot(raw);
+  const parsed: SanitizeResult = presanitized ? { ok: true, snapshot: presanitized, dropped: 0, droppedZones: 0 } : sanitizeLiqHeatmapSnapshot(raw);
   if (!parsed.ok) return { ok: false, status: 400, body: { error: parsed.error } };
   const requested = compactSymbol(requestedSymbol);
   if (!liqSymbolsMatch(requested, parsed.snapshot.symbol)) {
@@ -248,13 +274,71 @@ export function buildLiqHeatmapPayload(requestedSymbol: string, raw: unknown):
   return { ok: true, status: 200, body: { ...parsed.snapshot, notice: null } };
 }
 
-export type LiqHeatmapChartModel = { bands: LiqBand[]; zones: LiqZone[]; notice: string | null };
+export type LiqHeatmapChartModel = {
+  bands: LiqBand[];
+  zones: LiqZone[];
+  notice: string | null;
+  asOf?: string | null;
+  venuesFailed?: string[];
+  priceDecimals?: number | null;
+};
 
 export function resolveLiqHeatmapForChart(snapshot: LiqHeatmapSnapshot, chartSymbol: string): LiqHeatmapChartModel {
   if (!liqSymbolsMatch(chartSymbol, snapshot.symbol) || !chartSupportsLiqSample(chartSymbol)) {
     return { bands: [], zones: [], notice: LIQ_HEATMAP_SYMBOL_NOTICE };
   }
-  return { bands: snapshot.bands, zones: snapshot.zones, notice: null };
+  return {
+    bands: snapshot.bands,
+    zones: snapshot.zones,
+    notice: null,
+    asOf: snapshot.asOf,
+    venuesFailed: snapshot.venuesFailed ?? [],
+    priceDecimals: snapshot.priceDecimals ?? null,
+  };
+}
+
+/** "更新于 HH:MM" from the snapshot asOf, in the viewer's time zone (or an explicit one for tests). */
+export function formatLiqUpdatedAt(asOf: string | null | undefined, timeZone?: string): string | null {
+  if (!asOf) return null;
+  const date = new Date(asOf);
+  if (!Number.isFinite(date.getTime())) return null;
+  const hhmm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(date);
+  return `更新于 ${hhmm}`;
+}
+
+export type LiqRefreshClientResult =
+  | { ok: true; model: LiqHeatmapChartModel; cooldownSec: number }
+  | { ok: false; error: string; retryAfterSec: number | null };
+
+export const LIQ_REFRESH_DEFAULT_COOLDOWN_SEC = 90;
+
+/** Click-only refresh: POST /api/liq-zones/refresh, then validate the returned snapshot client-side too. */
+export async function requestLiqRefresh(chartSymbol: string, fetchImpl: typeof fetch = fetch): Promise<LiqRefreshClientResult> {
+  if (!chartSupportsLiqSample(chartSymbol)) return { ok: false, error: LIQ_HEATMAP_SYMBOL_NOTICE, retryAfterSec: null };
+  const compact = compactSymbol(chartSymbol);
+  let response: Response;
+  try {
+    response = await fetchImpl(`/api/liq-zones/refresh?symbol=${encodeURIComponent(compact)}`, { method: "POST", credentials: "same-origin", cache: "no-store" });
+  } catch {
+    return { ok: false, error: "刷新失败：网络错误", retryAfterSec: null };
+  }
+  const header = Number(response.headers.get("retry-after"));
+  const retryAfterSec = Number.isFinite(header) && header > 0 ? Math.min(3600, Math.ceil(header)) : null;
+  let body: unknown = null;
+  try { body = await response.json(); } catch { /* handled below */ }
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  if (!response.ok || record.ok !== true) {
+    const error = typeof record.error === "string" ? record.error.slice(0, 200) : `刷新失败 (HTTP ${response.status})`;
+    return { ok: false, error, retryAfterSec };
+  }
+  const parsed = sanitizeLiqHeatmapSnapshot(record.snapshot);
+  if (!parsed.ok) return { ok: false, error: parsed.error, retryAfterSec: null };
+  const cooldown = Number(record.cooldownSec);
+  return {
+    ok: true,
+    model: resolveLiqHeatmapForChart(parsed.snapshot, compact),
+    cooldownSec: Number.isFinite(cooldown) && cooldown > 0 ? Math.min(3600, Math.ceil(cooldown)) : LIQ_REFRESH_DEFAULT_COOLDOWN_SEC,
+  };
 }
 
 /** True when the zone fully contains the band's price range (bands carry no zone index). */
@@ -310,6 +394,35 @@ export function placeLiqZones(
   return placed.sort((a, b) => a.zone.liq_m - b.zone.liq_m);
 }
 
+/**
+ * TH-FEAT-11 anchor: zone boxes start at the bar whose open <= asOf < next open (for the loaded interval).
+ * asOf older than the loaded data clamps to the first bar; newer than the latest bar (or missing) uses the latest bar.
+ * `barTimes` are ascending bar open times in UNIX seconds.
+ */
+export function liqZoneAnchorTime(barTimes: readonly number[], asOf: string | null | undefined): number | null {
+  if (!barTimes.length) return null;
+  const last = barTimes[barTimes.length - 1];
+  const ms = asOf ? Date.parse(asOf) : Number.NaN;
+  if (!Number.isFinite(ms)) return last;
+  const at = ms / 1000;
+  if (at < barTimes[0]) return barTimes[0];
+  if (at >= last) return last;
+  let lo = 0;
+  let hi = barTimes.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (barTimes[mid] <= at) lo = mid;
+    else hi = mid - 1;
+  }
+  return barTimes[lo];
+}
+
+/** 「计算于 HH:MM」 marker for the anchor line (viewer's time zone unless one is given). */
+export function formatLiqComputedAt(asOf: string | null | undefined, timeZone?: string): string | null {
+  const label = formatLiqUpdatedAt(asOf, timeZone);
+  return label ? label.replace("更新于", "计算于") : null;
+}
+
 export function findLiqZoneAt(zones: readonly LiqZone[], price: number): LiqZone | null {
   if (!Number.isFinite(price)) return null;
   let best: LiqZone | null = null;
@@ -329,8 +442,8 @@ export function formatLiqZoneLabel(zone: LiqZone): string {
   return `${formatLiqMillions(zone.liq_m)} · ${formatLiqRisk(zone.risk_max)} · ${formatDistPct(zone.dist_pct)}`;
 }
 
-export function formatLiqZoneTooltip(zone: LiqZone): string {
-  return `${zone.role === "support" ? "Support" : "Resistance"} zone · ${formatLiqMillions(zone.liq_m)} · risk ${formatLiqRisk(zone.risk_max)} (${zone.risk_max}) · ${formatDistPct(zone.dist_pct)} · ${formatLiqPrice(zone.lo)}–${formatLiqPrice(zone.hi)} · ${zone.bucket_count} buckets`;
+export function formatLiqZoneTooltip(zone: LiqZone, decimals: number | null = null): string {
+  return `${zone.role === "support" ? "Support" : "Resistance"} zone · ${formatLiqMillions(zone.liq_m)} · risk ${formatLiqRisk(zone.risk_max)} (${zone.risk_max}) · ${formatDistPct(zone.dist_pct)} · ${formatLiqPrice(zone.lo, decimals)}–${formatLiqPrice(zone.hi, decimals)} · ${zone.bucket_count} buckets`;
 }
 
 function publicNotice(value: unknown): string {
@@ -450,13 +563,14 @@ export function formatDistPct(value: number): string {
   return `${rounded > 0 ? "+" : ""}${text}%`;
 }
 
-export function formatLiqPrice(value: number): string {
+export function formatLiqPrice(value: number, decimals: number | null = null): string {
+  if (decimals != null && Number.isInteger(decimals) && decimals >= 0 && decimals <= 10) return value.toFixed(decimals);
   const rounded = Math.round(value * 10_000) / 10_000;
   return rounded.toFixed(4).replace(/\.?0+$/, "");
 }
 
-export function formatLiqBandTooltip(band: LiqBand): string {
-  return `${liqSideLabel(band.side)} · ${formatLiqMillions(band.liq_m)} · ${formatDistPct(band.dist_pct)} · ${formatLiqPrice(band.lo)}–${formatLiqPrice(band.hi)}`;
+export function formatLiqBandTooltip(band: LiqBand, decimals: number | null = null): string {
+  return `${liqSideLabel(band.side)} · ${formatLiqMillions(band.liq_m)} · ${formatDistPct(band.dist_pct)} · ${formatLiqPrice(band.lo, decimals)}–${formatLiqPrice(band.hi, decimals)}`;
 }
 
 export function snapshotFieldNames(): readonly string[] {
