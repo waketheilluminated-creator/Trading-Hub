@@ -85,7 +85,7 @@ import { readBarCountPref, subscribeBarCountPref, writeBarCountPref } from "@/li
 import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
 import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
-import { isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
+import { compactSymbol, isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import {
   SIDE_PANEL_DEFAULT_WIDTH,
@@ -465,17 +465,27 @@ export function TradingWorkspace() {
     writeStoredFlag(window.localStorage, LARGE_TRADES_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
   }, []);
+  // TH-FEAT-12: does the server already have a snapshot for this symbol? Drives the default-on flame.
+  const [liqProbe, setLiqProbe] = useState<{ symbol: string; has: boolean } | null>(null);
+  useEffect(() => {
+    if (!chartSupportsLiqSample(symbol)) return;
+    let active = true;
+    fetch(`/api/liq-heatmap?symbol=${encodeURIComponent(compactSymbol(symbol))}`)
+      .then((response) => { if (active) setLiqProbe({ symbol, has: response.ok }); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [symbol]);
   const showLiqHeatmap = useSyncExternalStore(
     subscribePanePrefs,
     // ZEC/PYTH open with the overlay on; an explicitly saved choice (either way) always wins.
-    () => readClientPaneFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol)),
+    () => readClientPaneFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol, liqProbe?.symbol === symbol ? liqProbe.has : null)),
     () => false,
   );
   const setShowLiqHeatmap = useCallback((next: boolean | ((current: boolean) => boolean)) => {
-    const current = readStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol));
+    const current = readStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn(symbol, liqProbe?.symbol === symbol ? liqProbe.has : null));
     writeStoredFlag(window.localStorage, LIQ_HEATMAP_STORAGE_KEY, typeof next === "function" ? next(current) : next);
     notifyPanePrefs();
-  }, [symbol]);
+  }, [liqProbe, symbol]);
   const [liqModel, setLiqModel] = useState<(LiqHeatmapChartModel & { symbol: string }) | null>(null);
   const [liqRefreshing, setLiqRefreshing] = useState<string | null>(null);
   const [liqCooldown, setLiqCooldown] = useState<{ symbol: string; until: number } | null>(null);
@@ -521,6 +531,7 @@ export function TradingWorkspace() {
       .then((result) => {
         if (result.ok) {
           setLiqModel({ symbol: target, ...result.model });
+          setLiqProbe({ symbol: target, has: true });
           setLiqCooldown({ symbol: target, until: Date.now() + result.cooldownSec * 1000 });
         } else {
           setLiqToast(result.error);

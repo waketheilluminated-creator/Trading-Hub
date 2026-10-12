@@ -9,16 +9,24 @@ export const LIQ_ZONE_MAX = 200;
 /** Bands and zones carry only the top two volume-percentile tiers (TRADINGHUB.md): 高 = high, 极高 = extreme. */
 export const LIQ_ZONE_RISKS = ["高", "极高"] as const;
 export const LIQ_BAND_RISKS = LIQ_ZONE_RISKS;
-export const LIQ_HEATMAP_NO_SNAPSHOT = "No liquidation snapshot is available for this market yet.";
+export const LIQ_HEATMAP_NO_SNAPSHOT = "尚未计算，点刷新生成";
+/** TH-FEAT-12: any USDT perpetual, strict format (leading digits allowed: 1000PEPEUSDT ≠ PEPEUSDT). */
+export const LIQ_SYMBOL_PATTERN = /^[A-Z0-9]{2,20}USDT$/;
+export const LIQ_UNLISTED_NOTICE = "该币种暂无交易所永续合约";
+
+/** Exact-string check (no case folding or trimming) — used for anything that reaches argv or a file name. */
+export function isLiqSymbol(value: unknown): value is string {
+  return typeof value === "string" && LIQ_SYMBOL_PATTERN.test(value);
+}
 export const LIQ_HEATMAP_STORAGE_KEY = "th-liq-heatmap";
-export const LIQ_HEATMAP_SYMBOL_NOTICE = "Liquidation bands are available for ZECUSDT and PYTHUSDT only.";
+export const LIQ_HEATMAP_SYMBOL_NOTICE = "Liquidation zones are available for USDT perpetuals only.";
 export const LIQ_HEATMAP_UNAVAILABLE = "Extreme liquidation bands unavailable.";
 export const LIQ_LONG_RGB = "231, 103, 112";
 export const LIQ_SHORT_RGB = "83, 201, 144";
 
 const MIN_LIQ_OPACITY = 0.16;
 const MAX_LIQ_OPACITY = 0.46;
-const SNAPSHOT_KEYS = ["kind", "venue", "symbol", "mid", "bucket_pct", "updatedAt", "source", "unit", "schemaVersion", "asOf", "markPrice", "bands", "zones", "venuesFailed", "priceDecimals"] as const;
+const SNAPSHOT_KEYS = ["kind", "venue", "symbol", "mid", "bucket_pct", "updatedAt", "source", "unit", "schemaVersion", "asOf", "markPrice", "bands", "zones", "venuesFailed", "priceDecimals", "tickSize"] as const;
 
 export type LiqSide = "long" | "short";
 
@@ -66,6 +74,8 @@ export type LiqHeatmapSnapshot = {
   venuesFailed?: string[];
   /** Price rounding the estimator used (ZEC→2, PYTH→6); null when absent. */
   priceDecimals?: number | null;
+  /** Exchange tick size the estimator used for price rounding (TH-FEAT-12); null when absent. */
+  tickSize?: number | null;
 };
 
 export type LiqHeatmapPayload = LiqHeatmapSnapshot & { notice: string | null };
@@ -98,17 +108,22 @@ export function liqSymbolsMatch(left: string, right: string): boolean {
 }
 
 export function chartSupportsLiqSample(symbol: string): boolean {
-  return LIQ_HEATMAP_SYMBOLS.some((supported) => liqSymbolsMatch(symbol, supported));
+  return isLiqSymbol(compactSymbol(symbol));
 }
 
-/** TH-FEAT-11: the flame toggle defaults ON for symbols with a liquidation snapshot until the user saves a choice. */
-export function liqHeatmapDefaultOn(symbol: string): boolean {
-  return chartSupportsLiqSample(symbol);
+/**
+ * The flame toggle defaults ON for symbols that already have a snapshot (bundled ZEC/PYTH fixtures, or one the
+ * server has cached from a refresh) until the user saves a choice. `hasSnapshot` comes from a GET probe.
+ */
+export function liqHeatmapDefaultOn(symbol: string, hasSnapshot: boolean | null = null): boolean {
+  if (!chartSupportsLiqSample(symbol)) return false;
+  if (hasSnapshot != null) return hasSnapshot;
+  return LIQ_HEATMAP_SYMBOLS.some((bundled) => liqSymbolsMatch(symbol, bundled));
 }
 
 export function parseLiqHeatmapQuery(url: URL): QueryResult {
   const symbol = compactSymbol(url.searchParams.get("symbol") || "");
-  if (!/^[A-Z0-9]{2,20}$/.test(symbol)) {
+  if (!isLiqSymbol(symbol)) {
     return { ok: false, error: "Use a compact perpetual symbol such as ZECUSDT" };
   }
   return { ok: true, symbol, sample: url.searchParams.get("liqSample") === "1" };
@@ -254,6 +269,7 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
     zones,
     venuesFailed: sanitizeVenuesFailed(raw.venues_failed, raw.venues_unlisted),
     priceDecimals: Number.isInteger(raw.priceDecimals) && (raw.priceDecimals as number) >= 0 && (raw.priceDecimals as number) <= 10 ? (raw.priceDecimals as number) : null,
+    tickSize: typeof raw.tickSize === "number" && Number.isFinite(raw.tickSize) && raw.tickSize > 0 && raw.tickSize < 1e6 ? raw.tickSize : null,
   };
   return { ok: true, snapshot, dropped, droppedZones };
 }
@@ -578,7 +594,7 @@ export function snapshotFieldNames(): readonly string[] {
 }
 
 /** Live snapshot files 订单流研发 drops into studio/fixtures/ (one per symbol, kind liq_heatmap_bands). */
-export const LIQ_LIVE_FIXTURE_PATTERN = /(?:^|\/)liq_heatmap_bands\.([A-Z0-9]{2,20})\.json$/;
+export const LIQ_LIVE_FIXTURE_PATTERN = /(?:^|\/)liq_heatmap_bands\.([A-Z0-9]{2,20}USDT)\.json$/;
 
 export function liqLiveFixturePath(symbol: string): string {
   return `studio/fixtures/liq_heatmap_bands.${compactSymbol(symbol)}.json`;
@@ -597,11 +613,11 @@ export function selectLiqSnapshotSource(
   const requested = compactSymbol(requestedSymbol);
   for (const [path, raw] of Object.entries(liveFiles)) {
     const match = LIQ_LIVE_FIXTURE_PATTERN.exec(path);
-    if (match && LIQ_HEATMAP_SYMBOLS.includes(match[1] as (typeof LIQ_HEATMAP_SYMBOLS)[number]) && liqSymbolsMatch(match[1], requested)) {
+    if (match && isLiqSymbol(match[1]) && match[1] === requested) {
       return { source: "live", raw };
     }
   }
-  const supported = LIQ_HEATMAP_SYMBOLS.find((symbol) => liqSymbolsMatch(symbol, requested));
-  if (supported && !liqSymbolsMatch(supported, LIQ_HEATMAP_SAMPLE_SYMBOL)) return null;
+  // Any valid USDT perpetual without a file has no snapshot yet (→ 404 「尚未计算，点刷新生成」); ZEC keeps the legacy sample.
+  if (isLiqSymbol(requested) && requested !== LIQ_HEATMAP_SAMPLE_SYMBOL) return null;
   return { source: "sample", raw: sample };
 }

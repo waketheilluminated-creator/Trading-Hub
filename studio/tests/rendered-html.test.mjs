@@ -390,14 +390,13 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(forged.status, 400);
   assert.deepEqual(await forged.json(), { error: "Use a compact perpetual symbol such as ZECUSDT" });
   const mismatch = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=BTCUSDT&admin=1&role=admin&hasMarketHistory=1"), env, context);
-  assert.equal(mismatch.status, 200);
+  // TH-FEAT-12: any USDT perpetual is valid; without a snapshot it is 404 「尚未计算，点刷新生成」 (no data, no flags echoed).
+  assert.equal(mismatch.status, 404);
   const mismatchBody = await mismatch.json();
-  assert.deepEqual(mismatchBody.bands, []);
-  assert.equal(mismatchBody.notice, "Liquidation bands are available for ZECUSDT and PYTHUSDT only.");
-  assert.deepEqual(mismatchBody.zones, []);
-  assert.equal(mismatchBody.admin, undefined);
-  assert.equal(mismatchBody.role, undefined);
-  const sample = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZEC&liqSample=1&role=admin"), env, context);
+  assert.deepEqual(mismatchBody, { error: "尚未计算，点刷新生成" });
+  const notUsdt = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=BTCUSD"), env, context);
+  assert.equal(notUsdt.status, 400);
+  const sample = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZECUSDT&liqSample=1&role=admin"), env, context);
   assert.equal(sample.status, 200);
   const body = await sample.json();
   assert.equal(body.kind, "liq_heatmap_bands");

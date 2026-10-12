@@ -173,7 +173,7 @@ export function DrawingToolbar({
           disabled={liqRefreshState !== "idle"}
           data-liq-refresh={liqRefreshState}
           data-rail-tool="liq-refresh"
-          title={liqRefreshState === "loading" ? "刷新清算中…（约 10–60 秒）" : liqRefreshState === "cooldown" ? `刷新清算：冷却中，${liqRefreshCooldownSec} 秒后可再次刷新` : liqRefreshState === "unsupported" ? "刷新清算：当前币种暂不支持" : "刷新清算：立即重新计算当前币种的清算区域（约 10–60 秒）"}
+          title={liqRefreshState === "loading" ? "刷新清算中…（约 10–60 秒）" : liqRefreshState === "cooldown" ? `刷新清算：冷却中，${liqRefreshCooldownSec} 秒后可再次刷新` : liqRefreshState === "unsupported" ? "刷新清算：仅支持 USDT 永续合约" : "刷新清算：立即重新计算当前币种的清算区域（约 10–60 秒）"}
           onClick={onLiqRefresh}
         >
           <LiqRefreshIcon />
