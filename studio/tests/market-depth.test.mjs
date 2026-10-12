@@ -433,7 +433,7 @@ test("workspace keeps unfilled walls on the K-chart with an aged list and a sepa
   assert.match(controls, />Custom</);
   assert.match(controls, /showRange/);
   const primitive = readFileSync(fileURLToPath(new URL("../lib/large-order-sr-primitive.ts", import.meta.url)), "utf8");
-  assert.match(primitive, /layoutSeparatedWalls/);
+  assert.match(primitive, /placeWallZones/);
   assert.doesNotMatch(primitive, /historical|swing high|candle high/);
   const markers = readFileSync(fileURLToPath(new URL("../lib/large-trade-markers-primitive.ts", import.meta.url)), "utf8");
   assert.match(markers, /planTradeMarkers/);
