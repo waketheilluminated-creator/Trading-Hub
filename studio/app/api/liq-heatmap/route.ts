@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   }
   const selected = selectLiqSnapshotSource(parsed.symbol, liveFixtures, liqHeatmapFixture);
   if (!selected) {
+    if (new URL(request.url).searchParams.get("probe") === "1") return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     return Response.json({ error: LIQ_HEATMAP_NO_SNAPSHOT }, { status: 404 });
   }
   const result = buildLiqHeatmapPayload(parsed.symbol, selected.raw);

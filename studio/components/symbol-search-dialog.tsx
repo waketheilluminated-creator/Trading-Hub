@@ -149,7 +149,11 @@ export function SymbolSearchDialog({
     if (!open) return;
     const timer = window.setTimeout(() => {
       if (sourcesOpen) sourcesSearchRef.current?.focus();
-      else symbolSearchRef.current?.focus();
+      else {
+        symbolSearchRef.current?.focus();
+        // Select the previous query so typing a new symbol replaces it instead of appending (ETHUSDT + SOLUSDT → ETHUSDTSOLUSDT).
+        symbolSearchRef.current?.select();
+      }
     }, 0);
     return () => clearTimeout(timer);
   }, [open, sourcesOpen]);

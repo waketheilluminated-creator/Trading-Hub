@@ -16,9 +16,9 @@ export function DeskHeader({ section }: { section: DeskSection }) {
       <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>{section}</small></div>
       <nav className="desk-nav" aria-label="Studio pages">
         {PAGES.map((page) => (
-          <Link key={page.href} className="desk-link" href={page.href} aria-current={section === page.section ? "page" : undefined} aria-label={page.ariaLabel}>{page.label}</Link>
+          <Link prefetch={false} key={page.href} className="desk-link" href={page.href} aria-current={section === page.section ? "page" : undefined} aria-label={page.ariaLabel}>{page.label}</Link>
         ))}
-        <Link className="desk-link desk-link-accent" href="/">Back to workspace</Link>
+        <Link prefetch={false} className="desk-link desk-link-accent" href="/">Back to workspace</Link>
       </nav>
     </header>
   );
