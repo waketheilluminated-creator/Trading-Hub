@@ -123,15 +123,17 @@ test("zone label and tooltip show liq_m, risk_max and dist_pct", () => {
 
 test("API fixture selection: live per-symbol files win; PYTH without a file is 404-ready", () => {
   const live = { "../../../fixtures/liq_heatmap_bands.ZECUSDT.json": zec, "../../../fixtures/liq_heatmap_bands.PYTHUSDT.json": pyth, "../../../fixtures/liq_heatmap_bands.EVILUSDT.json": zec };
-  assert.equal(selectLiqSnapshotSource("ZEC", live, legacy).raw, zec);
+  assert.equal(selectLiqSnapshotSource("ZECUSDT", live, legacy).raw, zec);
   assert.equal(selectLiqSnapshotSource("PYTHUSDT", live, legacy).raw, pyth);
   assert.equal(selectLiqSnapshotSource("PYTHUSDT", {}, legacy), null);
   assert.equal(selectLiqSnapshotSource("ZECUSDT", {}, legacy).raw, legacy);
-  assert.equal(selectLiqSnapshotSource("EVILUSDT", live, legacy).source, "sample", "unlisted symbols never pick up stray files");
+  // TH-FEAT-12: any USDT symbol may have a file, but a file whose content is for another symbol is withheld.
+  assert.equal(selectLiqSnapshotSource("EVILUSDT", live, legacy).source, "live");
   assert.equal(buildLiqHeatmapPayload("EVILUSDT", selectLiqSnapshotSource("EVILUSDT", live, legacy).raw).body.bands.length, 0);
+  assert.equal(selectLiqSnapshotSource("BTCUSDT", live, legacy), null);
   assert.equal(liqLiveFixturePath("pyth/usdt"), "studio/fixtures/liq_heatmap_bands.PYTHUSDT.json");
   assert.equal(chartSupportsLiqSample("PYTHUSDT"), true);
-  assert.equal(chartSupportsLiqSample("BTCUSDT"), false);
+  assert.equal(chartSupportsLiqSample("BTCUSDT"), true);
 });
 
 test("client loader returns zones for PYTH and drops forged zone rows", async () => {

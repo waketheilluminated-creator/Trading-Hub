@@ -76,7 +76,7 @@ test("refresh spawns argv (no shell) with only the allowlisted symbol and a serv
 });
 
 test("deny: symbols outside the allowlist never reach spawn", async () => {
-  for (const bad of [null, "", "BTCUSDT", "zecusdt", "ZECUSDT --out /etc/passwd", "ZECUSDT;rm -rf /", "../ZECUSDT", "PYTHUSDT\n"]) {
+  for (const bad of [null, "", "BTCUSD", "zecusdt", "ZECUSDT --out /etc/passwd", "ZECUSDT;rm -rf /", "../ZECUSDT", "PYTHUSDT\n"]) {
     const h = harness();
     const result = await h.refresher.refresh(bad);
     assert.equal(result.status, 400, String(bad));
@@ -242,7 +242,7 @@ test("UI: refresh button sits next to the flame toggle, no polling timers for re
   assert.match(toolbar, /disabled=\{liqRefreshState !== "idle"\}/);
   const timers = workspace.match(/setInterval\([^)]*\)/g) ?? [];
   assert.ok(!/requestLiqRefresh/.test(timers.join("")), "requestLiqRefresh is never on a timer");
-  assert.match(workspace, /readClientPaneFlag\(window\.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn\(symbol\)\)/);
+  assert.match(workspace, /readClientPaneFlag\(window\.localStorage, LIQ_HEATMAP_STORAGE_KEY, liqHeatmapDefaultOn\(symbol, liqProbe\?\.symbol === symbol \? liqProbe\.has : null\)\)/);
 });
 
 test("anchor: zone boxes start at the bar containing asOf (open <= asOf < next open)", async () => {

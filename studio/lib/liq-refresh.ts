@@ -16,11 +16,11 @@
  * exit 0 after writing a liq_heatmap_bands JSON (schemaVersion 1, optional venues_failed[]) to --out;
  * non-zero exit + stderr on failure.
  */
-import { LIQ_HEATMAP_SYMBOLS, sanitizeLiqHeatmapSnapshot, sanitizeVenuesFailed, type LiqHeatmapSnapshot } from "./liq-heatmap.ts";
+import { LIQ_UNLISTED_NOTICE, isLiqSymbol, sanitizeLiqHeatmapSnapshot, sanitizeVenuesFailed, type LiqHeatmapSnapshot } from "./liq-heatmap.ts";
 
 export { sanitizeVenuesFailed };
 
-export type LiqRefreshSymbol = (typeof LIQ_HEATMAP_SYMBOLS)[number];
+export type LiqRefreshSymbol = string;
 
 export const LIQ_REFRESH_TIMEOUT_MS = 90_000;
 export const LIQ_REFRESH_COOLDOWN_MS = 90_000;
@@ -54,16 +54,23 @@ export type LiqRefreshDeps = {
   log?(message: string): void;
   timeoutMs?: number;
   cooldownMs?: number;
+  maxConcurrent?: number;
+  maxCached?: number;
 };
 
 export type LiqRefreshResult =
   | { status: 200; body: { ok: true; snapshot: LiqHeatmapSnapshot; cooldownSec: number } }
-  | { status: 400 | 403 | 405 | 409 | 429 | 502 | 503 | 504; body: { ok: false; error: string; retryAfterSec?: number }; retryAfterSec?: number };
+  | { status: 400 | 403 | 405 | 409 | 422 | 429 | 502 | 503 | 504; body: { ok: false; error: string; code?: string; retryAfterSec?: number }; retryAfterSec?: number };
 
+/** TH-FEAT-12: strict format instead of an allowlist; the exact request string must match (no normalisation). */
 export function allowlistedSymbol(value: unknown): LiqRefreshSymbol | null {
-  if (typeof value !== "string") return null;
-  return (LIQ_HEATMAP_SYMBOLS as readonly string[]).includes(value) ? (value as LiqRefreshSymbol) : null;
+  return isLiqSymbol(value) ? value : null;
 }
+
+/** Global cap on concurrent estimator runs (all symbols). */
+export const LIQ_REFRESH_MAX_CONCURRENT = 2;
+/** Cap on cached last-good snapshots (memory + disk); oldest refresh is evicted first. */
+export const LIQ_REFRESH_MAX_CACHED = 40;
 
 /** LIQ_ESTIMATOR_CMD: a JSON string array (preferred) or whitespace-separated words. Never run through a shell. */
 export function parseEstimatorCommand(raw: string | undefined): string[] | null {
@@ -149,11 +156,13 @@ function runOnce(spawn: SpawnLike, command: string, args: string[], env: Record<
   });
 }
 
-function fail(status: 400 | 403 | 405 | 409 | 429 | 502 | 503 | 504, error: string, retryAfterSec?: number): LiqRefreshResult {
+function fail(status: 400 | 403 | 405 | 409 | 422 | 429 | 502 | 503 | 504, error: string, retryAfterSec?: number): LiqRefreshResult {
   return retryAfterSec == null ? { status, body: { ok: false, error } } : { status, body: { ok: false, error, retryAfterSec }, retryAfterSec };
 }
 
 export function liqLastGoodPath(outDir: string, symbol: LiqRefreshSymbol): string {
+  // Defence in depth: the symbol is the only request-derived part of any path; re-check its format here.
+  if (!isLiqSymbol(symbol)) throw new Error("invalid liquidation symbol");
   return `${outDir}/liq_heatmap_bands.${symbol}.json`;
 }
 
@@ -164,6 +173,19 @@ export function createLiqRefresher(deps: LiqRefreshDeps) {
   const timeoutMs = deps.timeoutMs ?? LIQ_REFRESH_TIMEOUT_MS;
   const cooldownMs = deps.cooldownMs ?? LIQ_REFRESH_COOLDOWN_MS;
   const log = deps.log ?? (() => {});
+  const maxConcurrent = deps.maxConcurrent ?? LIQ_REFRESH_MAX_CONCURRENT;
+  const maxCached = deps.maxCached ?? LIQ_REFRESH_MAX_CACHED;
+
+  /** Insert as most recent; evict the oldest snapshots (memory and file) beyond the cap. */
+  function remember(symbol: LiqRefreshSymbol, snapshot: LiqHeatmapSnapshot): void {
+    lastGood.delete(symbol);
+    lastGood.set(symbol, snapshot);
+    while (lastGood.size > maxCached) {
+      const oldest = lastGood.keys().next().value as LiqRefreshSymbol;
+      lastGood.delete(oldest);
+      deps.remove(liqLastGoodPath(deps.outDir, oldest)).catch(() => {});
+    }
+  }
 
   async function execute(symbol: LiqRefreshSymbol, argv: string[]): Promise<LiqRefreshResult> {
     await deps.mkdir(deps.outDir);
@@ -178,6 +200,14 @@ export function createLiqRefresher(deps: LiqRefreshDeps) {
       if (outcome.kind === "timeout") {
         log(`liq refresh ${symbol}: timed out after ${timeoutMs} ms; stderr: ${outcome.stderr}`);
         return fail(504, `Liquidation estimator timed out after ${Math.round(timeoutMs / 1000)} s; showing the last good zones.`);
+      }
+      if (outcome.code === 3) {
+        // Estimator contract: exit 3 = no venue lists this symbol (no output file).
+        return { status: 422, body: { ok: false, error: LIQ_UNLISTED_NOTICE, code: "unlisted" } };
+      }
+      if (outcome.code === 2) {
+        log(`liq refresh ${symbol}: estimator rejected its arguments; stderr: ${outcome.stderr}`);
+        return fail(502, "Liquidation estimator rejected the request (exit 2); showing the last good zones.");
       }
       if (outcome.code !== 0) {
         log(`liq refresh ${symbol}: exit ${outcome.code ?? outcome.signal}; stderr: ${outcome.stderr}`);
@@ -194,7 +224,7 @@ export function createLiqRefresher(deps: LiqRefreshDeps) {
       if (parsed.snapshot.schemaVersion !== 1) return fail(502, "Liquidation estimator output lacks schemaVersion 1; showing the last good zones.");
       const snapshot: LiqHeatmapSnapshot = parsed.snapshot;
       await deps.rename(tmpPath, liqLastGoodPath(deps.outDir, symbol));
-      lastGood.set(symbol, snapshot);
+      remember(symbol, snapshot);
       return { status: 200, body: { ok: true, snapshot, cooldownSec: Math.ceil(cooldownMs / 1000) } };
     } finally {
       await deps.remove(tmpPath).catch(() => {});
@@ -205,16 +235,18 @@ export function createLiqRefresher(deps: LiqRefreshDeps) {
     /** Run the estimator for an already-guarded request. */
     async refresh(symbolParam: string | null): Promise<LiqRefreshResult> {
       const symbol = allowlistedSymbol(symbolParam);
-      if (!symbol) return fail(400, `symbol must be one of ${LIQ_HEATMAP_SYMBOLS.join(", ")}.`);
+      if (!symbol) return fail(400, "symbol must be a USDT perpetual such as BTCUSDT (A–Z, 0–9, ending in USDT).");
       const argv = estimatorArgvFromEnv(deps.env);
       if (!argv) return fail(503, LIQ_REFRESH_UNCONFIGURED);
       if (inflight.has(symbol)) return fail(409, "A liquidation refresh for this symbol is already running.", Math.ceil(timeoutMs / 1000));
+      if (inflight.size >= maxConcurrent) return fail(429, "Another liquidation refresh is running; try again shortly.", 15);
       const started = lastStart.get(symbol);
       const now = deps.now();
       if (started != null && now - started < cooldownMs) {
         return fail(429, "Liquidation refresh is cooling down.", Math.max(1, Math.ceil((cooldownMs - (now - started)) / 1000)));
       }
       lastStart.set(symbol, now);
+      if (lastStart.size > 1000) for (const [key, at] of lastStart) if (now - at >= cooldownMs) lastStart.delete(key);
       const run = execute(symbol, argv).catch((error: unknown) => {
         log(`liq refresh ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
         return fail(502, "Liquidation refresh failed; showing the last good zones.");
@@ -229,13 +261,14 @@ export function createLiqRefresher(deps: LiqRefreshDeps) {
     },
     /** Reload a last-good file written by an earlier process (validated again). */
     async restore(symbol: LiqRefreshSymbol): Promise<LiqHeatmapSnapshot | null> {
+      if (!isLiqSymbol(symbol)) return null;
       if (lastGood.has(symbol)) return lastGood.get(symbol) ?? null;
       try {
         const raw: unknown = JSON.parse(await deps.readFile(liqLastGoodPath(deps.outDir, symbol)));
         const parsed = sanitizeLiqHeatmapSnapshot(raw);
         if (!parsed.ok || parsed.snapshot.symbol !== symbol) return null;
         const snapshot = parsed.snapshot;
-        lastGood.set(symbol, snapshot);
+        remember(symbol, snapshot);
         return snapshot;
       } catch {
         return null;

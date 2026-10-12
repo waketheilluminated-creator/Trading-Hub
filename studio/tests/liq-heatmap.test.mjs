@@ -154,13 +154,14 @@ test("matches ZEC compact symbols and refuses other charts before any fetch", as
   assert.equal(chartSupportsLiqSample("ZECUSDT"), true);
   assert.equal(chartSupportsLiqSample("zec/usdt"), true);
   assert.equal(chartSupportsLiqSample("ZEC-USDT-SWAP"), true);
-  assert.equal(chartSupportsLiqSample("ZEC"), true);
+  // TH-FEAT-12: any USDT perpetual (strict format) instead of a ZEC/PYTH allowlist.
+  assert.equal(chartSupportsLiqSample("ZEC"), false);
   assert.equal(liqSymbolsMatch("ZEC", "ZECUSDT"), true);
-  assert.equal(chartSupportsLiqSample("BTCUSDT"), false);
-  assert.equal(chartSupportsLiqSample("ZEC1USDT"), false);
+  assert.equal(chartSupportsLiqSample("BTCUSDT"), true);
+  assert.equal(chartSupportsLiqSample("BTCUSD"), false);
 
   let calls = 0;
-  const skipped = await loadLiqHeatmapBands("BTCUSDT", async () => {
+  const skipped = await loadLiqHeatmapBands("BTCUSD", async () => {
     calls += 1;
     throw new Error("fetch should not run");
   }, { sample: true });
@@ -168,9 +169,9 @@ test("matches ZEC compact symbols and refuses other charts before any fetch", as
   assert.deepEqual(skipped.bands, []);
   assert.equal(skipped.notice, LIQ_HEATMAP_SYMBOL_NOTICE);
 
-  const loaded = await loadLiqHeatmapBands("ZEC", async (url) => {
+  const loaded = await loadLiqHeatmapBands("ZECUSDT", async (url) => {
     calls += 1;
-    assert.equal(url, "/api/liq-heatmap?symbol=ZEC&liqSample=1");
+    assert.equal(url, "/api/liq-heatmap?symbol=ZECUSDT&liqSample=1");
     assert.equal(String(url).includes("admin"), false);
     return Response.json({
       ...sample,
