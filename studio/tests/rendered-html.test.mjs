@@ -69,14 +69,19 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /data-large-order-list="off"/);
   assert.match(html, /data-liq-heatmap="off"/);
   assert.match(html, /aria-label="Show unfilled large orders"/);
-  assert.match(html, /title="Show unfilled large orders \(大额挂单\)"/);
+  assert.match(html, /title="大额挂单（盘口墙）：标出订单簿里尚未成交的大额买\/卖挂单价位 · 点击显示"/);
   assert.match(html, /aria-label="Show executed large trades"/);
-  assert.match(html, /title="Show executed large trades \(大额成交\)"/);
+  assert.match(html, /title="大额成交：在 K 线上标出已经成交的大额主动买\/卖单 · 点击显示"/);
   assert.match(html, /data-icon="large-order-sr"/);
   assert.match(html, /data-icon="large-trades"/);
   assert.match(html, /data-icon="liq-heatmap"/);
   assert.match(html, /aria-label="Show liquidation heatmap"/);
-  assert.match(html, /title="Show liquidation heatmap · ZEC \/ PYTH \(高\/极高清算带 \+ 合并区域\)"/);
+  assert.match(html, /title="清算热力：高\/极高清算价带 \+ 合并的支撑\(绿\)\/阻力\(红\)区域 · 点击显示"/);
+  // TH-BUG-01: rail groups 订单流 (挂单/成交) and 清算 (flame + attached refresh), each with a 中文 tooltip.
+  const orderflow = /data-rail-group="orderflow"[\s\S]*?data-rail-group="liquidation"/.exec(html)?.[0] ?? "";
+  assert.match(orderflow, /data-rail-tool="large-orders"[^>]*title="大额挂单（盘口墙）：/);
+  assert.match(orderflow, /data-rail-tool="large-trades"[^>]*title="大额成交：/);
+  assert.match(html, /data-rail-group="liquidation"[\s\S]*?<div class="rail-pair">[\s\S]*?data-rail-tool="liq-heatmap"[\s\S]*?data-rail-tool="liq-refresh"[^>]*title="刷新清算：/);
   assert.ok(html.indexOf('aria-label="Show unfilled large orders"') < html.indexOf('aria-label="Show executed large trades"'));
   assert.ok(html.indexOf('aria-label="Show executed large trades"') < html.indexOf('aria-label="Show liquidation heatmap"'));
   assert.ok(html.indexOf('aria-label="Show liquidation heatmap"') < html.indexOf('aria-label="Chart settings"'));

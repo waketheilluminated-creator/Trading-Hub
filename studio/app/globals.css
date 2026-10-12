@@ -479,3 +479,10 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .liq-refresh-status { position:absolute; z-index:9; left:50%; top:10px; transform:translateX(-50%); padding:4px 10px; border:1px solid #3c4b60; border-radius:6px; background:rgba(11,16,23,.94); color:#d5dce6; font:11px var(--font-geist-mono); }
 .liq-refresh-toast { position:absolute; z-index:9; right:76px; bottom:16px; display:flex; gap:8px; align-items:center; max-width:420px; padding:6px 10px; border:1px solid rgba(231,103,112,.75); border-radius:6px; background:rgba(40,16,20,.96); color:#f3c4c8; font:11px var(--font-geist-mono); }
 .liq-refresh-toast button { border:0; background:none; color:inherit; cursor:pointer; }
+/* Left-rail feature groups: 订单流 (挂单/成交) and 清算 (flame + attached refresh). */
+.rail-group { display:flex; flex-direction:column; align-items:center; gap:3px; padding-top:5px; border-top:1px solid var(--line); }
+.rail-group-label { font:600 8px/1 var(--font-geist-mono); letter-spacing:.5px; color:var(--muted); opacity:.85; user-select:none; }
+.rail-pair { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.rail-pair .tool-button { border-radius:0; border:0; }
+.rail-pair .liq-refresh-button { height:22px; border-top:1px dashed var(--line); }
+.rail-pair .liq-refresh-button svg { width:14px; height:14px; }

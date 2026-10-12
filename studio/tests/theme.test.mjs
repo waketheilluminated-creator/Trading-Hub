@@ -105,3 +105,43 @@ test("layout ships the bootstrap script and the light stylesheet", () => {
   assert.match(layout, /THEME_BOOTSTRAP_SCRIPT/);
   assert.match(layout, /suppressHydrationWarning/);
 });
+
+test("TH-BUG-01: clicking the theme toggle flips the <html> class, storage and chart colours both ways", async () => {
+  const { applyTheme, currentDocumentTheme, nextTheme, subscribeTheme } = await import("../lib/theme.ts");
+  const classes = new Set();
+  const events = new EventTarget();
+  const store = new Map();
+  globalThis.document = { documentElement: { classList: { contains: (c) => classes.has(c), toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); } }, style: {} } };
+  globalThis.window = { localStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }, addEventListener: (...a) => events.addEventListener(...a), removeEventListener: (...a) => events.removeEventListener(...a), dispatchEvent: (e) => events.dispatchEvent(e) };
+  try {
+    let renders = 0;
+    const off = subscribeTheme(() => { renders += 1; });
+    const click = () => applyTheme(nextTheme(currentDocumentTheme())); // exactly what the button does
+    const darkChart = JSON.stringify(chartThemeOptions(currentDocumentTheme()));
+    click();
+    assert.equal(classes.has(THEME_LIGHT_CLASS), true);
+    assert.equal(store.get(THEME_STORAGE_KEY), "light");
+    assert.equal(document.documentElement.style.colorScheme, "light");
+    const lightChart = JSON.stringify(chartThemeOptions(currentDocumentTheme()));
+    assert.notEqual(lightChart, darkChart, "chart options change with the theme");
+    click();
+    assert.equal(classes.has(THEME_LIGHT_CLASS), false);
+    assert.equal(store.get(THEME_STORAGE_KEY), "dark");
+    assert.equal(JSON.stringify(chartThemeOptions(currentDocumentTheme())), darkChart);
+    // Bootstrap applied light before hydration while React still rendered "dark": a click must go to dark, not stay light.
+    classes.add(THEME_LIGHT_CLASS);
+    click();
+    assert.equal(currentDocumentTheme(), "dark");
+    assert.equal(renders, 3, "each click notifies subscribers so the chart re-applies its colours");
+    off();
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
+
+test("TH-BUG-01: the toggle reads the live document theme at click time and the chart re-applies options on change", () => {
+  const workspace = readFileSync(new URL("../app/trading-workspace.tsx", import.meta.url), "utf8");
+  assert.match(workspace, /className="theme-toggle"[^>]*onClick=\{\(\) => applyTheme\(nextTheme\(currentDocumentTheme\(\)\)\)\}/);
+  assert.match(workspace, /chartRef\.current\?\.applyOptions\(chartThemeOptions\(theme\)\)/);
+});
