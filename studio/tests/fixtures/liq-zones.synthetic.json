@@ -1,0 +1,39 @@
+{
+  "_comment": "SYNTHETIC TEST FIXTURE: hand-written edge cases for tests only. Not market data; never served by /api/liq-heatmap.",
+  "kind": "liq_heatmap_bands",
+  "schemaVersion": 1,
+  "venue": "multi",
+  "symbol": "ZECUSDT",
+  "asOf": "2026-01-01T00:00:00Z",
+  "markPrice": 100,
+  "mid": 100,
+  "bucket_pct": 0.5,
+  "updatedAt": 1767225600000,
+  "source": "oi_liq_estimator",
+  "unit": "usd_millions",
+  "boxStart": "latest_candle",
+  "bands": [
+    { "lo": 95, "hi": 95.5, "side": "long", "liq_m": 10, "risk": "极高", "dist_pct": -4.5 },
+    { "lo": 1, "hi": 0, "side": "long", "liq_m": 10, "risk": "极高", "dist_pct": -4.5 },
+    { "lo": 95.5, "hi": 96, "side": "long", "liq_m": 8, "risk": "高", "dist_pct": -4 },
+    { "lo": 90, "hi": 90.5, "side": "long", "liq_m": 5, "risk": "高", "dist_pct": -9.5 },
+    { "lo": 105, "hi": 105.5, "side": "short", "liq_m": 7, "risk": "中", "dist_pct": 5 },
+    { "lo": 110, "hi": 110.5, "side": "short", "liq_m": 6, "risk": "极高", "dist_pct": 10 },
+    { "lo": 110.5, "hi": 111, "side": "short", "liq_m": 4, "risk": "高", "dist_pct": 10.5 }
+  ],
+  "zones": [
+    { "lo": 95, "hi": 96, "side": "long", "role": "support", "color": "green", "liq_m": 18, "risk_max": "极高", "dist_pct": -4, "bucket_count": 2, "band_idx": [0, 2] },
+    { "lo": 110, "hi": 111, "side": "short", "role": "resistance", "color": "red", "liq_m": 10, "risk_max": "极高", "dist_pct": 10, "bucket_count": 2 },
+    { "lo": 120, "hi": 119, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 19, "bucket_count": 2 },
+    { "lo": 80, "hi": 81, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": -19, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "admin", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": "3", "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "中", "dist_pct": 20, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 1 },
+    { "lo": 120, "hi": 121, "role": "resistance", "color": "green", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2, "band_idx": [-1] },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2, "band_idx": "0,1" },
+    "<script>alert(1)</script>",
+    null
+  ]
+}

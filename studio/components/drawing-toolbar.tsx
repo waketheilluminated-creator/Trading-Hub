@@ -135,7 +135,7 @@ export function DrawingToolbar({
       className={`tool-button ${liqHeatmapVisible ? "active" : ""}`}
       aria-label={liqLabel}
       aria-pressed={liqHeatmapVisible}
-      title={liqHeatmapVisible ? "Hide extreme liquidation heatmap (极高清算带)" : "Show extreme liquidation heatmap (极高清算带)"}
+      title={liqHeatmapVisible ? "Hide liquidation heatmap · ZEC / PYTH (高/极高清算带 + 合并区域)" : "Show liquidation heatmap · ZEC / PYTH (高/极高清算带 + 合并区域)"}
       onClick={onLiqHeatmapToggle}
     >
       <LiqHeatmapIcon />

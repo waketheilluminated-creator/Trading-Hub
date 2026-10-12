@@ -70,7 +70,7 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(html, /data-icon="large-trades"/);
   assert.match(html, /data-icon="liq-heatmap"/);
   assert.match(html, /aria-label="Show liquidation heatmap"/);
-  assert.match(html, /title="Show extreme liquidation heatmap \(极高清算带\)"/);
+  assert.match(html, /title="Show liquidation heatmap · ZEC \/ PYTH \(高\/极高清算带 \+ 合并区域\)"/);
   assert.ok(html.indexOf('aria-label="Show unfilled large orders"') < html.indexOf('aria-label="Show executed large trades"'));
   assert.ok(html.indexOf('aria-label="Show executed large trades"') < html.indexOf('aria-label="Show liquidation heatmap"'));
   assert.ok(html.indexOf('aria-label="Show liquidation heatmap"') < html.indexOf('aria-label="Chart settings"'));
@@ -382,7 +382,8 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(mismatch.status, 200);
   const mismatchBody = await mismatch.json();
   assert.deepEqual(mismatchBody.bands, []);
-  assert.equal(mismatchBody.notice, "Extreme liquidation bands match ZECUSDT only.");
+  assert.equal(mismatchBody.notice, "Liquidation bands are available for ZECUSDT and PYTHUSDT only.");
+  assert.deepEqual(mismatchBody.zones, []);
   assert.equal(mismatchBody.admin, undefined);
   assert.equal(mismatchBody.role, undefined);
   const sample = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=ZEC&liqSample=1&role=admin"), env, context);
@@ -391,10 +392,21 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(body.kind, "liq_heatmap_bands");
   assert.equal(body.symbol, "ZECUSDT");
   assert.equal(body.bucket_pct, 0.5);
-  assert.equal(body.bands.length, 13);
+  // TH-FEAT-10: the delivered ZEC estimator snapshot (fixtures/liq_heatmap_bands.ZECUSDT.json) replaces the old sample.
+  assert.equal(body.schemaVersion, 1);
+  assert.equal(body.bands.length, 23);
+  assert.equal(body.zones.length, 3);
+  assert.deepEqual(body.zones.map((zone) => zone.role), ["support", "support", "resistance"]);
+  const pyth = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=PYTHUSDT"), env, context);
+  assert.equal(pyth.status, 200);
+  const pythBody = await pyth.json();
+  assert.equal(pythBody.symbol, "PYTHUSDT");
+  assert.equal(pythBody.zones.length, 6);
+  assert.equal(pythBody.bands.length, 24);
+  assert.equal(pythBody.zoneRule, undefined, "free-text fields are not passed through");
   assert.equal(body.admin, undefined);
   assert.equal(body.role, undefined);
-  assert.ok(body.bands.every((band) => band.risk === "极高" && (band.side === "long" || band.side === "short")));
+  assert.ok(body.bands.every((band) => (band.risk === "极高" || band.risk === "高") && (band.side === "long" || band.side === "short")));
   assert.equal(body.bands.some((band) => band.side === "long"), true);
   assert.equal(body.bands.some((band) => band.side === "short"), true);
 });
