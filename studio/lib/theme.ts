@@ -39,6 +39,11 @@ export function currentDocumentTheme(): ThemeName {
   return document.documentElement.classList.contains(THEME_LIGHT_CLASS) ? "light" : "dark";
 }
 
+/** Toggle target, computed from the live <html> class at click time (never from a possibly stale render). */
+export function nextTheme(current: ThemeName): ThemeName {
+  return current === "light" ? "dark" : "light";
+}
+
 export function applyTheme(theme: ThemeName): void {
   if (typeof document === "undefined") return;
   const light = parseTheme(theme) === "light";

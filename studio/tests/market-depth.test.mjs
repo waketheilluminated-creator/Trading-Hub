@@ -393,7 +393,7 @@ test("workspace keeps unfilled walls on the K-chart with an aged list and a sepa
   assert.match(toolbar, /data-icon="large-order-sr"/);
   assert.match(toolbar, /data-icon="large-trades"/);
   const rail = toolbar.slice(toolbar.indexOf("rail-spacer"), toolbar.indexOf("Chart settings"));
-  assert.ok(rail.indexOf("Show unfilled large orders") < rail.indexOf("Show executed large trades"));
+  assert.ok(rail.indexOf("data-rail-tool=\"large-orders\"") > 0 && rail.indexOf("data-rail-tool=\"large-orders\"") < rail.indexOf("data-rail-tool=\"large-trades\""));
   // EMAs stay off by default (TH-UI-05); TH-UI-06 persists them as legend studies
   // whose stored flag falls back to false on the client and server.
   assert.match(workspace, /\[showFast, setShowFast\] = useStoredFlag\(studyDefinition\("ema9"\)\.addedKey\)/);
