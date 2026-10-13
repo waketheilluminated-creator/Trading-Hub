@@ -499,3 +499,5 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .top-trade-notional .large-order-bar { display:block; margin-top:2px; }
 .top-trade-row.buy .large-order-bar > span { background:#53c990; }
 .top-trade-row.sell .large-order-bar > span { background:#e76770; }
+.large-order-list:has([data-top-trades]) { width:340px; }
+.top-trade-row { grid-template-columns:minmax(62px,1.2fr) minmax(40px,.8fr) minmax(58px,1fr) 52px 48px; }
