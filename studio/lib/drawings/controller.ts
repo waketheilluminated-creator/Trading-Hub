@@ -227,6 +227,7 @@ export class DrawingController {
     host.addEventListener("pointermove", this.onPointerMove);
     host.addEventListener("pointerup", this.onPointerUp);
     host.addEventListener("pointercancel", this.onPointerCancel);
+    host.addEventListener("contextmenu", this.onContextMenu);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("blur", this.onWindowBlur);
   }
@@ -237,6 +238,7 @@ export class DrawingController {
       this.host.removeEventListener("pointermove", this.onPointerMove);
       this.host.removeEventListener("pointerup", this.onPointerUp);
       this.host.removeEventListener("pointercancel", this.onPointerCancel);
+      this.host.removeEventListener("contextmenu", this.onContextMenu);
     }
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("blur", this.onWindowBlur);
@@ -284,6 +286,8 @@ export class DrawingController {
     const tool = this.options.getTool();
     this.reconcileActiveTool(tool);
     if (tool === "crosshair") return;
+    // Only the primary button draws/measures; a right-click is handled by onContextMenu (cancel + exit tool).
+    if (typeof event.button === "number" && event.button > 0) return;
     const screenPoint = this.toHostPoint(event);
     if (!pointerInMainPane(screenPoint.y, this.mainPaneHeight())) return;
     const point = toDrawingPoint(screenPoint, this.coordinateAdapter);
@@ -369,6 +373,21 @@ export class DrawingController {
     if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
     this.cancel();
   };
+
+  /**
+   * Right-click on the chart cancels an in-progress or shown measurement and exits the measure tool
+   * (back to the default Select tool). The browser menu is suppressed only on the chart host and only
+   * while the measure tool is active; elsewhere the native context menu is untouched.
+   */
+  private readonly onContextMenu = (event: MouseEvent): void => {
+    if (!this.measureActive()) return;
+    event.preventDefault();
+    this.cancel();
+  };
+
+  private measureActive(): boolean {
+    return this.options.getTool() === "price-change" || this.session.phase === "measuring" || this.session.phase === "measured";
+  }
 
   private readonly onWindowBlur = (): void => {
     if (this.session.phase !== "idle" || this.interactionsLocked) this.cancel();

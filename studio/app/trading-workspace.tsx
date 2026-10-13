@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent as ReactFormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  BaselineSeries, CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle, LineType,
+  BaselineSeries, CandlestickSeries, ColorType, createChart, CrosshairMode, createSeriesMarkers, HistogramSeries, LineSeries, LineStyle, LineType,
   type CandlestickData, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi,
   type LineData, type MouseEventParams, type SeriesMarker, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
@@ -686,8 +686,9 @@ export function TradingWorkspace() {
       },
       grid: { vertLines: { color: "#17202b" }, horzLines: { color: "#17202b" } },
       rightPriceScale: { borderColor: "#27313f", scaleMargins: { top: 0.09, bottom: 0.08 } },
-      timeScale: { borderColor: "#27313f", timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7, minBarSpacing: 0.1 },
-      crosshair: { vertLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" }, horzLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" } },
+      timeScale: { borderColor: "#27313f", timeVisible: true, secondsVisible: false, rightOffset: LIQ_ZONE_RIGHT_OFFSET_BARS, barSpacing: 7, minBarSpacing: 0.1 },
+      // Free crosshair: the horizontal line follows the mouse instead of magnet-snapping to OHLC. Measuring uses raw pointer prices.
+      crosshair: { mode: CrosshairMode.Normal, vertLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" }, horzLine: { color: "#59677a", width: 1, labelBackgroundColor: "#344154" } },
       handleScale: true, handleScroll: true,
     });
     // Apply the saved theme synchronously so a light reload never paints a dark chart frame.
@@ -944,23 +945,9 @@ export function TradingWorkspace() {
   const liqAsOf = liqForChart?.asOf ?? null;
   const liqAnchorTime = useMemo(() => liqZoneAnchorTime(candles.map((candle) => Number(candle.time)), liqAsOf), [candles, liqAsOf]);
   const liqComputedLabel = formatLiqComputedAt(liqAsOf);
-  const liqZonesVisible = showLiqHeatmap && liqZones.length > 0;
-  // Zone boxes live right of the latest bar, so leave room for them (and their labels) when they are on.
-  // TH-FEAT-13: wall boxes also live right of the latest bar.
-  const zoneBoxesVisible = liqZonesVisible || (showLargeOrderSr && displayedWalls.length > 0);
-  const hasCandles = candles.length > 0;
-  useEffect(() => {
-    const timeScale = chartRef.current?.timeScale();
-    if (!timeScale) return;
-    timeScale.applyOptions({ rightOffset: zoneBoxesVisible ? LIQ_ZONE_RIGHT_OFFSET_BARS : 8 });
-    // The history load pins the view to the latest bars; slide it so the zone area is actually on screen.
-    const count = candlesRef.current.length;
-    const range = timeScale.getVisibleLogicalRange();
-    if (!zoneBoxesVisible || !hasCandles || !range || !count) return;
-    const targetTo = count - 1 + LIQ_ZONE_RIGHT_OFFSET_BARS;
-    if (range.to >= targetTo - 1) return;
-    timeScale.setVisibleLogicalRange({ from: range.from + (targetTo - range.to), to: targetTo });
-  }, [chartVersion, hasCandles, zoneBoxesVisible, symbol]);
+  // TH-BUG-03: overlay toggles (walls / executed prints / liq flame) must never move the view. The right-side room for
+  // zone/wall boxes is reserved once, as a constant rightOffset at chart creation, instead of being toggled per overlay
+  // (that toggle used to re-apply rightOffset and setVisibleLogicalRange, snapping the chart on every click).
   useEffect(() => {
     liqHeatmapPrimitiveRef.current?.setZones(showLiqHeatmap ? liqZones : [], liqAnchorTime as Time | null, liqComputedLabel);
   }, [chartVersion, liqAnchorTime, liqComputedLabel, liqZones, showLiqHeatmap]);

@@ -343,3 +343,83 @@ test("ignores drawing placement that starts on an indicator pane below the candl
   controller.onPointerDown({ ...pointerEvent(), clientY: 140 });
   assert.deepEqual(controller.getSession(), initialDrawingSession);
 });
+
+function contextMenuEvent() {
+  let prevented = false;
+  return { preventDefault() { prevented = true; }, get prevented() { return prevented; } };
+}
+
+test("right-click cancels an in-progress measurement and exits the measure tool", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "price-change", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  h.controller.onPointerMove({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(h.controller.getSession().phase, "measuring");
+
+  // The right button's pointerdown must not complete the measurement.
+  h.controller.onPointerDown({ ...pointerEvent(), button: 2, clientX: 300, clientY: 30 });
+  assert.equal(h.controller.getSession().phase, "measuring");
+
+  const menu = contextMenuEvent();
+  h.controller.onContextMenu(menu);
+  assert.equal(menu.prevented, true);
+  assert.deepEqual(h.controller.getSession(), initialDrawingSession);
+  assert.equal(h.tool.current, "select");
+  assert.deepEqual(h.chartOptions.at(-1), { handleScroll: true, handleScale: true });
+  assert.deepEqual(h.getDrawings(), []);
+});
+
+test("right-click clears a finished measurement and exits the tool", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "price-change", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  h.controller.onPointerDown({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(h.controller.getSession().phase, "measured");
+  const menu = contextMenuEvent();
+  h.controller.onContextMenu(menu);
+  assert.equal(menu.prevented, true);
+  assert.deepEqual(h.controller.getSession(), initialDrawingSession);
+  assert.equal(h.tool.current, "select");
+});
+
+test("right-click keeps the native menu when the measure tool is not active", () => {
+  for (const tool of ["select", "crosshair", "trend-line"]) {
+    const h = createControllerHarness({ initialDrawings: [], initialTool: tool, hit: null });
+    const menu = contextMenuEvent();
+    h.controller.onContextMenu(menu);
+    assert.equal(menu.prevented, false, tool);
+    assert.equal(h.tool.current, tool);
+  }
+});
+
+test("Escape cancels an in-progress measurement and exits the measure tool", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "price-change", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  assert.equal(h.controller.getSession().phase, "measuring");
+  const esc = Object.assign(contextMenuEvent(), { key: "Escape", target: null });
+  h.controller.onKeyDown(esc);
+  assert.equal(esc.prevented, true);
+  assert.deepEqual(h.controller.getSession(), initialDrawingSession);
+  assert.equal(h.tool.current, "select");
+  assert.deepEqual(h.chartOptions.at(-1), { handleScroll: true, handleScale: true });
+});
+
+test("contextmenu listener is attached to the chart host only and removed on detach", () => {
+  const added = []; const removed = [];
+  const host = {
+    addEventListener: (type) => added.push(type),
+    removeEventListener: (type) => removed.push(type),
+    hasPointerCapture: () => false,
+  };
+  const winAdded = [];
+  const origAdd = globalThis.window;
+  globalThis.window = { addEventListener: (t) => winAdded.push(t), removeEventListener() {} };
+  try {
+    const { controller } = createController({ current: "price-change" });
+    controller.attach(host);
+    assert.ok(added.includes("contextmenu"));
+    assert.ok(!winAdded.includes("contextmenu"));
+    controller.detach();
+    assert.ok(removed.includes("contextmenu"));
+  } finally {
+    globalThis.window = origAdd;
+  }
+});
