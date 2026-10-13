@@ -388,6 +388,16 @@ export function liqZoneColors(role: LiqZoneRole): { fill: string; edge: string; 
 export type PlacedLiqZone = { zone: LiqZone; left: number; top: number; width: number; height: number } & ReturnType<typeof liqZoneColors>;
 
 /** Boxes start at the latest bar's x and extend to the pane's right edge only — no historical segment. */
+/**
+ * TH-BUG-03: left edge for the heatmap bands. Like the zone boxes they start at the asOf anchor candle and
+ * extend right (a snapshot says nothing about earlier bars). Only when no anchor can be resolved yet
+ * (no candles / chart not attached) do they fall back to the full pane width.
+ */
+export function liqOverlayLeft(anchorX: number | null, paneWidth: number): number {
+  if (anchorX == null || !Number.isFinite(anchorX)) return 0;
+  return Math.max(0, Math.min(paneWidth, anchorX));
+}
+
 export function placeLiqZones(
   zones: readonly LiqZone[],
   priceToY: (price: number) => number | null,

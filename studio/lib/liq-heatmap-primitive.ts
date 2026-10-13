@@ -11,6 +11,7 @@ import {
   findLiqZoneAt,
   formatLiqZoneLabel,
   liqBandDrawHeight,
+  liqOverlayLeft,
   placeLiqHeatmapBands,
   placeLiqZones,
   type LiqBand,
@@ -41,7 +42,8 @@ class LiqHeatmapRenderer implements IPrimitivePaneRenderer {
     if (!priceToCoordinate) return;
     const placed = placeLiqHeatmapBands(this.getBands(), priceToCoordinate);
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-      for (const band of placed) drawLiqBand(context, band, mediaSize.width);
+      const left = liqOverlayLeft(this.getLatestX(), mediaSize.width);
+      for (const band of placed) drawLiqBand(context, band, left, mediaSize.width);
     });
   }
 }
@@ -175,6 +177,7 @@ export class LiqHeatmapPrimitive implements ISeriesPrimitive<Time> {
       });
       if (zone) return { externalId: `liq-zone:${this.zones.indexOf(zone)}`, cursorStyle: "pointer", zOrder: "normal", distance: 0, hitTestPriority: 1 };
     }
+    if (left != null && x < left) return null;
     const band = bandAtY(y, priceToCoordinate, this.bands);
     if (!band) return null;
     return {
@@ -201,15 +204,16 @@ function bandAtY(y: number, priceToCoordinate: PriceToCoordinate, bands: readonl
   return best;
 }
 
-function drawLiqBand(context: CanvasRenderingContext2D, band: PlacedLiqBand, paneWidth: number): void {
+function drawLiqBand(context: CanvasRenderingContext2D, band: PlacedLiqBand, left: number, paneWidth: number): void {
   const height = liqBandDrawHeight(band.height);
-  if (!(height > 0)) return;
+  const width = paneWidth - left;
+  if (!(height > 0) || !(width > 0)) return;
   context.fillStyle = band.fill;
-  context.fillRect(0, band.top, paneWidth, height);
+  context.fillRect(left, band.top, width, height);
   context.fillStyle = band.edge;
-  context.fillRect(0, Math.round(band.top), paneWidth, 1);
+  context.fillRect(left, Math.round(band.top), width, 1);
   const bottom = band.top + band.height;
-  if (Math.abs(bottom - band.top) >= 1) context.fillRect(0, Math.round(bottom), paneWidth, 1);
+  if (Math.abs(bottom - band.top) >= 1) context.fillRect(left, Math.round(bottom), width, 1);
 }
 
 /** Dashed vertical line at the asOf candle with a 「计算于 HH:MM」 tag at the top. */

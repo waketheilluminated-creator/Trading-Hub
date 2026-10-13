@@ -1,0 +1,186 @@
+{
+  "kind": "liq_heatmap_bands",
+  "schemaVersion": 1,
+  "venue": "multi",
+  "symbol": "BTCUSDT",
+  "asOf": "2026-10-13T11:03:00-04:00",
+  "markPrice": 83476.1,
+  "mid": 83476.1,
+  "bucket_pct": 0.5,
+  "updatedAt": 1791903780198,
+  "source": "oi_liq_estimator/refresh_liq",
+  "unit": "usd_millions",
+  "zoneRule": "Merge runs of >=2 price-adjacent 0.5%-of-mid buckets with risk 高 or 极高, same side of markPrice, same liquidation side (long|short). Isolated 高/极高 buckets are not zones. Below markPrice = support (green); above = resistance (red). Boxes drawn from the latest candle rightward only (boxStart=latest_candle).",
+  "boxStart": "latest_candle",
+  "bands": [
+    {
+      "lo": 82224.0,
+      "hi": 82641.3,
+      "side": "long",
+      "liq_m": 2615.06,
+      "risk": "极高",
+      "dist_pct": -1.25
+    },
+    {
+      "lo": 88902.0,
+      "hi": 89319.4,
+      "side": "short",
+      "liq_m": 2368.24,
+      "risk": "极高",
+      "dist_pct": 6.75
+    },
+    {
+      "lo": 76798.0,
+      "hi": 77215.4,
+      "side": "long",
+      "liq_m": 2094.09,
+      "risk": "极高",
+      "dist_pct": -7.75
+    },
+    {
+      "lo": 93910.6,
+      "hi": 94328.0,
+      "side": "short",
+      "liq_m": 1936.33,
+      "risk": "极高",
+      "dist_pct": 12.75
+    },
+    {
+      "lo": 83893.5,
+      "hi": 84310.9,
+      "side": "long",
+      "liq_m": 1794.7,
+      "risk": "极高",
+      "dist_pct": 0.75
+    },
+    {
+      "lo": 87232.5,
+      "hi": 87649.9,
+      "side": "short",
+      "liq_m": 1709.08,
+      "risk": "极高",
+      "dist_pct": 4.75
+    },
+    {
+      "lo": 84728.2,
+      "hi": 85145.6,
+      "side": "long",
+      "liq_m": 1632.87,
+      "risk": "极高",
+      "dist_pct": 1.75
+    },
+    {
+      "lo": 86397.8,
+      "hi": 86815.1,
+      "side": "short",
+      "liq_m": 1330.3,
+      "risk": "极高",
+      "dist_pct": 3.75
+    },
+    {
+      "lo": 75128.5,
+      "hi": 75545.9,
+      "side": "long",
+      "liq_m": 1060.26,
+      "risk": "高",
+      "dist_pct": -9.75
+    },
+    {
+      "lo": 91823.7,
+      "hi": 92241.1,
+      "side": "short",
+      "liq_m": 1030.41,
+      "risk": "高",
+      "dist_pct": 10.25
+    },
+    {
+      "lo": 68450.4,
+      "hi": 68867.8,
+      "side": "long",
+      "liq_m": 913.58,
+      "risk": "高",
+      "dist_pct": -17.75
+    },
+    {
+      "lo": 79719.7,
+      "hi": 80137.1,
+      "side": "long",
+      "liq_m": 881.73,
+      "risk": "高",
+      "dist_pct": -4.25
+    },
+    {
+      "lo": 102675.6,
+      "hi": 103093.0,
+      "side": "short",
+      "liq_m": 837.83,
+      "risk": "高",
+      "dist_pct": 23.25
+    },
+    {
+      "lo": 74711.1,
+      "hi": 75128.5,
+      "side": "long",
+      "liq_m": 711.53,
+      "risk": "高",
+      "dist_pct": -10.25
+    },
+    {
+      "lo": 81806.6,
+      "hi": 82224.0,
+      "side": "long",
+      "liq_m": 681.12,
+      "risk": "高",
+      "dist_pct": -1.75
+    }
+  ],
+  "zones": [
+    {
+      "lo": 74711.1,
+      "hi": 75545.9,
+      "side": "long",
+      "role": "support",
+      "color": "green",
+      "liq_m": 1771.79,
+      "risk_max": "高",
+      "dist_pct": -9.5,
+      "bucket_count": 2,
+      "band_idx": [
+        8,
+        13
+      ]
+    },
+    {
+      "lo": 81806.6,
+      "hi": 82641.3,
+      "side": "long",
+      "role": "support",
+      "color": "green",
+      "liq_m": 3296.18,
+      "risk_max": "极高",
+      "dist_pct": -1.0,
+      "bucket_count": 2,
+      "band_idx": [
+        0,
+        14
+      ]
+    }
+  ],
+  "priceDecimals": 1,
+  "tickSize": 0.1,
+  "tickSource": "okx",
+  "venues": [
+    "okx",
+    "binance",
+    "bybit",
+    "bitget",
+    "gate",
+    "htx",
+    "kucoin",
+    "bingx",
+    "deribit",
+    "dydx",
+    "hyperliquid"
+  ],
+  "oi_usd": 29794951772.89
+}
