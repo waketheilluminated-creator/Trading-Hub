@@ -671,3 +671,22 @@ html.theme-light .wall-zone-tip[data-side="bid"] {
 html.theme-light .wall-zone-tip[data-side="ask"] {
     border-color: rgba(143, 30, 38, 0.75)
 }
+html.theme-light .top-trade-head {
+    color: #4a5361;
+    border-bottom: 1px solid #dfe3e9
+}
+html.theme-light .top-trade-row.buy {
+    color: #38b377
+}
+html.theme-light .top-trade-row.sell {
+    color: #8f1e26
+}
+html.theme-light .top-trade-row .top-trade-time, html.theme-light .top-trade-row .top-trade-venue {
+    color: #363f4d
+}
+html.theme-light .top-trade-row.buy .large-order-bar > span {
+    background: #38b377
+}
+html.theme-light .top-trade-row.sell .large-order-bar > span {
+    background: #8f1e26
+}
