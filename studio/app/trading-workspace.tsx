@@ -75,8 +75,12 @@ import {
 import {
   LARGE_TRADES_EMPTY,
   LARGE_TRADES_STORAGE_KEY,
+  EXECUTED_TRADES_FLOOR_USD,
   loadLargeTrades,
-  type LargeTrade,
+  mergeTradeHistory,
+  topTradesInRange,
+  visibleRangeMs,
+  type VenueTrade,
 } from "@/lib/market-trades.ts";
 import { summarizeCvdWindow, type CvdBar, type CvdSnapshot } from "@/lib/market-cvd.ts";
 import { loadAllMarketCatalogs, loadChartHistory, loadOlderCandles, mergeLiveCandle, openKlineStream, prependOlderCandles } from "@/lib/market-feed.ts";
@@ -85,7 +89,7 @@ import { readBarCountPref, subscribeBarCountPref, writeBarCountPref } from "@/li
 import type { OiHistorySnapshot } from "@/lib/market-oi.ts";
 import { loadDerivativesPulse, loadOpenInterestSeries, loadOrderFlowCvd } from "@/lib/market-pulse.ts";
 import { fallbackCatalog, formatMarketId, nextRecentSymbols, parseMarketId, resolveRecentMarket } from "@/lib/market-symbols.js";
-import { compactSymbol, isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
+import { compactSymbol, intervalDurationMs, isMarketVenue, MARKET_VENUES, sanitizeMarketCopy, venueLabel, type MarketCandle, type MarketVenue } from "@/lib/market-venues.ts";
 import { COLLAPSED_PANEL_HEIGHT, DEFAULT_PANEL_HEIGHT, isPanelCollapsed, resolvePanelHeight, snapPanelHeight } from "@/lib/panel-layout.js";
 import {
   SIDE_PANEL_DEFAULT_WIDTH,
@@ -544,7 +548,9 @@ export function TradingWorkspace() {
   liqBandsRef.current = liqBands;
   const [largeOrderWalls, setLargeOrderWalls] = useState<TrackedWall[]>([]);
   const [largeOrderNotice, setLargeOrderNotice] = useState<string | null>(null);
-  const [largeTrades, setLargeTrades] = useState<LargeTrade[]>([]);
+  // TH-FEAT-14: history of polled prints >= EXECUTED_TRADES_FLOOR_USD (per venue+symbol); dots and the Top 10 read it.
+  const [tradeHistory, setTradeHistory] = useState<{ key: string; trades: VenueTrade[] }>({ key: "", trades: [] });
+  const [visibleTimeRange, setVisibleTimeRange] = useState<{ from: number; to: number } | null>(null);
   const [largeTradeNotice, setLargeTradeNotice] = useState<string | null>(null);
   const [wallClock, setWallClock] = useState(() => Date.now());
   const minNotional = useSyncExternalStore(subscribePanePrefs, readLiveMinNotional, () => DEFAULT_MIN_WALL_NOTIONAL_USD);
@@ -552,6 +558,7 @@ export function TradingWorkspace() {
   const [visiblePriceSpan, setVisiblePriceSpan] = useState<PriceSpan | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
+  const largeTrades = useMemo(() => (tradeHistory.key === `${activeVenue}:${symbol}` ? tradeHistory.trades : []), [activeVenue, symbol, tradeHistory]);
   const barCount = useSyncExternalStore(subscribeBarCountPref, readBarCountPref, () => DEFAULT_CHART_BARS);
   const [olderLoading, setOlderLoading] = useState(false);
   // Lazy-load bookkeeping: which feed the loaded candles belong to, and whether it has older bars.
@@ -1079,22 +1086,48 @@ export function TradingWorkspace() {
     if (!showLargeTrades) return;
     let active = true;
     let retryPreferred = true;
-    const load = () => loadLargeTrades(activeVenue, symbol, fetch, { retryPreferred, minNotional })
+    const historyKey = `${activeVenue}:${symbol}`;
+    const load = () => loadLargeTrades(activeVenue, symbol, fetch, { retryPreferred, minNotional: EXECUTED_TRADES_FLOOR_USD })
       .then((result) => {
         retryPreferred = false;
         if (!active) return;
-        setLargeTrades(result.snapshot.trades);
+        const incoming = result.snapshot.trades.map((trade) => ({ ...trade, venue: result.venue }));
+        setTradeHistory((history) => ({ key: historyKey, trades: mergeTradeHistory(history.key === historyKey ? history.trades : [], incoming) }));
         setLargeTradeNotice(result.notice);
       })
       .catch((error) => {
         if (!active) return;
-        setLargeTrades([]);
         setLargeTradeNotice(shortCopy(error instanceof Error ? error.message : LARGE_TRADES_EMPTY, LARGE_TRADES_EMPTY));
       });
     load();
     const timer = window.setInterval(load, 8000);
     return () => { active = false; clearInterval(timer); };
-  }, [activeVenue, minNotional, showLargeTrades, symbol]);
+  }, [activeVenue, showLargeTrades, symbol]);
+
+  // TH-FEAT-14: the Top 10 follows the visible time range (pan/zoom) and live polls.
+  useEffect(() => {
+    if (!showLargeTrades) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const range = chart.timeScale().getVisibleRange();
+      const next = range ? { from: Number(range.from), to: Number(range.to) } : null;
+      setVisibleTimeRange((current) => (current && next && current.from === next.from && current.to === next.to) || (!current && !next) ? current : next);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(read); };
+    read();
+    chart.timeScale().subscribeVisibleTimeRangeChange(schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(schedule);
+    };
+  }, [chartVersion, showLargeTrades]);
+  const topTrades = useMemo(
+    () => topTradesInRange(largeTrades, visibleRangeMs(visibleTimeRange, intervalDurationMs(interval))),
+    [interval, largeTrades, visibleTimeRange],
+  );
 
   useEffect(() => {
     if (!showOiPane) return;
@@ -1586,7 +1619,7 @@ export function TradingWorkspace() {
               showUnfilled={showLargeOrderSr}
               showExecuted={showLargeTrades}
               walls={displayedWalls}
-              trades={largeTrades}
+              trades={topTrades}
               now={wallClock}
               minNotional={minNotional}
               onMinNotional={applyMinNotional}

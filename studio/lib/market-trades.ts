@@ -381,3 +381,86 @@ function assertVenuePayload(venue: MarketVenue, payload: unknown, fallback: stri
     }
   }
 }
+
+// ---- TH-FEAT-14: executed-trades Top 10 over the visible chart range ----
+
+/** Internal floor for executed prints we keep at all (the table has no Min $ buckets any more). */
+export const EXECUTED_TRADES_FLOOR_USD = 25_000;
+export const TOP_TRADES_LIMIT = 10;
+/** Client-side history of fetched prints (per venue+symbol) so the visible range can be ranked, not just the last poll. */
+export const TRADE_HISTORY_CAP = 2_000;
+
+export type VenueTrade = LargeTrade & { venue: MarketVenue };
+
+export type VisibleTimeRangeMs = { fromMs: number; toMs: number };
+
+export type TopTradeEntry = {
+  key: string;
+  side: TradeSide;
+  venue: MarketVenue;
+  notionalLabel: string;
+  qtyLabel: string;
+  priceLabel: string;
+  timeLabel: string;
+  barPct: number;
+};
+
+export function tradeKey(trade: VenueTrade): string {
+  return `${trade.venue}:${trade.time}:${trade.price}:${trade.side}:${trade.size}`;
+}
+
+/** Merge newly polled prints into the history: dedupe, drop anything under the floor, keep the newest `cap`. */
+export function mergeTradeHistory(
+  history: readonly VenueTrade[],
+  incoming: readonly VenueTrade[],
+  cap = TRADE_HISTORY_CAP,
+  floor = EXECUTED_TRADES_FLOOR_USD,
+): VenueTrade[] {
+  const byKey = new Map<string, VenueTrade>();
+  for (const trade of [...history, ...incoming]) {
+    if (!Number.isFinite(trade.notional) || trade.notional < floor) continue;
+    if (!Number.isFinite(trade.time) || !Number.isFinite(trade.price) || !Number.isFinite(trade.size)) continue;
+    byKey.set(tradeKey(trade), trade);
+  }
+  return [...byKey.values()].sort((a, b) => b.time - a.time).slice(0, Math.max(0, cap));
+}
+
+/**
+ * The visible chart range in ms. Bar times are bar opens (seconds); the last visible bar's prints run until
+ * its close, so `toMs` extends by one interval (this also includes live prints in the forming bar).
+ */
+export function visibleRangeMs(range: { from: number; to: number } | null, intervalMs: number): VisibleTimeRangeMs | null {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) return null;
+  const step = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 0;
+  return { fromMs: Math.min(range.from, range.to) * 1000, toMs: Math.max(range.from, range.to) * 1000 + step };
+}
+
+/** Top N prints by USD notional (largest first; ties → newest first), buys and sells mixed, within the range. */
+export function topTradesInRange(
+  trades: readonly VenueTrade[],
+  range: VisibleTimeRangeMs | null,
+  limit = TOP_TRADES_LIMIT,
+): VenueTrade[] {
+  const inRange = range ? trades.filter((t) => t.time >= range.fromMs && t.time < range.toMs) : [...trades];
+  return inRange.sort((a, b) => b.notional - a.notional || b.time - a.time).slice(0, Math.max(0, limit));
+}
+
+function formatQty(size: number): string {
+  const abs = Math.abs(size);
+  const digits = abs >= 1000 ? 0 : abs >= 10 ? 2 : abs >= 1 ? 3 : 4;
+  return size.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: digits });
+}
+
+export function topTradeEntries(trades: readonly VenueTrade[]): TopTradeEntry[] {
+  const bars = relativeNotionalPercents(trades.map((trade) => trade.notional));
+  return trades.map((trade, index) => ({
+    key: tradeKey(trade),
+    side: trade.side,
+    venue: trade.venue,
+    notionalLabel: formatNotionalUsd(trade.notional),
+    qtyLabel: formatQty(trade.size),
+    priceLabel: formatWallPrice(trade.price),
+    timeLabel: formatTradeClock(trade.time),
+    barPct: bars[index] ?? 0,
+  }));
+}

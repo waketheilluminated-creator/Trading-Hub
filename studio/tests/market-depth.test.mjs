@@ -408,16 +408,16 @@ test("workspace keeps unfilled walls on the K-chart with an aged list and a sepa
   assert.match(workspace, /filterWallsForRange/);
   assert.match(workspace, /trackOrderWalls\(previous, result\.snapshot\.walls/);
   assert.match(workspace, /loadLargeOrderWalls\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional \}\)/);
-  assert.match(workspace, /loadLargeTrades\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional \}\)/);
+  assert.match(workspace, /loadLargeTrades\(activeVenue, symbol, fetch, \{ retryPreferred, minNotional: EXECUTED_TRADES_FLOOR_USD \}\)/);
   assert.match(workspace, /getVisibleRange\(\)/);
   assert.match(workspace, /data-large-trades=/);
   assert.match(workspace, /data-large-order-list=/);
   assert.match(dock, /Unfilled ·/);
-  assert.match(dock, /Executed ·/);
+  assert.match(dock, /Top \$?\{tradeRows\.length\} 大额成交/);
   assert.match(dock, /aria-label="Unfilled large orders"/);
-  assert.match(dock, /aria-label="Executed large trades"/);
+  assert.match(dock, /aria-label="Top executed trades in view"/);
   assert.match(dock, /ageLabel/);
-  assert.match(dock, /clockLabel/);
+  assert.match(dock, /timeLabel/);
   assert.match(dock, /showRange=\{showUnfilled\}/);
   const controls = readFileSync(fileURLToPath(new URL("../components/sr-wall-controls.tsx", import.meta.url)), "utf8");
   assert.match(controls, /\$50k/);
@@ -445,7 +445,7 @@ test("workspace keeps unfilled walls on the K-chart with an aged list and a sepa
   assert.match(workspace, /data-large-order-sr/);
   const marketEffect = workspace.slice(workspace.indexOf("loadLargeOrderWalls(activeVenue"), workspace.indexOf("}, [activeVenue, minNotional, showLargeOrderSr, symbol]"));
   assert.doesNotMatch(marketEffect, /setConsoleText|setConsoleKind/);
-  const tradeEffect = workspace.slice(workspace.indexOf("loadLargeTrades(activeVenue"), workspace.indexOf("}, [activeVenue, minNotional, showLargeTrades, symbol]"));
+  const tradeEffect = workspace.slice(workspace.indexOf("loadLargeTrades(activeVenue"), workspace.indexOf("}, [activeVenue, showLargeTrades, symbol]"));
   assert.doesNotMatch(tradeEffect, /setConsoleText|setConsoleKind/);
 });
 

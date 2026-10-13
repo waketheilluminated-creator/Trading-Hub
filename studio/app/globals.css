@@ -488,3 +488,16 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .rail-pair .liq-refresh-button svg { width:14px; height:14px; }
 .wall-zone-tip[data-side="bid"] { border-color:rgba(83,201,144,.75); }
 .wall-zone-tip[data-side="ask"] { border-color:rgba(231,103,112,.75); }
+/* TH-FEAT-14: executed-trades Top 10 (USD · qty · price · time · venue), buys green, sells red */
+.top-trade-row { display:grid; grid-template-columns:minmax(64px,1.2fr) minmax(44px,.9fr) minmax(56px,1fr) 52px 44px; gap:6px; align-items:center; padding:3px 0; font:10px var(--font-geist-mono); }
+.top-trade-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; }
+.top-trade-row > span:first-child { text-align:left; }
+.top-trade-head { color:#748094; text-transform:uppercase; letter-spacing:.04em; font-size:9px; border-bottom:1px solid #27313f; }
+.top-trade-row.buy { color:#53c990; }
+.top-trade-row.sell { color:#e76770; }
+.top-trade-row .top-trade-time, .top-trade-row .top-trade-venue { color:#9aa6b8; }
+.top-trade-notional .large-order-bar { display:block; margin-top:2px; }
+.top-trade-row.buy .large-order-bar > span { background:#53c990; }
+.top-trade-row.sell .large-order-bar > span { background:#e76770; }
+.large-order-list:has([data-top-trades]) { width:340px; }
+.top-trade-row { grid-template-columns:minmax(62px,1.2fr) minmax(40px,.8fr) minmax(58px,1fr) 52px 48px; }
