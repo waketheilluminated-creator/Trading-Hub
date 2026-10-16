@@ -690,3 +690,49 @@ html.theme-light .top-trade-row.buy .large-order-bar > span {
 html.theme-light .top-trade-row.sell .large-order-bar > span {
     background: #8f1e26
 }
+html.theme-light .alert-dialog-backdrop {
+    background: rgba(247, 248, 249, 0.55)
+}
+html.theme-light .alert-dialog {
+    border: 1px solid #d0d6de;
+    background: #edf0f3;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.203)
+}
+html.theme-light .alert-field input, html.theme-light .alert-field select, html.theme-light .alert-field textarea {
+    background: #f1f3f5
+}
+html.theme-light .alert-segment button.active {
+    color: #f3f7f5
+}
+html.theme-light .alert-error {
+    border: 1px solid rgba(150, 23, 29, 0.6);
+    color: #8a232c;
+    background: rgba(242, 236, 237, 0.9)
+}
+html.theme-light .alert-manager .alert-tabs button.active {
+    border-color: rgba(32, 141, 77, 0.45);
+    background: rgba(32, 141, 77, 0.08)
+}
+html.theme-light .alert-log-row {
+    border-bottom: 1px solid rgba(225, 228, 234, 0.65)
+}
+html.theme-light .alert-log-row p {
+    color: #1e222b
+}
+html.theme-light .alert-toast {
+    border: 1px solid rgba(32, 141, 77, 0.6);
+    background: rgba(241, 245, 243, 0.97);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.158)
+}
+html.theme-light .alert-toast p {
+    color: #1e222b
+}
+html.theme-light .settings-card {
+    background: #eff1f4
+}
+html.theme-light .settings-row input {
+    background: #f1f3f5
+}
+html.theme-light .settings-path {
+    background: #f1f3f6
+}

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 
-export type DeskSection = "ETF Flows" | "CVD / OI" | "Net Flow";
+export type DeskSection = "ETF Flows" | "CVD / OI" | "Net Flow" | "Settings";
 
 const PAGES: { href: string; label: string; section: DeskSection; ariaLabel?: string }[] = [
   { href: "/etf-flows", label: "ETF Flows", section: "ETF Flows" },
   { href: "/cvd-oi", label: "CVD / OI", section: "CVD / OI" },
   { href: "/cex-netflow", label: "Net Flow", section: "Net Flow", ariaLabel: "Exchange Net Flow Pulse (proxy)" },
+  { href: "/settings", label: "Settings", section: "Settings" },
 ];
 
 export function DeskHeader({ section }: { section: DeskSection }) {

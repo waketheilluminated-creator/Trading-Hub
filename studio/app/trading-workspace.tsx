@@ -112,6 +112,8 @@ import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { LargeOrderDock } from "@/components/large-order-dock";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
+import { AlertDialog } from "@/components/alert-dialog";
+import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
 import { savePineSource, usePineSource } from "./pine-source";
 
 type Candle = CandlestickData<Time> & { volume?: number };
@@ -567,10 +569,8 @@ export function TradingWorkspace() {
   const feedTokenRef = useRef(0);
   const [marketStatus, setMarketStatus] = useState<MarketFeedStatus>({ phase: "loading", notice: null, error: null });
   const [derivativesExchange, setDerivativesExchange] = useState<MarketVenue>("bybit");
-  const [alerts, setAlerts] = useState<{ id: number; direction: "above" | "below"; price: number; triggered: boolean }[]>([]);
   const [showAlertForm, setShowAlertForm] = useState(false);
-  const [alertDirection, setAlertDirection] = useState<"above" | "below">("above");
-  const [alertPrice, setAlertPrice] = useState("");
+  const alertFeed = useAlertFeed();
   const [pinePlots, setPinePlots] = useState<PinePlot[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
@@ -1338,19 +1338,6 @@ export function TradingWorkspace() {
     return () => { active = false; clearInterval(timer); };
   }, [symbol, interval, derivativesExchange]);
 
-  useEffect(() => {
-    const price = last?.close;
-    if (!price) return;
-    const timer = window.setTimeout(() => setAlerts((items) => items.map((alert) => {
-        if (alert.triggered) return alert;
-        const hit = alert.direction === "above" ? price >= alert.price : price <= alert.price;
-        if (hit && "Notification" in window && Notification.permission === "granted") {
-          new Notification(`${symbol} price alert`, { body: `${formatPrice(price)} crossed ${alert.direction} ${formatPrice(alert.price)}` });
-        }
-        return hit ? { ...alert, triggered: true } : alert;
-      })), 0);
-    return () => clearTimeout(timer);
-  }, [last?.close, symbol]);
 
   const runPine = useCallback(async () => {
     setRunning(true);
@@ -1527,12 +1514,7 @@ export function TradingWorkspace() {
     clearDrawingTextEntry();
   };
 
-  const createAlert = () => {
-    const price = Number(alertPrice); if (!Number.isFinite(price)) return;
-    setAlerts((items) => [...items, { id: Date.now(), direction: alertDirection, price, triggered: false }]);
-    setAlertPrice(""); setShowAlertForm(false);
-    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
-  };
+
 
   const startPanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1579,7 +1561,7 @@ export function TradingWorkspace() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">TH</span><span>Trading Hub</span><small>crypto workspace</small></div>
         <button className="market-switcher" aria-label="Search symbols (Cmd/Ctrl+K)" title="Search symbols (Cmd/Ctrl+K)" onClick={() => setSymbolSearchOpen(true)}><span className="coin-badge">{symbol === "BTCUSDT" ? "₿" : symbol.slice(0, 1)}</span><span className="market-copy"><strong>{symbol.replace("USDT", " / USDT")}</strong><span>Perpetual · {venueLabel(chartVenue)}</span></span><span className="market-chevron">⌄</span></button>
-        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link prefetch={false} className="desk-link" href="/etf-flows">ETF Flows</Link><Link prefetch={false} className="desk-link" href="/cvd-oi">CVD / OI</Link><Link prefetch={false} className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-pressed={theme === "light"} data-theme-current={theme} onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}><ThemeIcon theme={theme} /></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
+        <div className="top-actions"><nav className="desk-nav" aria-label="Data pages"><Link prefetch={false} className="desk-link" href="/etf-flows">ETF Flows</Link><Link prefetch={false} className="desk-link" href="/cvd-oi">CVD / OI</Link><Link prefetch={false} className="desk-link" href="/cex-netflow" aria-label="Exchange Net Flow Pulse (proxy)">Net Flow</Link><Link prefetch={false} className="desk-link" href="/settings">Settings</Link></nav><button className="ai-button" onClick={() => setAiOpen(true)}><span>✦</span> AI Analyst <em>BYOK</em></button><button type="button" className="theme-toggle" aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} aria-pressed={theme === "light"} data-theme-current={theme} onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}><ThemeIcon theme={theme} /></button><button type="button" className={`side-panel-toggle${sidePanelCollapsed ? " collapsed" : ""}`} aria-label={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} title={sidePanelCollapsed ? "Expand right panel" : "Collapse right panel"} aria-expanded={!sidePanelCollapsed} aria-controls="th-right-panel" onClick={toggleSidePanel}><PanelRightIcon collapsed={sidePanelCollapsed} /></button></div>
       </header>
 
       <section className={`workspace${sidePanelCollapsed ? " side-collapsed" : ""}`} style={{ ["--side-panel-width" as string]: `${sidePanelCollapsed ? 0 : sidePanelWidth}px` }}>
@@ -1632,6 +1614,7 @@ export function TradingWorkspace() {
             {showLargeOrderSr && <div ref={wallTipRef} className="liq-heatmap-tip wall-zone-tip" role="tooltip" data-wall-zone-tip hidden />}
             {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
             {liqRefreshing === symbol && <div className="liq-refresh-status" role="status" data-liq-refreshing>刷新清算中… (10–60 s)</div>}
+            <AlertToasts toasts={alertFeed.toasts} onDismiss={alertFeed.dismiss} />
             {liqToast && <div className="liq-refresh-toast" role="alert" data-liq-refresh-error><span>{liqToast}</span><button type="button" aria-label="Dismiss" onClick={() => setLiqToast(null)}>×</button></div>}
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
               <label><span>Chart label</span>
@@ -1726,13 +1709,12 @@ export function TradingWorkspace() {
             {cvd?.notice ? <p className="force-read muted">{shortCopy(cvd.notice)}</p> : null}
             <div className="data-source"><span>CVD from public trades</span><code>{venueLabel(cvd?.venue || derivativesExchange)} · {INTERVALS.find((item) => item.value === interval)?.label}</code></div>
           </SideSection>
-          <SideSection title="Alerts" storageKey={ALERTS_SECTION_KEY} badge={alerts.length ? alerts.length : null}>
-            {alerts.length === 0 && <div style={{ color: "var(--faint)", fontSize: 10, lineHeight: 1.5 }}>No active alerts for this market.</div>}
-            {alerts.map((alert) => <div className="alert-row" key={alert.id}><div className="alert-copy"><strong>{symbol} {alert.direction} {formatPrice(alert.price)}</strong><span className={alert.triggered ? "positive" : ""}>{alert.triggered ? "Triggered" : "Watching live price"}</span></div><button className="tool-button" style={{ width: 25, height: 25 }} onClick={() => setAlerts((items) => items.filter((item) => item.id !== alert.id))}>×</button></div>)}
-            {showAlertForm ? <div className="alert-form"><select value={alertDirection} onChange={(e) => setAlertDirection(e.target.value as "above" | "below")}><option value="above">Crosses above</option><option value="below">Crosses below</option></select><input aria-label="Alert price" inputMode="decimal" placeholder={last ? formatPrice(last.close) : "Price"} value={alertPrice} onChange={(e) => setAlertPrice(e.target.value)} /><button onClick={createAlert}>Create price alert</button></div> : <button className="add-alert" onClick={() => setShowAlertForm(true)}>＋ Create alert</button>}
+          <SideSection title="Alerts" storageKey={ALERTS_SECTION_KEY} badge={alertFeed.alerts.filter((a) => a.status === "active").length || null}>
+            <AlertManager feed={alertFeed} onCreate={() => setShowAlertForm(true)} />
           </SideSection>
         </aside>
       </section>
+      <AlertDialog open={showAlertForm} symbol={symbol} venue={chartVenue} interval={interval} lastPrice={last?.close ?? null} onClose={() => setShowAlertForm(false)} onCreated={() => void alertFeed.refresh()} />
       <SymbolSearchDialog
         open={symbolSearchOpen}
         sourcesOpen={sourcesSheetOpen}
