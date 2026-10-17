@@ -193,6 +193,15 @@ html.theme-light .indicator-remove {
     color: #38414c;
     background: #e7e9ee
 }
+html.theme-light .liq-zone-bell {
+    border: 1px solid #d6dbe2;
+    background: #e7e9ee;
+    color: #38414c
+}
+html.theme-light .liq-zone-bell.active {
+    border-color: #e0ad0a;
+    background: rgba(224, 173, 10, 0.14)
+}
 html.theme-light .indicator-remove:hover {
     background: #d6dbe2
 }

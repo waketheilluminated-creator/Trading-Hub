@@ -4,6 +4,7 @@ import { createAlertStore, type Db } from "./store.ts";
 import { sendMail } from "./smtp.ts";
 import { alertsEnvPath, resolveSmtp } from "./secrets.ts";
 import { fetchVenueKlines } from "../market-rest.ts";
+import { createZoneSource } from "./zone-source.ts";
 
 export type AlertsRuntime = { engine: AlertEngine; running: boolean };
 
@@ -34,6 +35,7 @@ export function alertsRuntime(): Promise<AlertsRuntime> {
       hash: (text) => crypto.createHash("sha256").update(`tradinghub-verify:${text}`).digest("hex"),
       safeEqual: (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)),
       log: (message) => console.warn(message),
+      loadZones: createZoneSource(process.env, (p) => fs.readFile(p, "utf8")),
     });
     const running = process.env.ALERTS_ENGINE === "1";
     if (running) {
