@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ALERT_FREQUENCIES, ALERT_OPERATORS, DEFAULT_EXPIRY_MS, PLACEHOLDERS, defaultAlertMessage, type AlertFrequency, type AlertOperator } from "@/lib/alerts/core.ts";
 import { FREQUENCY_LABELS, OPERATOR_LABELS, alertsApi, toLocalInput, type SettingsResponse } from "@/lib/alerts/client.ts";
+import { formatAlertPrefill } from "@/lib/price-precision.ts";
 import { venueLabel, type ChartInterval, type MarketVenue } from "@/lib/market-venues.ts";
 
 type Props = {
@@ -12,19 +13,21 @@ type Props = {
   venue: MarketVenue;
   interval: ChartInterval;
   lastPrice: number | null;
+  /** TH-BUG-04: price decimals from the instrument tick size (same as the chart axis). */
+  precision?: number | null;
   onClose: () => void;
   onCreated: () => void;
 };
 
 /** TradingView-style "Create alert" dialog: condition → level → trigger → expiration → name/message → notifications. */
-export function AlertDialog({ open, symbol, venue, interval, lastPrice, onClose, onCreated }: Props) {
+export function AlertDialog({ open, symbol, venue, interval, lastPrice, precision = null, onClose, onCreated }: Props) {
   if (!open) return null;
-  return <AlertDialogBody key={`${symbol}:${venue}:${interval}`} symbol={symbol} venue={venue} interval={interval} lastPrice={lastPrice} onClose={onClose} onCreated={onCreated} />;
+  return <AlertDialogBody key={`${symbol}:${venue}:${interval}`} symbol={symbol} venue={venue} interval={interval} lastPrice={lastPrice} precision={precision} onClose={onClose} onCreated={onCreated} />;
 }
 
-function AlertDialogBody({ symbol, venue, interval, lastPrice, onClose, onCreated }: Omit<Props, "open">) {
+function AlertDialogBody({ symbol, venue, interval, lastPrice, precision = null, onClose, onCreated }: Omit<Props, "open">) {
   const [operator, setOperator] = useState<AlertOperator>("crossing");
-  const [level, setLevel] = useState(lastPrice ? String(lastPrice) : "");
+  const [level, setLevel] = useState(formatAlertPrefill(lastPrice, precision));
   const [frequency, setFrequency] = useState<AlertFrequency>("once");
   const [expiry, setExpiry] = useState(() => toLocalInput(Date.now() + DEFAULT_EXPIRY_MS));
   const [openEnded, setOpenEnded] = useState(false);
@@ -89,7 +92,7 @@ function AlertDialogBody({ symbol, venue, interval, lastPrice, onClose, onCreate
             <div className="alert-field-row"><span className="alert-chip">{symbol} · {venueLabel(venue)} · {interval}</span>
               <select aria-label="Condition" value={operator} onChange={(e) => setOperator(e.target.value as AlertOperator)}>{ALERT_OPERATORS.map((op) => <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>)}</select></div>
           </label>
-          <label className="alert-field"><span>Value</span><input aria-label="Alert price" inputMode="decimal" ref={levelRef} value={level} onChange={(e) => setLevel(e.target.value)} placeholder={lastPrice ? String(lastPrice) : "Price"} /></label>
+          <label className="alert-field"><span>Value</span><input aria-label="Alert price" inputMode="decimal" ref={levelRef} value={level} onChange={(e) => setLevel(e.target.value)} placeholder={lastPrice ? formatAlertPrefill(lastPrice, precision) : "Price"} /></label>
           <div className="alert-field"><span>Trigger</span>
             <div className="alert-segment" role="radiogroup" aria-label="Trigger">{ALERT_FREQUENCIES.map((f) => <button type="button" role="radio" aria-checked={frequency === f} key={f} className={frequency === f ? "active" : ""} onClick={() => setFrequency(f)}>{FREQUENCY_LABELS[f]}</button>)}</div>
           </div>

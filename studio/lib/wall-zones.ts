@@ -80,8 +80,10 @@ export function findWallZoneAt(zones: readonly WallZone[], price: number, tolera
   return best;
 }
 
-export function formatWallZoneTooltip(zone: WallZone): string {
+export function formatWallZoneTooltip(zone: WallZone, decimals: number | null = null): string {
   const side = zone.side === "bid" ? "Bid wall 买墙" : "Ask wall 卖墙";
-  const range = zone.lo === zone.hi ? formatWallPrice(zone.lo) : `${formatWallPrice(zone.lo)}–${formatWallPrice(zone.hi)}`;
+  // TH-BUG-04: same precision as the price axis when known.
+  const fmt = (v: number) => (decimals != null && Number.isInteger(decimals) && decimals >= 0 && decimals <= 10 ? v.toFixed(decimals) : formatWallPrice(v));
+  const range = zone.lo === zone.hi ? fmt(zone.lo) : `${fmt(zone.lo)}–${fmt(zone.hi)}`;
   return `${side} · ${formatNotionalUsd(zone.notional)} · ${range} · ${zone.count} wall${zone.count === 1 ? "" : "s"}`;
 }

@@ -68,5 +68,5 @@ test("wiring: primitive draws zone boxes on top from the latest candle, throttle
   assert.doesNotMatch(primitive, /drawWallBand|drawWallEdges/, "old full-width horizontal bands are gone");
   assert.match(workspace, /const wallAnchorTime = candles\.at\(-1\)\?\.time \?\? null;/);
   assert.match(workspace, /setWalls\(showLargeOrderSr \? displayedWalls : \[\], wallAnchorTime\)/);
-  assert.match(workspace, /formatWallZoneTooltip\(zone\)/);
+  assert.match(workspace, /formatWallZoneTooltip\(zone, liqDecimalsRef\.current\)/);
 });
