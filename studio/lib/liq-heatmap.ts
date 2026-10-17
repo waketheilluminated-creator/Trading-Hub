@@ -404,7 +404,21 @@ export function liqZoneColors(role: LiqZoneRole): { fill: string; edge: string; 
   return { fill: `rgba(${rgb}, 0.2)`, edge: `rgba(${rgb}, 0.9)`, text: `rgba(${rgb}, 1)` };
 }
 
-export type PlacedLiqZone = { zone: LiqZone; left: number; top: number; width: number; height: number } & ReturnType<typeof liqZoneColors>;
+/**
+ * Zone box border by risk: 高 (high) = fill only, no border; 极高 (extreme) = fill + 2px border in the solid side colour.
+ * Same in live and replay, both themes.
+ */
+export const LIQ_ZONE_BORDER_PX: Record<LiqZoneRisk, number> = { 高: 0, 极高: 2 };
+export function liqZoneBorderWidth(risk: LiqZoneRisk): number {
+  return LIQ_ZONE_BORDER_PX[risk] ?? 0;
+}
+export function liqZoneBorderColor(role: LiqZoneRole): string {
+  return `rgb(${role === "support" ? LIQ_SUPPORT_RGB : LIQ_RESISTANCE_RGB})`;
+}
+export const LIQ_LEGEND_RISK_HIGH = "高：仅填充";
+export const LIQ_LEGEND_RISK_EXTREME = "极高：填充 + 边框";
+
+export type PlacedLiqZone = { zone: LiqZone; left: number; top: number; width: number; height: number; borderWidth: number } & ReturnType<typeof liqZoneColors>;
 
 /** Boxes start at the latest bar's x and extend to the pane's right edge only — no historical segment. */
 /**
@@ -434,7 +448,7 @@ export function placeLiqZones(
     if (yLo == null || yHi == null || !Number.isFinite(yLo) || !Number.isFinite(yHi)) continue;
     const top = Math.min(yLo, yHi);
     const height = Math.max(1, Math.abs(yHi - yLo));
-    placed.push({ zone, left, top, width, height, ...liqZoneColors(zone.role) });
+    placed.push({ zone, left, top, width, height, ...liqZoneColors(zone.role), edge: liqZoneBorderColor(zone.role), borderWidth: liqZoneBorderWidth(zone.risk_max) });
   }
   return placed.sort((a, b) => a.zone.liq_m - b.zone.liq_m);
 }

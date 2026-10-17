@@ -238,12 +238,16 @@ function drawAnchorMarker(context: CanvasRenderingContext2D, x: number, height: 
   context.restore();
 }
 
-function drawLiqZone(context: CanvasRenderingContext2D, zone: PlacedLiqZone): void {
+export function drawLiqZone(context: CanvasRenderingContext2D, zone: PlacedLiqZone): void {
   context.fillStyle = zone.fill;
   context.fillRect(zone.left, zone.top, zone.width, zone.height);
-  context.strokeStyle = zone.edge;
-  context.lineWidth = 1;
-  context.strokeRect(Math.round(zone.left) + 0.5, Math.round(zone.top) + 0.5, Math.max(0, Math.round(zone.width) - 1), Math.max(1, Math.round(zone.height) - 1));
+  if (zone.borderWidth > 0) {
+    // Extreme zones: border drawn inside the box so it never bleeds past lo/hi.
+    const w = zone.borderWidth;
+    context.strokeStyle = zone.edge;
+    context.lineWidth = w;
+    context.strokeRect(Math.round(zone.left) + w / 2, Math.round(zone.top) + w / 2, Math.max(0, Math.round(zone.width) - w), Math.max(1, Math.round(zone.height) - w));
+  }
   // Label: liq_m · risk_max · dist_pct, inside the box when tall enough, otherwise just above it.
   const label = formatLiqZoneLabel(zone.zone);
   context.font = "600 10px ui-monospace, SFMono-Regular, Menlo, monospace";
