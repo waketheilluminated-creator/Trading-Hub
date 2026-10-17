@@ -119,6 +119,7 @@ import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol
 import { AlertDialog } from "@/components/alert-dialog";
 import { formatPriceWithPrecision, historyRetryDelayMs, inferTickFromCandles, precisionFromTick, priceFormatForTick, roundToTick } from "@/lib/price-precision.ts";
 import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
+import { ZONE_ALERT_LABEL, alertsApi } from "@/lib/alerts/client.ts";
 import { savePineSource, usePineSource } from "./pine-source";
 
 type Candle = CandlestickData<Time> & { volume?: number };
@@ -572,6 +573,23 @@ export function TradingWorkspace() {
   const [derivativesExchange, setDerivativesExchange] = useState<MarketVenue>("bybit");
   const [showAlertForm, setShowAlertForm] = useState(false);
   const alertFeed = useAlertFeed();
+  // TH-FEAT-16: one server-side zone alert group per symbol + venue.
+  const refreshAlerts = alertFeed.refresh;
+  const zoneAlertsOn = alertFeed.zoneGroups.some((g) => g.symbol === symbol && g.venue === chartVenue);
+  const [zoneAlertBusy, setZoneAlertBusy] = useState(false);
+  const [zoneAlertError, setZoneAlertError] = useState<string | null>(null);
+  const toggleZoneAlerts = useCallback(async () => {
+    setZoneAlertBusy(true);
+    try {
+      await alertsApi.zones(zoneAlertsOn ? "disable" : "enable", symbol, chartVenue);
+      setZoneAlertError(null);
+      await refreshAlerts();
+    } catch (error) {
+      setZoneAlertError(error instanceof Error ? error.message : "Zone alerts unavailable");
+    } finally {
+      setZoneAlertBusy(false);
+    }
+  }, [refreshAlerts, chartVenue, symbol, zoneAlertsOn]);
   const [pinePlots, setPinePlots] = useState<PinePlot[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
@@ -1629,7 +1647,7 @@ export function TradingWorkspace() {
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price" data-price-precision={pricePrecision ?? ""}>{fmtPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {fmtPrice(last?.high ?? null)}</span><span>L {fmtPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}{liqZones.length > 0 && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}

@@ -4,6 +4,7 @@
  * Tables: alerts, alert_log, outbox (UNIQUE dedupe_key), settings.
  */
 import type { AlertRecord, AlertStatus } from "./core.ts";
+import type { ZoneGroup, ZoneState } from "./zones.ts";
 
 type Statement = { run(...args: unknown[]): { changes: number | bigint }; get(...args: unknown[]): unknown; all(...args: unknown[]): unknown[] };
 export type Db = { exec(sql: string): void; prepare(sql: string): Statement; close(): void };
@@ -30,6 +31,11 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 CREATE INDEX IF NOT EXISTS outbox_due ON outbox(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS zone_alerts (
+  id TEXT PRIMARY KEY, symbol TEXT NOT NULL, venue TEXT NOT NULL, created_at INTEGER NOT NULL, as_of TEXT,
+  synced_at INTEGER NOT NULL, zones_json TEXT NOT NULL, fired_count INTEGER NOT NULL DEFAULT 0, last_fired_at INTEGER,
+  UNIQUE(symbol, venue)
+);
 `;
 
 type AlertRow = {
@@ -45,6 +51,14 @@ function toRecord(row: AlertRow): AlertRecord {
     expiresAt: row.expires_at, message: row.message, status: row.status as AlertStatus, createdAt: row.created_at,
     firedCount: row.fired_count, lastFiredAt: row.last_fired_at, lastFiredBar: row.last_fired_bar, prevPrice: row.prev_price, lastClosedBar: row.last_closed_bar,
   };
+}
+
+type ZoneRow = { id: string; symbol: string; venue: string; created_at: number; as_of: string | null; synced_at: number; zones_json: string; fired_count: number; last_fired_at: number | null };
+
+function toZoneGroup(row: ZoneRow): ZoneGroup {
+  let zones: ZoneState[] = [];
+  try { const parsed: unknown = JSON.parse(row.zones_json); if (Array.isArray(parsed)) zones = parsed as ZoneState[]; } catch { zones = []; }
+  return { id: row.id, symbol: row.symbol, venue: row.venue as ZoneGroup["venue"], createdAt: row.created_at, asOf: row.as_of, syncedAt: row.synced_at, zones, firedCount: row.fired_count, lastFiredAt: row.last_fired_at };
 }
 
 export type LogEntry = { id: number; alertId: string; alertName: string; symbol: string; firedAt: number; barTime: number; price: number; message: string; emailStatus: string };
@@ -77,6 +91,12 @@ export function createAlertStore(db: Db) {
     sentSince: db.prepare(`SELECT COUNT(*) AS n FROM outbox WHERE (status='sent' AND sent_at >= ?) OR status='sending'`),
     resetSending: db.prepare(`UPDATE outbox SET status='pending' WHERE status='sending'`),
     getSetting: db.prepare(`SELECT value FROM settings WHERE key=?`),
+    zoneInsert: db.prepare(`INSERT OR IGNORE INTO zone_alerts (id,symbol,venue,created_at,as_of,synced_at,zones_json,fired_count,last_fired_at) VALUES (?,?,?,?,?,?,?,?,?)`),
+    zoneUpdate: db.prepare(`UPDATE zone_alerts SET as_of=?, synced_at=?, zones_json=?, fired_count=?, last_fired_at=? WHERE id=?`),
+    zoneList: db.prepare(`SELECT * FROM zone_alerts ORDER BY created_at DESC`),
+    zoneFind: db.prepare(`SELECT * FROM zone_alerts WHERE symbol=? AND venue=?`),
+    zoneRemove: db.prepare(`DELETE FROM zone_alerts WHERE id=?`),
+    zoneCount: db.prepare(`SELECT COUNT(*) AS n FROM zone_alerts`),
     setSetting: db.prepare(`INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`),
   };
   // A crash mid-send leaves rows in 'sending'; requeue them (dedupe_key keeps it to one message per fire).
@@ -126,6 +146,13 @@ export function createAlertStore(db: Db) {
       try { return { ...base, ...(JSON.parse(raw.value) as Partial<NotifySettings>) }; } catch { return base; }
     },
     setSettings: (s: NotifySettings) => { q.setSetting.run("notify", JSON.stringify(s)); },
+    // ---- TH-FEAT-16 zone alert groups ----
+    insertZoneGroup: (g: ZoneGroup): boolean => Number(q.zoneInsert.run(g.id, g.symbol, g.venue, g.createdAt, g.asOf, g.syncedAt, JSON.stringify(g.zones), g.firedCount, g.lastFiredAt).changes) > 0,
+    saveZoneGroup: (g: ZoneGroup) => { q.zoneUpdate.run(g.asOf, g.syncedAt, JSON.stringify(g.zones), g.firedCount, g.lastFiredAt, g.id); },
+    listZoneGroups: (): ZoneGroup[] => (q.zoneList.all() as ZoneRow[]).map(toZoneGroup),
+    findZoneGroup: (symbol: string, venue: string): ZoneGroup | null => { const row = q.zoneFind.get(symbol, venue) as ZoneRow | undefined; return row ? toZoneGroup(row) : null; },
+    deleteZoneGroup: (id: string): boolean => Number(q.zoneRemove.run(id).changes) > 0,
+    countZoneGroups: (): number => Number((q.zoneCount.get() as { n: number }).n),
     close: () => db.close(),
   };
 }

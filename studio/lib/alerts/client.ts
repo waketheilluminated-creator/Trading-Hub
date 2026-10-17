@@ -5,6 +5,13 @@ export type AlertLogEntry = { id: number; alertId: string; alertName: string; sy
 export type NotifySettingsView = { email: string | null; verified: boolean; codePending: boolean; lastTestAt: number | null };
 export type SettingsResponse = { settings: NotifySettingsView; smtpConfigured: boolean; smtpReason: string | null; envPath: string };
 
+export type ZoneGroupView = {
+  id: string; symbol: string; venue: string; createdAt: number; asOf: string | null; firedCount: number; lastFiredAt: number | null;
+  zones: { role: "support" | "resistance"; lo: number; hi: number; liqM: number; armed: boolean; phase: string | null; firedCount: number; test: boolean }[];
+};
+/** TH-FEAT-16 bell toggle label in the liq legend. */
+export const ZONE_ALERT_LABEL = "价格触及支撑/阻力区时提醒";
+
 export const OPERATOR_LABELS: Record<AlertOperator, string> = {
   crossing: "Crossing",
   crossing_up: "Crossing Up",
@@ -35,7 +42,8 @@ async function call<T>(path: string, init?: { method?: "GET" | "POST"; body?: un
 }
 
 export const alertsApi = {
-  list: () => call<{ alerts: AlertRecord[]; engineRunning: boolean }>("/api/alerts"),
+  list: () => call<{ alerts: AlertRecord[]; zoneGroups?: ZoneGroupView[]; engineRunning: boolean }>("/api/alerts"),
+  zones: (action: "enable" | "disable", symbol: string, venue: string) => call<{ zoneGroup?: ZoneGroupView; deleted?: string }>("/api/alerts/zones", { method: "POST", body: { action, symbol, venue } }),
   create: (input: Record<string, unknown>) => call<{ alert: AlertRecord }>("/api/alerts", { method: "POST", body: input }),
   action: (id: string, action: "pause" | "resume" | "delete") => call<{ alert?: AlertRecord }>("/api/alerts/action", { method: "POST", body: { id, action } }),
   log: (after = 0, limit = 100) => call<{ log: AlertLogEntry[] }>(`/api/alerts/log?after=${after}&limit=${limit}`),

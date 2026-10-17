@@ -37,3 +37,13 @@ Plaintext SMTP is only allowed to loopback, and credentials are never sent over 
 ## API (localhost + same-origin only; mutations are JSON POST ≤ 8 KB)
 `GET/POST /api/alerts`, `POST /api/alerts/action {id, action: pause|resume|delete}`, `GET /api/alerts/log?after=`,
 `GET/POST /api/alerts/settings {action: set|send-test|verify|clear}`, `GET /api/alerts/engine`.
+
+## Liquidation-zone alerts (TH-FEAT-16)
+
+Bell toggle 🔔 in the liquidation legend: 「价格触及支撑/阻力区时提醒」. One server-side group per symbol + venue
+(`POST /api/alerts/zones {action: "enable"|"disable", symbol, venue}`, same localhost/same-origin/JSON guard as the rest of `/api/alerts`).
+
+- Zones come from the same sanitized snapshot the chart shows (a 刷新清算 refresh wins over the bundled fixture) and are re-synced on every engine poll (5 s): unchanged zones (same role/lo/hi) keep their state, new zones start unarmed.
+- Fires when the 1m live price enters any zone [lo, hi] (or jumps through it between polls). If price is already inside when the group is created or the zone appears, nothing fires until price has left by more than 0.1 % and comes back.
+- Once per entry, re-arms after exit + 0.1 % buffer, at most one fire per minute per zone. Delivery = log/toast + email to the verified address, sharing the hourly cap and dedupe (`zone:<group>:<zone>:<minute>`).
+- Live testing only: the operator may set `ALERTS_TEST_ZONES_FILE` to a JSON file `{ "symbol": "BTCUSDT", "zones": [{ "role": "support", "lo": 1, "hi": 2, "liq_m": 0 }] }`; those zones are labeled `[TEST ZONE]`. Never set it in normal use; clients cannot inject zones.

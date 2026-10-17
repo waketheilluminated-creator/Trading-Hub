@@ -11,7 +11,13 @@ import {
 import type { AlertStore, LogEntry, NotifySettings } from "./store.ts";
 import type { MailMessage, SmtpConfig } from "./smtp.ts";
 import type { SmtpResolution } from "./secrets.ts";
-import type { ChartInterval, MarketCandle, MarketVenue } from "../market-venues.ts";
+import { isMarketVenue, type ChartInterval, type MarketCandle, type MarketVenue } from "../market-venues.ts";
+import {
+  MAX_ZONE_GROUPS, evaluateZone, syncZoneStates, validateZoneAction, zoneFireMessage, type ZoneGroup, type ZoneSpec,
+} from "./zones.ts";
+
+/** TH-FEAT-16: current liquidation zones for a symbol (estimator snapshot + optional operator test fixture). */
+export type ZoneSource = (symbol: string) => Promise<{ asOf: string | null; zones: ZoneSpec[]; decimals: number | null } | null>;
 
 export const VERIFY_CODE_TTL_MS = 15 * 60_000;
 export const VERIFY_MAX_ATTEMPTS = 5;
@@ -30,6 +36,7 @@ export type EngineDeps = {
   safeEqual: (a: string, b: string) => boolean;
   log?: (message: string) => void;
   envPath: string;
+  loadZones?: ZoneSource;
 };
 
 export type ServiceResult = { status: number; body: Record<string, unknown> };
@@ -89,19 +96,61 @@ export function createAlertEngine(deps: EngineDeps) {
     return next;
   }
 
+  function recipientNow(): string | null {
+    const settings = store.getSettings();
+    return settings.verified && settings.email ? settings.email : null;
+  }
+
+  async function processZoneGroup(group: ZoneGroup, candle: MarketCandle, now: number): Promise<number> {
+    let next: ZoneGroup = group;
+    // Auto-sync on every poll: 刷新清算 / a new asOf replaces the zone list; unchanged zones keep their state.
+    const loaded = deps.loadZones ? await deps.loadZones(group.symbol).catch(() => null) : null;
+    if (loaded) next = { ...next, asOf: loaded.asOf, syncedAt: now, zones: syncZoneStates(next.zones, loaded.zones) };
+    const decimals = loaded?.decimals ?? null;
+    let fired = 0;
+    const zones = [];
+    for (const zone of next.zones) {
+      const result = evaluateZone(zone, candle.close, now);
+      zones.push(result.next);
+      if (!result.fire) continue;
+      const text = zoneFireMessage(group.symbol, group.venue, result.fire, decimals);
+      const key = `zone:${group.id}:${zone.key}:${Math.floor(now / 60_000)}`;
+      const recipient = recipientNow();
+      const logId = store.appendLog({
+        alertId: group.id, alertName: text.title, symbol: group.symbol, firedAt: now, barTime: candle.time,
+        price: candle.close, message: text.message, emailStatus: recipient ? "queued" : "no-recipient",
+      }, key);
+      if (logId == null) continue;
+      fired += 1;
+      if (recipient) {
+        const body = `${text.message}\n\nZone ${zone.role} ${zone.lo}–${zone.hi} · liq $${zone.liqM}M\nPrice: ${candle.close}\nZones as of: ${next.asOf ?? "n/a"}\nTime: ${new Date(now).toISOString()}`;
+        const html = `<div style="font-family:system-ui,sans-serif"><p style="font-size:15px">${escapeHtml(text.message)}</p>`
+          + `<p style="color:#555;font-size:13px">Zones as of ${escapeHtml(next.asOf ?? "n/a")}<br>${escapeHtml(new Date(now).toISOString())}</p></div>`;
+        store.enqueueEmail("alert", key, logId, recipient, text.subject, body, html, now);
+      }
+    }
+    next = { ...next, zones, firedCount: next.firedCount + fired, lastFiredAt: fired ? now : next.lastFiredAt };
+    store.saveZoneGroup(next);
+    return fired;
+  }
+
   async function tick(): Promise<{ evaluated: number; fired: number }> {
     if (ticking) return { evaluated: 0, fired: 0 };
     ticking = true;
     let evaluated = 0;
     let fired = 0;
     try {
-      const groups = new Map<string, AlertRecord[]>();
-      for (const alert of store.activeAlerts()) {
-        const key = `${alert.venue}:${alert.symbol}:${alert.interval}`;
-        groups.set(key, [...(groups.get(key) ?? []), alert]);
-      }
-      for (const alerts of groups.values()) {
-        const { venue, symbol, interval } = alerts[0];
+      const groups = new Map<string, { venue: MarketVenue; symbol: string; interval: ChartInterval; alerts: AlertRecord[]; zoneGroups: ZoneGroup[] }>();
+      const slot = (venue: MarketVenue, symbol: string, interval: ChartInterval) => {
+        const key = `${venue}:${symbol}:${interval}`;
+        let entry = groups.get(key);
+        if (!entry) { entry = { venue, symbol, interval, alerts: [], zoneGroups: [] }; groups.set(key, entry); }
+        return entry;
+      };
+      for (const alert of store.activeAlerts()) slot(alert.venue, alert.symbol, alert.interval).alerts.push(alert);
+      // Zone alerts watch the live price of the 1m forming candle.
+      for (const group of store.listZoneGroups()) slot(group.venue, group.symbol, "1").zoneGroups.push(group);
+      for (const { venue, symbol, interval, alerts, zoneGroups } of groups.values()) {
         let candles: MarketCandle[];
         try {
           candles = await deps.fetchKlines(venue, symbol, interval);
@@ -125,6 +174,10 @@ export function createAlertEngine(deps: EngineDeps) {
           }
           evaluated += 1;
           if (next.firedCount > before) fired += 1;
+        }
+        for (const group of zoneGroups) {
+          evaluated += 1;
+          fired += await processZoneGroup(group, forming, now);
         }
       }
       // Expire paused alerts too.
@@ -187,8 +240,40 @@ export function createAlertEngine(deps: EngineDeps) {
 
   // ---- service API (called by routes after the request guard) ----
 
+  function publicZoneGroup(g: ZoneGroup) {
+    return {
+      id: g.id, symbol: g.symbol, venue: g.venue, createdAt: g.createdAt, asOf: g.asOf, firedCount: g.firedCount, lastFiredAt: g.lastFiredAt,
+      zones: g.zones.map((z) => ({ role: z.role, lo: z.lo, hi: z.hi, liqM: z.liqM, armed: z.armed, phase: z.phase, firedCount: z.firedCount, test: z.test === true })),
+    };
+  }
+
   function listAlerts(): ServiceResult {
-    return ok({ alerts: store.listAlerts() });
+    return ok({ alerts: store.listAlerts(), zoneGroups: store.listZoneGroups().map(publicZoneGroup) });
+  }
+
+  function listZoneGroups(): ServiceResult {
+    return ok({ zoneGroups: store.listZoneGroups().map(publicZoneGroup) });
+  }
+
+  async function zoneAction(body: unknown): Promise<ServiceResult> {
+    const parsed = validateZoneAction(body, isMarketVenue);
+    if (!parsed.ok) return bad(400, parsed.error);
+    const { action, symbol, venue } = parsed.value;
+    const existing = store.findZoneGroup(symbol, venue);
+    if (action === "disable") {
+      if (!existing) return bad(404, "Zone alerts are not enabled for this symbol.");
+      store.deleteZoneGroup(existing.id);
+      return ok({ deleted: existing.id });
+    }
+    if (existing) return ok({ zoneGroup: publicZoneGroup(existing) });
+    if (store.countZoneGroups() >= MAX_ZONE_GROUPS) return bad(409, `At most ${MAX_ZONE_GROUPS} zone alert groups.`);
+    const loaded = deps.loadZones ? await deps.loadZones(symbol).catch(() => null) : null;
+    if (!loaded || !loaded.zones.length) return bad(409, "No liquidation zones for this symbol yet (refresh 刷新清算 first).");
+    const now = deps.now();
+    // Zones start unobserved: the first poll records where price is, so a zone price is already inside never fires.
+    const group: ZoneGroup = { id: deps.randomId(), symbol, venue, createdAt: now, asOf: loaded.asOf, syncedAt: now, zones: syncZoneStates([], loaded.zones), firedCount: 0, lastFiredAt: null };
+    if (!store.insertZoneGroup(group)) return bad(409, "Zone alerts are already enabled.");
+    return { status: 201, body: { ok: true, zoneGroup: publicZoneGroup(group) } };
   }
 
   function createAlert(body: unknown): ServiceResult {
@@ -291,7 +376,7 @@ export function createAlertEngine(deps: EngineDeps) {
     return ok({ settings: publicSettings(verified) });
   }
 
-  return { tick, pump, listAlerts, createAlert, alertAction, listLog, getSettings, updateSettings };
+  return { tick, pump, listAlerts, createAlert, alertAction, listLog, getSettings, updateSettings, listZoneGroups, zoneAction };
 }
 
 export type AlertEngine = ReturnType<typeof createAlertEngine>;

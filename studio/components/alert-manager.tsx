@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AlertRecord } from "@/lib/alerts/core.ts";
-import { EMAIL_STATUS_LABELS, FREQUENCY_LABELS, alertsApi, describeAlert, type AlertLogEntry } from "@/lib/alerts/client.ts";
+import { EMAIL_STATUS_LABELS, FREQUENCY_LABELS, alertsApi, describeAlert, type AlertLogEntry, type ZoneGroupView } from "@/lib/alerts/client.ts";
 
 const POLL_MS = 5_000;
 const TOAST_MS = 12_000;
@@ -12,6 +12,7 @@ export type AlertToast = { key: number; title: string; body: string };
 /** Polls the server-side engine: alerts list, fire log, and toasts for fires that happen while the page is open. */
 export function useAlertFeed() {
   const [alerts, setAlerts] = useState<AlertRecord[]>([]);
+  const [zoneGroups, setZoneGroups] = useState<ZoneGroupView[]>([]);
   const [log, setLog] = useState<AlertLogEntry[]>([]);
   const [engineRunning, setEngineRunning] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export function useAlertFeed() {
   const refresh = useCallback(async () => {
     try {
       const [list, entries] = await Promise.all([alertsApi.list(), alertsApi.log(0, 100)]);
-      setAlerts(list.alerts); setEngineRunning(list.engineRunning); setLog(entries.log); setError(null);
+      setAlerts(list.alerts); setZoneGroups(list.zoneGroups ?? []); setEngineRunning(list.engineRunning); setLog(entries.log); setError(null);
       const newest = entries.log[0]?.id ?? 0;
       if (lastId.current != null) {
         const fresh = entries.log.filter((e) => e.id > (lastId.current as number)).reverse();
@@ -49,7 +50,7 @@ export function useAlertFeed() {
   }, [toasts]);
 
   const dismiss = (key: number) => setToasts((items) => items.filter((t) => t.key !== key));
-  return { alerts, log, engineRunning, error, toasts, refresh, dismiss };
+  return { alerts, zoneGroups, log, engineRunning, error, toasts, refresh, dismiss };
 }
 
 export function AlertToasts({ toasts, onDismiss }: { toasts: AlertToast[]; onDismiss: (key: number) => void }) {
@@ -80,17 +81,32 @@ export function AlertManager({ feed, onCreate }: { feed: ReturnType<typeof useAl
     setBusy(id);
     try { await alertsApi.action(id, action); await feed.refresh(); } catch { /* surfaced on next poll */ } finally { setBusy(null); }
   };
+  const removeZones = async (id: string, symbol: string, venue: string) => {
+    setBusy(id);
+    try { await alertsApi.zones("disable", symbol, venue); await feed.refresh(); } catch { /* surfaced on next poll */ } finally { setBusy(null); }
+  };
   return (
     <div className="alert-manager" data-alert-manager>
       <div className="alert-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "alerts"} className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>Alerts {feed.alerts.length ? `(${feed.alerts.length})` : ""}</button>
+        <button role="tab" aria-selected={tab === "alerts"} className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>Alerts {feed.alerts.length + feed.zoneGroups.length ? `(${feed.alerts.length + feed.zoneGroups.length})` : ""}</button>
         <button role="tab" aria-selected={tab === "log"} className={tab === "log" ? "active" : ""} onClick={() => setTab("log")}>Log {feed.log.length ? `(${feed.log.length})` : ""}</button>
       </div>
       {feed.error && <div className="alert-hint negative">{feed.error}</div>}
       {feed.engineRunning === false && <div className="alert-hint">Alert engine is off on this machine (ALERTS_ENGINE≠1). Alerts are saved but only fire on the alert host.</div>}
       {tab === "alerts" ? (
         <>
-          {feed.alerts.length === 0 && <div className="alert-hint">No alerts yet.</div>}
+          {feed.alerts.length === 0 && feed.zoneGroups.length === 0 && <div className="alert-hint">No alerts yet.</div>}
+          {feed.zoneGroups.map((group) => (
+            <div className="alert-row" key={group.id} data-zone-alert-row={group.symbol}>
+              <div className="alert-copy">
+                <strong>🔔 清算区提醒 {group.symbol}</strong>
+                <span>{group.venue.toUpperCase()} · {group.zones.length} zone{group.zones.length === 1 ? "" : "s"}{group.zones.some((z) => z.test) ? " · [TEST ZONE]" : ""}{group.firedCount ? ` · fired ${group.firedCount}×` : ""}</span>
+              </div>
+              <div className="alert-actions">
+                <button className="tool-button" disabled={busy === group.id} title="Delete" aria-label={`Delete zone alerts ${group.symbol}`} onClick={() => void removeZones(group.id, group.symbol, group.venue)}>×</button>
+              </div>
+            </div>
+          ))}
           {feed.alerts.map((alert) => (
             <div className="alert-row" key={alert.id} data-alert-row={alert.status}>
               <div className="alert-copy">
