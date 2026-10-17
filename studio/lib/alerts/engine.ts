@@ -110,6 +110,8 @@ export function createAlertEngine(deps: EngineDeps) {
           continue;
         }
         if (candles.length < 2) continue;
+        // Market candles carry lightweight-charts UNIX seconds; the engine works in ms (bar_close vs createdAt, {{time}}).
+        candles = candles.map((c) => (c.time < 1e12 ? { ...c, time: c.time * 1000 } : c));
         const forming = candles[candles.length - 1];
         const closed = candles[candles.length - 2];
         const now = deps.now();

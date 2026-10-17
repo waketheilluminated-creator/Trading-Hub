@@ -412,7 +412,7 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   assert.equal(body.bucket_pct, 0.5);
   // TH-FEAT-10: the delivered ZEC estimator snapshot (fixtures/liq_heatmap_bands.ZECUSDT.json) replaces the old sample.
   assert.equal(body.schemaVersion, 1);
-  assert.equal(body.bands.length, 23);
+  assert.equal(body.bands.length, 19); // TH-BUG-05: 4 swept long buckets above mark dropped
   assert.equal(body.zones.length, 3);
   assert.deepEqual(body.zones.map((zone) => zone.role), ["support", "support", "resistance"]);
   const pyth = await app.fetch(new Request("http://localhost/api/liq-heatmap?symbol=PYTHUSDT"), env, context);
@@ -420,7 +420,7 @@ test("liq heatmap API serves the ZEC fixture and drops mismatched or forged quer
   const pythBody = await pyth.json();
   assert.equal(pythBody.symbol, "PYTHUSDT");
   assert.equal(pythBody.zones.length, 6);
-  assert.equal(pythBody.bands.length, 24);
+  assert.equal(pythBody.bands.length, 23); // TH-BUG-05: 1 swept short bucket below mark dropped
   assert.equal(pythBody.zoneRule, undefined, "free-text fields are not passed through");
   assert.equal(body.admin, undefined);
   assert.equal(body.role, undefined);

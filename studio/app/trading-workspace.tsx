@@ -48,6 +48,10 @@ import {
   formatLiqComputedAt,
   liqZoneAnchorTime,
   liqHeatmapDefaultOn,
+  LIQ_LEGEND_ABOVE,
+  LIQ_LEGEND_BELOW,
+  LIQ_LONG_RGB,
+  LIQ_SHORT_RGB,
   requestLiqRefresh,
   chartSupportsLiqSample,
   type LiqHeatmapChartModel,
@@ -1595,7 +1599,7 @@ export function TradingWorkspace() {
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span><i style={{ background: "#e76770" }} />Long liq</span><span><i style={{ background: "#53c990" }} />Short liq</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}><i style={{ background: "rgba(83, 201, 144, 0.45)", outline: "1px solid #53c990" }} />Support zone <i style={{ background: "rgba(231, 103, 112, 0.45)", outline: "1px solid #e76770" }} />Resistance zone</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}
