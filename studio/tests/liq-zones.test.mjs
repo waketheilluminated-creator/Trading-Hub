@@ -25,11 +25,11 @@ const legacy = read("../fixtures/liq_heatmap_bands.sample.json");
 const synthetic = read("./fixtures/liq-zones.synthetic.json");
 
 test("delivered ZEC and PYTH estimator snapshots sanitize with every zone and band intact", () => {
-  for (const [raw, bands, zones, outside] of [[zec, 23, 3, 16], [pyth, 24, 6, 8]]) {
+  for (const [raw, bands, zones, outside, swept] of [[zec, 19, 3, 12, 4], [pyth, 23, 6, 7, 1]]) {
     const parsed = sanitizeLiqHeatmapSnapshot(raw);
     assert.equal(parsed.ok, true);
     if (!parsed.ok) continue;
-    assert.equal(parsed.dropped, 0);
+    assert.equal(parsed.dropped, swept, "TH-BUG-05: swept buckets (long above / short below mark) are dropped");
     assert.equal(parsed.droppedZones, 0);
     assert.equal(parsed.snapshot.schemaVersion, 1);
     assert.equal(parsed.snapshot.markPrice, raw.markPrice);
@@ -53,7 +53,7 @@ test("legacy snapshots without zones (TH-FEAT-05 sample) still work", () => {
   assert.deepEqual(parsed.snapshot.zones, []);
   assert.equal(parsed.snapshot.schemaVersion, null);
   assert.equal(parsed.snapshot.markPrice, legacy.mid);
-  assert.equal(bandsOutsideZones(parsed.snapshot.bands, []).length, 13);
+  assert.equal(bandsOutsideZones(parsed.snapshot.bands, []).length, 12);
   assert.equal(sanitizeLiqHeatmapSnapshot({ ...legacy, zones: "nope" }).ok, true);
   assert.equal(sanitizeLiqHeatmapSnapshot({ ...legacy, zones: "nope" }).snapshot.zones.length, 0);
 });
@@ -109,8 +109,8 @@ test("zone boxes start at the latest bar and extend right only, green support / 
   assert.equal(placeLiqZones(zones, priceToY, null, 900).length, 0, "no latest bar → no box (never a historical segment)");
   assert.equal(placeLiqZones(zones, priceToY, 950, 900).length, 0, "latest bar off-screen right → nothing drawn");
   assert.equal(placeLiqZones(zones, priceToY, -50, 900)[0].left, 0);
-  assert.match(liqZoneColors("support").edge, /83, 201, 144/);
-  assert.match(liqZoneColors("resistance").edge, /231, 103, 112/);
+  assert.match(liqZoneColors("support").edge, /38, 166, 154/);
+  assert.match(liqZoneColors("resistance").edge, /239, 83, 80/);
 });
 
 test("zone label and tooltip show liq_m, risk_max and dist_pct", () => {

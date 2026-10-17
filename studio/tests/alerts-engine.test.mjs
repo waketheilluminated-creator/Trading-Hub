@@ -37,6 +37,7 @@ function harness({ smtpOk = true, sendImpl } = {}) {
         { time: barOpen, open: price, high: price, low: price, close: price, volume: 5 },
       ];
     },
+    feedRaw(raw) { candles = raw; },
     async step(price, advanceMs = 5_000, closedClose) {
       clock += advanceMs;
       api.feed(price, undefined, closedClose ?? price);
@@ -242,4 +243,21 @@ test("evaluateAlert ignores non-finite prices", () => {
   const base = { id: "x", name: "", symbol: "BTCUSDT", venue: "binance", interval: "1", operator: "greater_than", level: 1, frequency: "every", expiresAt: null, message: "", status: "active", createdAt: 0, firedCount: 0, lastFiredAt: null, lastFiredBar: null, prevPrice: null, lastClosedBar: null };
   assert.equal(evaluateAlert(base, { price: NaN, barTime: 0, closed: false, now: 1 }).fire, false);
   assert.equal(normalizeEmail("Wake@Example.COM"), "Wake@example.com");
+});
+
+test("candles in UNIX seconds (live feed format) are normalised to ms: bar_close fires and {{time}} is correct", async () => {
+  const h = harness();
+  h.verify();
+  const id = h.create({ operator: "greater_than", frequency: "bar_close", message: "{{time}}" });
+  const barA = Math.floor(h.now / MIN) * MIN;
+  const secs = (price, open, closedClose) => [
+    { time: (open - MIN) / 1000, open: closedClose, high: closedClose, low: closedClose, close: closedClose, volume: 1 },
+    { time: open / 1000, open: price, high: price, low: price, close: price, volume: 1 },
+  ];
+  h.now = barA + 2 * MIN + 2_000;
+  h.feedRaw(secs(101, barA + 2 * MIN, 105));
+  await h.engine.tick(); await h.engine.pump();
+  assert.equal(h.fired(id), 1);
+  assert.equal(h.store.listLog(0, 10)[0].message, new Date(barA + MIN).toISOString().replace(/\.\d{3}Z$/, "Z"));
+  assert.doesNotMatch(h.mails[0].text, /1970/);
 });

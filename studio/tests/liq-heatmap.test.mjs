@@ -38,7 +38,7 @@ test("sanitizes the canonical ZEC extreme-liquidation sample", () => {
   const parsed = sanitizeLiqHeatmapSnapshot(sample);
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
-  assert.equal(parsed.dropped, 0);
+  assert.equal(parsed.dropped, 1, "TH-BUG-05: one swept long bucket above mid is dropped");
   assert.equal(parsed.snapshot.kind, "liq_heatmap_bands");
   assert.equal(parsed.snapshot.venue, "multi");
   assert.equal(parsed.snapshot.symbol, "ZECUSDT");
@@ -46,11 +46,11 @@ test("sanitizes the canonical ZEC extreme-liquidation sample", () => {
   assert.equal(parsed.snapshot.bucket_pct, 0.5);
   assert.equal(parsed.snapshot.source, "oi_liq_estimator");
   assert.equal(parsed.snapshot.unit, "usd_millions");
-  assert.equal(parsed.snapshot.bands.length, 13);
+  assert.equal(parsed.snapshot.bands.length, 12);
   assert.deepEqual(Object.keys(parsed.snapshot), [...snapshotFieldNames()]);
   assert.ok(parsed.snapshot.bands.every((band) => band.risk === "极高"));
   assert.deepEqual(parsed.snapshot.bands.map((band) => band.side).sort(), [
-    "long", "long", "long", "long", "long", "long",
+    "long", "long", "long", "long", "long",
     "short", "short", "short", "short", "short", "short", "short",
   ]);
   const longTip = formatLiqBandTooltip(parsed.snapshot.bands[1]);
@@ -99,7 +99,7 @@ test("drops bad bands and keeps the remaining extreme zones", () => {
       { lo: 10, hi: 11, side: "long", liq_m: 10, risk: "中", dist_pct: 0 },
       { lo: 10, hi: 11, side: "LONG", liq_m: 10, risk: "极高", dist_pct: 0 },
       { lo: 10, hi: 11, side: "long", liq_m: Number.POSITIVE_INFINITY, risk: "极高", dist_pct: 0 },
-      { lo: 10, hi: 11, side: "short", liq_m: 4, risk: "极高", dist_pct: 1, color: "green", admin: true },
+      { lo: 1500, hi: 1501, side: "short", liq_m: 4, risk: "极高", dist_pct: 8.3, color: "green", admin: true },
     ],
   });
   assert.equal(parsed.ok, true);
@@ -143,7 +143,7 @@ test("ignores privilege query flags and withholds bands when the symbol does not
   const matched = buildLiqHeatmapPayload("ZEC", { ...sample, entitled: true, hasMarketHistory: true });
   assert.equal(matched.ok, true);
   if (!matched.ok) return;
-  assert.equal(matched.body.bands.length, 13);
+  assert.equal(matched.body.bands.length, 12);
   assert.equal(matched.body.symbol, "ZECUSDT");
   assert.equal(matched.body.notice, null);
   assert.equal(matched.body.entitled, undefined);
@@ -184,7 +184,7 @@ test("matches ZEC compact symbols and refuses other charts before any fetch", as
     });
   }, { sample: true });
   assert.equal(calls, 1);
-  assert.equal(loaded.bands.length, 13);
+  assert.equal(loaded.bands.length, 12);
   assert.equal(loaded.notice, null);
   assert.ok(loaded.bands.every((band) => band.risk === "极高" && (band.side === "long" || band.side === "short")));
 
@@ -234,11 +234,11 @@ test("pins heatmap zones to true lo/hi and does not apply the wall pixel-gap shi
   assert.equal(placeLiqHeatmapBands(bands, () => null).length, 0);
 });
 
-test("colors long liquidation red and short liquidation green, with log opacity", () => {
+test("TH-BUG-05: colors long liquidation (below, support) green and short liquidation (above, resistance) red, with log opacity", () => {
   assert.ok(liqBandFillStyle("long", 0.2).includes(LIQ_LONG_RGB));
   assert.ok(liqBandFillStyle("short", 0.2).includes(LIQ_SHORT_RGB));
-  assert.doesNotMatch(liqBandFillStyle("long", 0.2), /83,\s*201,\s*144/);
-  assert.doesNotMatch(liqBandFillStyle("short", 0.2), /231,\s*103,\s*112/);
+  assert.doesNotMatch(liqBandFillStyle("long", 0.2), /239,\s*83,\s*80/);
+  assert.doesNotMatch(liqBandFillStyle("short", 0.2), /38,\s*166,\s*154/);
   assert.notEqual(liqBandFillStyle("long", 0.2), wallFillStyle({ side: "bid", opacity: 0.2 }));
   assert.notEqual(liqBandFillStyle("short", 0.2), wallFillStyle({ side: "ask", opacity: 0.2 }));
 

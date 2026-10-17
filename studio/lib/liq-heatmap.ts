@@ -21,8 +21,23 @@ export function isLiqSymbol(value: unknown): value is string {
 export const LIQ_HEATMAP_STORAGE_KEY = "th-liq-heatmap";
 export const LIQ_HEATMAP_SYMBOL_NOTICE = "Liquidation zones are available for USDT perpetuals only.";
 export const LIQ_HEATMAP_UNAVAILABLE = "Extreme liquidation bands unavailable.";
-export const LIQ_LONG_RGB = "231, 103, 112";
-export const LIQ_SHORT_RGB = "83, 201, 144";
+/**
+ * TH-BUG-05: colour by where the liquidations sit relative to price. Long liquidations are BELOW price
+ * (support, green); short liquidations are ABOVE price (resistance, red). Bands and zone boxes share it.
+ */
+export const LIQ_LONG_RGB = "38, 166, 154";
+export const LIQ_SHORT_RGB = "239, 83, 80";
+export const LIQ_LEGEND_BELOW = "下方：多头清算 / 支撑";
+export const LIQ_LEGEND_ABOVE = "上方：空头清算 / 阻力";
+
+/**
+ * Invariant: a long position liquidates when price FALLS to its level, a short when price RISES to it.
+ * A long-liq bucket above the mark (or a short-liq bucket below it) was already swept by price and is dropped.
+ */
+export function liqSideConsistent(side: LiqSide, lo: number, hi: number, mark: number): boolean {
+  const center = (lo + hi) / 2;
+  return side === "long" ? center < mark : center > mark;
+}
 
 const MIN_LIQ_OPACITY = 0.16;
 const MAX_LIQ_OPACITY = 0.46;
@@ -164,6 +179,9 @@ export function sanitizeLiqZone(value: unknown, mid: number, bandIndexMap: Reado
   if (raw.role === "resistance" && hi <= mid) return null;
   if (raw.color != null && raw.color !== (raw.role === "support" ? "green" : "red")) return null;
   if (raw.side != null && raw.side !== "long" && raw.side !== "short") return null;
+  // TH-BUG-05: support is made of long liquidations, resistance of short liquidations.
+  if (raw.side === "long" && raw.role !== "support") return null;
+  if (raw.side === "short" && raw.role !== "resistance") return null;
   let bandIdx: number[] | null = null;
   if (raw.band_idx != null) {
     if (!Array.isArray(raw.band_idx) || raw.band_idx.length > 1000) return null;
@@ -219,14 +237,6 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
   if (!/^[A-Z0-9]{2,20}$/.test(symbol)) return { ok: false, error: "Liquidation heatmap symbol is invalid." };
   if (!Array.isArray(raw.bands)) return { ok: false, error: "Liquidation heatmap bands are missing." };
 
-  const bands: LiqBand[] = [];
-  const bandIndexMap = new Map<number, number>();
-  let dropped = 0;
-  raw.bands.forEach((item, rawIndex) => {
-    const band = sanitizeBand(item);
-    if (band) { bandIndexMap.set(rawIndex, bands.length); bands.push(band); }
-    else dropped += 1;
-  });
   // Optional schemaVersion-1 metadata; when present it must be well-formed.
   let schemaVersion: number | null = null;
   if (raw.schemaVersion != null) {
@@ -239,6 +249,15 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
     if (mark == null || !(mark > 0)) return { ok: false, error: "Liquidation heatmap markPrice is not finite." };
     markPrice = mark;
   }
+  const bands: LiqBand[] = [];
+  const bandIndexMap = new Map<number, number>();
+  let dropped = 0;
+  raw.bands.forEach((item, rawIndex) => {
+    const band = sanitizeBand(item);
+    // TH-BUG-05: drop already-swept buckets (long above mark / short below mark).
+    if (band && liqSideConsistent(band.side, band.lo, band.hi, markPrice)) { bandIndexMap.set(rawIndex, bands.length); bands.push(band); }
+    else dropped += 1;
+  });
   // boxStart is informational only: the shell anchors zone boxes at the candle containing asOf (TH-FEAT-11).
   if (raw.boxStart != null && raw.boxStart !== "latest_candle" && raw.boxStart !== "asOf") return { ok: false, error: "Liquidation heatmap boxStart is unsupported." };
   const asOf = typeof raw.asOf === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw.asOf) ? raw.asOf : null;
@@ -377,8 +396,8 @@ export function bandsOutsideZones(bands: readonly LiqBand[], zones: readonly Liq
   return bands.filter((_, index) => !covered.has(index));
 }
 
-export const LIQ_SUPPORT_RGB = LIQ_SHORT_RGB;
-export const LIQ_RESISTANCE_RGB = LIQ_LONG_RGB;
+export const LIQ_SUPPORT_RGB = LIQ_LONG_RGB;
+export const LIQ_RESISTANCE_RGB = LIQ_SHORT_RGB;
 
 export function liqZoneColors(role: LiqZoneRole): { fill: string; edge: string; text: string } {
   const rgb = role === "support" ? LIQ_SUPPORT_RGB : LIQ_RESISTANCE_RGB;
