@@ -193,6 +193,40 @@ html.theme-light .indicator-remove {
     color: #38414c;
     background: #e7e9ee
 }
+html.theme-light .chart-replay-button {
+    border: 1px solid #d6dbe2;
+    background: #e7e9ee;
+    color: #232a32
+}
+html.theme-light .chart-replay-button.active {
+    border-color: #e0ad0a;
+    color: #e0ad0a;
+    background: rgba(224, 173, 10, 0.12)
+}
+html.theme-light .replay-hint {
+    border: 1px solid #e0ad0a;
+    background: #eceff2;
+    color: #e0ad0a
+}
+html.theme-light .replay-hint button {
+    color: #e0ad0a
+}
+html.theme-light .replay-controls {
+    border: 1px solid #d6dbe2;
+    background: rgba(236, 239, 242, 0.94);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.122)
+}
+html.theme-light .replay-controls button, html.theme-light .replay-controls select {
+    border: 1px solid #d6dbe2;
+    background: #e7e9ee;
+    color: #232a32
+}
+html.theme-light .replay-controls .replay-exit {
+    color: #e0ad0a
+}
+html.theme-light .replay-badge {
+    color: #e0ad0a
+}
 html.theme-light .liq-risk-key {
     color: #38414c
 }
