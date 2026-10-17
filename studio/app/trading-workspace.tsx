@@ -117,6 +117,7 @@ import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { LargeOrderDock } from "@/components/large-order-dock";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { AlertDialog } from "@/components/alert-dialog";
+import { formatPriceWithPrecision, historyRetryDelayMs, inferTickFromCandles, precisionFromTick, priceFormatForTick, roundToTick } from "@/lib/price-precision.ts";
 import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
 import { savePineSource, usePineSource } from "./pine-source";
 
@@ -192,12 +193,6 @@ const OI_SERIES_OPTIONS = {
     formatter: (price: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(price),
   },
 };
-function formatPrice(value: number | null) {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return value >= 1000
-    ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : value.toLocaleString("en-US", { maximumFractionDigits: 4 });
-}
 function formatCompact(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value);
@@ -564,6 +559,8 @@ export function TradingWorkspace() {
   const [visiblePriceSpan, setVisiblePriceSpan] = useState<PriceSpan | null>(null);
   const [chartVenue, setChartVenue] = useState<MarketVenue>("bybit");
   const [activeVenue, setActiveVenue] = useState<MarketVenue>("bybit");
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const historyAttemptRef = useRef(0);
   const largeTrades = useMemo(() => (tradeHistory.key === `${activeVenue}:${symbol}` ? tradeHistory.trades : []), [activeVenue, symbol, tradeHistory]);
   const barCount = useSyncExternalStore(subscribeBarCountPref, readBarCountPref, () => DEFAULT_CHART_BARS);
   const [olderLoading, setOlderLoading] = useState(false);
@@ -620,6 +617,14 @@ export function TradingWorkspace() {
   }, [chartVersion, showOiPane, theme]);
 
   const last = candles.at(-1);
+  // TH-BUG-04: precision from the instrument tick size (exchange info), falling back to the candles' decimals.
+  const [instrumentTick, setInstrumentTick] = useState<{ key: string; tick: number | null } | null>(null);
+  const tickKey = `${activeVenue}:${symbol}`;
+  const inferredTick = useMemo(() => inferTickFromCandles(candles), [candles]);
+  const effectiveTick = (instrumentTick?.key === tickKey ? instrumentTick.tick : null) ?? inferredTick;
+  const pricePrecision = effectiveTick != null ? precisionFromTick(effectiveTick) : null;
+  if (pricePrecision != null) liqDecimalsRef.current = pricePrecision; // liq/wall box labels follow the axis
+  const fmtPrice = useCallback((value: number | null) => formatPriceWithPrecision(value, pricePrecision), [pricePrecision]);
   // TradingView legend semantics: change of the last bar vs the previous close. Measuring from the first
   // loaded bar would make the number depend on how much history (300 vs 5000 bars) happens to be loaded.
   const previous = candles.at(-2);
@@ -932,7 +937,7 @@ export function TradingWorkspace() {
       }
       node.hidden = false;
       node.dataset.side = zone.side;
-      node.textContent = formatWallZoneTooltip(zone);
+      node.textContent = formatWallZoneTooltip(zone, liqDecimalsRef.current);
       const width = chartHost.current?.clientWidth ?? 0;
       node.style.left = `${Math.min(point.x + 12, Math.max(8, width - 360))}px`;
       node.style.top = `${Math.max(8, point.y + 14)}px`;
@@ -1179,6 +1184,7 @@ export function TradingWorkspace() {
     let cancelled = false;
     let stream: { close(): void } | null = null;
     let pollTimer = 0;
+    let retryTimer = 0;
     let liveOpened = false;
 
     const applyLiveCandle = (candle: MarketCandle) => {
@@ -1212,6 +1218,7 @@ export function TradingWorkspace() {
     loadChartHistory(chartVenue, symbol, interval, fetch, { limit: barCount })
       .then((result) => {
         if (cancelled) return;
+        historyAttemptRef.current = 0;
         setActiveVenue(result.venue);
         setDerivativesExchange(result.venue);
         const loaded = result.candles.map(toChartCandle);
@@ -1261,17 +1268,40 @@ export function TradingWorkspace() {
           notice: null,
           error: error instanceof Error ? error.message : "Live market data is unavailable.",
         });
+        // TH-BUG-04: a transient failure (e.g. server restart) used to leave "Market error" until the user
+        // switched symbol. Retry with backoff; existing candles stay on screen meanwhile.
+        historyAttemptRef.current += 1;
+        retryTimer = window.setTimeout(() => setHistoryRetry((n) => n + 1), historyRetryDelayMs(historyAttemptRef.current));
       });
 
     return () => {
       cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
       if (pollTimer) window.clearInterval(pollTimer);
       stream?.close();
       setConnected(false);
     };
-  }, [symbol, interval, chartVenue, barCount]);
+  }, [symbol, interval, chartVenue, barCount, historyRetry]);
 
   useEffect(() => { candlesRef.current = candles; }, [candles]);
+
+  useEffect(() => {
+    let live = true;
+    const key = `${activeVenue}:${symbol}`;
+    fetch(`/api/market-meta?exchange=${activeVenue}&symbol=${encodeURIComponent(symbol)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((meta: { tickSize?: unknown } | null) => { if (live) setInstrumentTick({ key, tick: typeof meta?.tickSize === "number" ? meta.tickSize : null }); })
+      .catch(() => { if (live) setInstrumentTick({ key, tick: null }); });
+    return () => { live = false; };
+  }, [activeVenue, symbol]);
+
+  useEffect(() => {
+    // Applied on every symbol/venue switch; lightweight-charts then picks tick spacing for the zoom level.
+    const priceFormat = priceFormatForTick(effectiveTick);
+    candleSeriesRef.current?.applyOptions({ priceFormat });
+    fastSeriesRef.current?.applyOptions({ priceFormat });
+    slowSeriesRef.current?.applyOptions({ priceFormat });
+  }, [chartVersion, effectiveTick]);
 
   // TradingView-style lazy history: when the left edge comes within LAZY_LOAD_TRIGGER bars, fetch older bars.
   useEffect(() => {
@@ -1597,7 +1627,7 @@ export function TradingWorkspace() {
             <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
-              <div className="quote-line"><span className="price">{formatPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {formatPrice(last?.high ?? null)}</span><span>L {formatPrice(last?.low ?? null)}</span></div>
+              <div className="quote-line"><span className="price" data-price-precision={pricePrecision ?? ""}>{fmtPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {fmtPrice(last?.high ?? null)}</span><span>L {fmtPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
               {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
@@ -1679,7 +1709,7 @@ export function TradingWorkspace() {
                 <small>{formatCompact(derivatives?.openInterestAmount ?? null)} {symbol.replace("USDT", "")}</small>
               </button>
               <div className="metric-card"><span>Funding / 8h</span><strong className={(derivatives?.fundingRate ?? 0) >= 0 ? "positive" : "negative"}>{derivatives?.fundingRate == null ? "—" : `${(derivatives.fundingRate * 100).toFixed(4)}%`}</strong><small>{derivatives?.nextFundingTimestamp ? `Next ${new Date(derivatives.nextFundingTimestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Current rate"}</small></div>
-              <div className="metric-card"><span>Mark price</span><strong>{formatPrice(derivatives?.markPrice ?? null)}</strong><small>Fair price</small></div>
+              <div className="metric-card"><span>Mark price</span><strong>{fmtPrice(derivatives?.markPrice ?? null)}</strong><small>Fair price</small></div>
               <div className="metric-card"><span>Basis</span><strong className={((derivatives?.markPrice ?? 0) - (derivatives?.indexPrice ?? 0)) >= 0 ? "positive" : "negative"}>{derivatives?.markPrice && derivatives?.indexPrice ? `${(((derivatives.markPrice - derivatives.indexPrice) / derivatives.indexPrice) * 100).toFixed(3)}%` : "—"}</strong><small>Mark vs index</small></div>
             </div>
             <div className="data-source"><span>{derivativesNotice || "Pine: open_interest · funding_rate · cvd_perp"}</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
@@ -1718,7 +1748,7 @@ export function TradingWorkspace() {
           </SideSection>
         </aside>
       </section>
-      <AlertDialog open={showAlertForm} symbol={symbol} venue={chartVenue} interval={interval} lastPrice={last?.close ?? null} onClose={() => setShowAlertForm(false)} onCreated={() => void alertFeed.refresh()} />
+      <AlertDialog open={showAlertForm} symbol={symbol} venue={chartVenue} interval={interval} lastPrice={last ? roundToTick(last.close, effectiveTick) : null} precision={pricePrecision} onClose={() => setShowAlertForm(false)} onCreated={() => void alertFeed.refresh()} />
       <SymbolSearchDialog
         open={symbolSearchOpen}
         sourcesOpen={sourcesSheetOpen}

@@ -527,3 +527,14 @@ test("OI API can serve OKX public open-interest history without API keys", async
   assert.equal(typeof payload.points[0].value, "number");
   assert.equal(payload.unit, "usd");
 });
+
+test("TH-BUG-04 /api/market-meta rejects bad venue/symbol input and mutations without fetching upstream", async () => {
+  const app = await worker();
+  for (const query of ["exchange=evil&symbol=BTCUSDT", "exchange=binance&symbol=BTC%2FUSDT", "exchange=binance&symbol=../../x", "exchange=binance&symbol=BTCUSD", "exchange=binance"]) {
+    const res = await app.fetch(new Request(`http://localhost/api/market-meta?${query}`), env, context);
+    assert.equal(res.status, 400, query);
+    assert.doesNotMatch(await res.text(), /https?:\/\//);
+  }
+  const post = await app.fetch(new Request("http://localhost/api/market-meta?exchange=binance&symbol=BTCUSDT", { method: "POST" }), env, context);
+  assert.notEqual(post.status, 200);
+});

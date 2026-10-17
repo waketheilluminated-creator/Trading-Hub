@@ -189,5 +189,5 @@ test("workspace wires the bar setting, lazy-load and live merge cap", () => {
   assert.match(source, /subscribeVisibleLogicalRangeChange\(onRange\)/);
   assert.match(source, /unsubscribeVisibleLogicalRangeChange\(onRange\)/);
   assert.match(source, /aria-label="History bars"/);
-  assert.match(source, /\}, \[symbol, interval, chartVenue, barCount\]\);/);
+  assert.match(source, /\}, \[symbol, interval, chartVenue, barCount, historyRetry\]\);/);
 });
