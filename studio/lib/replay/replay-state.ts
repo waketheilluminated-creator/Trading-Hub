@@ -4,8 +4,11 @@ export type ReplaySpeed = (typeof REPLAY_SPEEDS)[number];
 export type ReplayState =
   | { phase: "pick" }
   | { phase: "active"; cursor: number; playing: boolean; speed: ReplaySpeed };
-export const REPLAY_PICK_HINT = "点击K线选择回放起点 · Click a candle to start replay";
-export const REPLAY_EXIT_LABEL = "回到实时 Exit replay";
+export const REPLAY_PICK_HINT = "点击K线选择回放起点";
+/** Chinese tooltips for the icon-only controls (aria-labels stay English for screen readers / tests). */
+export const REPLAY_TOOLTIP = "K线回放";
+export const REPLAY_TOOLTIP_ON = "退出K线回放";
+export const REPLAY_EXIT_LABEL = "回到实时";
 
 type Timed = { time: unknown };
 
