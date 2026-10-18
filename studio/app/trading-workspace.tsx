@@ -55,6 +55,8 @@ import {
   requestLiqRefresh,
   chartSupportsLiqSample,
   type LiqHeatmapChartModel,
+  type LiqHeatmapSnapshot,
+  resolveLiqHeatmapForChart,
   type LiqBand,
 } from "@/lib/liq-heatmap.ts";
 import {
@@ -120,6 +122,8 @@ import { AlertDialog } from "@/components/alert-dialog";
 import { formatPriceWithPrecision, historyRetryDelayMs, inferTickFromCandles, precisionFromTick, priceFormatForTick, roundToTick } from "@/lib/price-precision.ts";
 import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
 import { ZONE_ALERT_LABEL, alertsApi } from "@/lib/alerts/client.ts";
+import { REPLAY_EXIT_LABEL, REPLAY_PICK_HINT, REPLAY_SPEEDS, nextReplayTime, prevReplayTime, replayCutoffMs, replayStepMs, sliceReplayCandles, snapReplayStart, type ReplaySpeed, type ReplayState } from "@/lib/replay/replay-state.ts";
+import { REPLAY_OUT_OF_RANGE } from "@/lib/replay/liq-replay.ts";
 import { savePineSource, usePineSource } from "./pine-source";
 
 type Candle = CandlestickData<Time> & { volume?: number };
@@ -404,7 +408,12 @@ export function TradingWorkspace() {
     } catch { return ["BYBIT:BTCUSDT", "BYBIT:ETHUSDT"]; }
   });
   const [interval, setInterval] = useState<Interval>("15");
-  const [candles, setCandles] = useState<Candle[]>([]);
+  const [liveCandles, setCandles] = useState<Candle[]>([]);
+  // TH-FEAT-17 Bar Replay: while active every consumer below sees only bars up to the replay candle (no lookahead).
+  const [replayRaw, setReplay] = useState<(ReplayState & { symbol: string }) | null>(null);
+  const replay = replayRaw && replayRaw.symbol === symbol ? replayRaw : null; // a symbol switch leaves replay
+  const replayCursor = replay?.phase === "active" ? replay.cursor : null;
+  const candles = useMemo(() => (replayCursor == null ? liveCandles : sliceReplayCandles(liveCandles, replayCursor)), [liveCandles, replayCursor]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showFast, setShowFast] = useStoredFlag(studyDefinition("ema9").addedKey);
@@ -499,7 +508,11 @@ export function TradingWorkspace() {
   const [liqClock, setLiqClock] = useState(0);
   const [liqToast, setLiqToast] = useState<string | null>(null);
   const liqDecimalsRef = useRef<number | null>(null);
-  const liqForChart = showLiqHeatmap && liqModel && liqSymbolsMatch(liqModel.symbol, symbol) ? liqModel : null;
+  const [replayLiq, setReplayLiq] = useState<{ key: string; model: LiqHeatmapChartModel } | null>(null);
+  const replayLiqKey = replayCursor == null ? null : `${symbol}:${interval}:${replayCursor}`;
+  const liveLiq = showLiqHeatmap && liqModel && liqSymbolsMatch(liqModel.symbol, symbol) ? liqModel : null;
+  // Replay: zones computed as of the replay candle (kept from the previous step until the new one arrives).
+  const liqForChart = replayCursor == null ? liveLiq : showLiqHeatmap ? replayLiq?.model ?? null : null;
   const liqZones = useMemo(() => liqForChart?.zones ?? [], [liqForChart]);
   // Single high/extreme buckets keep the band rendering; buckets merged into a zone are drawn only as the zone box.
   const liqBands = useMemo(() => bandsOutsideZones(liqForChart?.bands ?? [], liqZones), [liqForChart, liqZones]);
@@ -1301,7 +1314,66 @@ export function TradingWorkspace() {
     };
   }, [symbol, interval, chartVenue, barCount, historyRetry]);
 
-  useEffect(() => { candlesRef.current = candles; }, [candles]);
+  useEffect(() => { candlesRef.current = liveCandles; }, [liveCandles]);
+
+  // ---- TH-FEAT-17 Bar Replay ----
+  const replayLiqCacheRef = useRef(new Map<string, LiqHeatmapChartModel>());
+  useEffect(() => {
+    if (replayCursor == null || !replayLiqKey || !showLiqHeatmap) return;
+    const key = replayLiqKey;
+    const hit = replayLiqCacheRef.current.get(key);
+    if (hit) { const t = window.setTimeout(() => setReplayLiq({ key, model: hit }), 0); return () => window.clearTimeout(t); }
+    let live = true;
+    // Debounced so fast playback only asks for the candle it settles on.
+    const timer = window.setTimeout(() => {
+      const cutoff = replayCutoffMs(replayCursor, interval, Date.now());
+      fetch(`/api/replay/liq?symbol=${encodeURIComponent(symbol)}&ts=${cutoff}`, { cache: "no-store" })
+        .then(async (response) => {
+          const body = await response.json().catch(() => null) as { ok?: boolean; error?: string; outOfRange?: boolean; snapshot?: LiqHeatmapSnapshot; venuesUnavailable?: string[] } | null;
+          let model: LiqHeatmapChartModel;
+          if (body?.ok && body.snapshot) {
+            model = { ...resolveLiqHeatmapForChart(body.snapshot, symbol), asOf: body.snapshot.asOf, venuesFailed: body.venuesUnavailable ?? [] };
+          } else {
+            model = { bands: [], zones: [], notice: body?.outOfRange || body?.error === REPLAY_OUT_OF_RANGE ? REPLAY_OUT_OF_RANGE : body?.error || "Replay liquidation zones unavailable." };
+          }
+          const cache = replayLiqCacheRef.current;
+          cache.set(key, model);
+          while (cache.size > 200) cache.delete(cache.keys().next().value as string);
+          if (live) setReplayLiq({ key, model });
+        })
+        .catch(() => { if (live) setReplayLiq({ key, model: { bands: [], zones: [], notice: "Replay liquidation zones unavailable." } }); });
+    }, 350);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [interval, replayCursor, replayLiqKey, showLiqHeatmap, symbol]);
+
+  const stepReplay = useCallback((direction: 1 | -1) => {
+    setReplay((current) => {
+      if (!current || current.phase !== "active") return current;
+      const nextTime = direction > 0 ? nextReplayTime(candlesRef.current, current.cursor) : prevReplayTime(candlesRef.current, current.cursor);
+      if (nextTime == null) return { ...current, playing: false };
+      return { ...current, cursor: nextTime };
+    });
+  }, []);
+  const replayPlaying = replay?.phase === "active" && replay.playing;
+  const replaySpeed = replay?.phase === "active" ? replay.speed : 1;
+  useEffect(() => {
+    if (!replayPlaying) return;
+    const timer = window.setInterval(() => stepReplay(1), replayStepMs(replaySpeed));
+    return () => window.clearInterval(timer);
+  }, [replayPlaying, replaySpeed, stepReplay]);
+  const replayPicking = replay?.phase === "pick";
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !replayPicking) return;
+    const onClick = (param: MouseEventParams<Time>) => {
+      if (param.time == null) return;
+      const start = snapReplayStart(candlesRef.current, Number(param.time));
+      if (start == null) return;
+      setReplay({ phase: "active", cursor: start, playing: false, speed: 1, symbol });
+    };
+    chart.subscribeClick(onClick);
+    return () => chart.unsubscribeClick(onClick);
+  }, [chartVersion, replayPicking, symbol]);
 
   useEffect(() => {
     let live = true;
@@ -1625,7 +1697,7 @@ export function TradingWorkspace() {
               <span className="toolbar-separator" />
               <IndicatorsMenu added={studyAdded} pineApplied={pineApplied} onToggleStudy={toggleStudyFromMenu} onAddPine={runPine} open={indicatorsOpen} onOpenChange={setIndicatorsOpen} />
             </div>
-            <div className="toolbar-cluster"><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title="Create alert (Alt+A)" onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><select aria-label="History bars" title="Bars of history to load" className="toolbar-venue-select toolbar-bars-select" value={barCount} onChange={(event) => writeBarCountPref(Number(event.target.value))}>{CHART_BAR_COUNT_OPTIONS.map((count) => <option key={count} value={count}>{count.toLocaleString("en-US")} bars</option>)}</select><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
+            <div className="toolbar-cluster"><button className={`chart-replay-button${replay ? " active" : ""}`} data-replay={replay?.phase ?? "off"} aria-pressed={!!replay} aria-label="Bar replay" title="Bar Replay 回放" onClick={() => setReplay(replay ? null : { phase: "pick", symbol })}><span aria-hidden="true">⏪</span> Replay</button><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title={replay ? "Alerts are disabled during replay" : "Create alert (Alt+A)"} disabled={!!replay} onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><select aria-label="History bars" title="Bars of history to load" className="toolbar-venue-select toolbar-bars-select" value={barCount} onChange={(event) => writeBarCountPref(Number(event.target.value))}>{CHART_BAR_COUNT_OPTIONS.map((count) => <option key={count} value={count}>{count.toLocaleString("en-US")} bars</option>)}</select><button className="time-button" onClick={() => chartRef.current?.timeScale().fitContent()}>Fit</button></div>
           </div>
 
           <div className="chart-region">
@@ -1642,12 +1714,12 @@ export function TradingWorkspace() {
               liqRefreshCooldownSec={liqCooldownSec}
               onLiqRefresh={refreshLiqZones}
             />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"}>
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"} data-replay-active={replayCursor != null ? "on" : "off"} data-liq-anchor={liqAnchorTime ?? ""} data-last-visible={candles.at(-1)?.time ?? ""}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price" data-price-precision={pricePrecision ?? ""}>{fmtPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {fmtPrice(last?.high ?? null)}</span><span>L {fmtPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqZones.length > 0 && <span className="liq-risk-key" data-liq-legend-risk><i className="liq-risk-high" data-border-px={liqZoneBorderWidth("高")} />{LIQ_LEGEND_RISK_HIGH}<i className="liq-risk-extreme" data-border-px={liqZoneBorderWidth("极高")} />{LIQ_LEGEND_RISK_EXTREME}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={`Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {liqVenuesFailed.length} venue{liqVenuesFailed.length > 1 ? "s" : ""} failed</span>}{liqZones.length > 0 && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqZones.length > 0 && <span className="liq-risk-key" data-liq-legend-risk><i className="liq-risk-high" data-border-px={liqZoneBorderWidth("高")} />{LIQ_LEGEND_RISK_HIGH}<i className="liq-risk-extreme" data-border-px={liqZoneBorderWidth("极高")} />{LIQ_LEGEND_RISK_EXTREME}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={replay ? `No historical OI for replay: ${liqVenuesFailed.join(", ")}` : `Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {replay ? `回放不可用 unavailable: ${liqVenuesFailed.join(", ")}` : `${liqVenuesFailed.length} venue${liqVenuesFailed.length > 1 ? "s" : ""} failed`}</span>}{liqZones.length > 0 && !replay && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}
@@ -1666,6 +1738,15 @@ export function TradingWorkspace() {
             {showLargeOrderSr && <div ref={wallTipRef} className="liq-heatmap-tip wall-zone-tip" role="tooltip" data-wall-zone-tip hidden />}
             {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
             {liqRefreshing === symbol && <div className="liq-refresh-status" role="status" data-liq-refreshing>刷新清算中… (10–60 s)</div>}
+            {replay?.phase === "pick" && <div className="replay-hint" role="status" data-replay-hint>{REPLAY_PICK_HINT}<button type="button" onClick={() => setReplay(null)}>×</button></div>}
+            {replay?.phase === "active" && <div className="replay-controls" role="toolbar" aria-label="Replay controls" data-replay-cursor={replay.cursor}>
+              <span className="replay-badge">REPLAY · {new Date(replay.cursor * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC</span>
+              <button type="button" aria-label="Step back" title="Step back" onClick={() => stepReplay(-1)}>⏮</button>
+              <button type="button" aria-label={replay.playing ? "Pause replay" : "Play replay"} data-replay-play={replay.playing ? "on" : "off"} onClick={() => setReplay({ ...replay, playing: !replay.playing })}>{replay.playing ? "❚❚" : "▶"}</button>
+              <button type="button" aria-label="Step forward" title="Step forward" onClick={() => stepReplay(1)}>⏭</button>
+              <select aria-label="Replay speed" value={replay.speed} onChange={(event) => { const speed = Number(event.target.value) as ReplaySpeed; if ((REPLAY_SPEEDS as readonly number[]).includes(speed)) setReplay({ ...replay, speed }); }}>{REPLAY_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}</select>
+              <button type="button" className="replay-exit" onClick={() => setReplay(null)}>{REPLAY_EXIT_LABEL}</button>
+            </div>}
             <AlertToasts toasts={alertFeed.toasts} onDismiss={alertFeed.dismiss} />
             {liqToast && <div className="liq-refresh-toast" role="alert" data-liq-refresh-error><span>{liqToast}</span><button type="button" aria-label="Dismiss" onClick={() => setLiqToast(null)}>×</button></div>}
             {textAnchor && textInputPosition && <form className="drawing-text-input" style={{ left: textInputPosition.x, top: textInputPosition.y }} onSubmit={commitDrawingText}>
