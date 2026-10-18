@@ -122,7 +122,7 @@ import { AlertDialog } from "@/components/alert-dialog";
 import { formatPriceWithPrecision, historyRetryDelayMs, inferTickFromCandles, precisionFromTick, priceFormatForTick, roundToTick } from "@/lib/price-precision.ts";
 import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
 import { ZONE_ALERT_LABEL, alertsApi } from "@/lib/alerts/client.ts";
-import { REPLAY_EXIT_LABEL, REPLAY_PICK_HINT, REPLAY_SPEEDS, nextReplayTime, prevReplayTime, replayCutoffMs, replayStepMs, sliceReplayCandles, snapReplayStart, type ReplaySpeed, type ReplayState } from "@/lib/replay/replay-state.ts";
+import { REPLAY_EXIT_LABEL, REPLAY_PICK_HINT, REPLAY_SPEEDS, replayCutoffMs, replayStepFromKey, replayStepMs, stepReplayCursor, sliceReplayCandles, snapReplayStart, type ReplaySpeed, type ReplayState } from "@/lib/replay/replay-state.ts";
 import { REPLAY_OUT_OF_RANGE } from "@/lib/replay/liq-replay.ts";
 import { savePineSource, usePineSource } from "./pine-source";
 
@@ -1349,8 +1349,9 @@ export function TradingWorkspace() {
   const stepReplay = useCallback((direction: 1 | -1) => {
     setReplay((current) => {
       if (!current || current.phase !== "active") return current;
-      const nextTime = direction > 0 ? nextReplayTime(candlesRef.current, current.cursor) : prevReplayTime(candlesRef.current, current.cursor);
-      if (nextTime == null) return { ...current, playing: false };
+      const nextTime = stepReplayCursor(candlesRef.current, current.cursor, direction);
+      // Clamped at the first/last candle: the cursor stays; playback stops at the end.
+      if (nextTime === current.cursor) return current.playing ? { ...current, playing: false } : current;
       return { ...current, cursor: nextTime };
     });
   }, []);
@@ -1361,6 +1362,20 @@ export function TradingWorkspace() {
     const timer = window.setInterval(() => stepReplay(1), replayStepMs(replaySpeed));
     return () => window.clearInterval(timer);
   }, [replayPlaying, replaySpeed, stepReplay]);
+  const replayActive = replay?.phase === "active";
+  useEffect(() => {
+    if (!replayActive) return;
+    // Shift+←/→ steps one bar (TradingView). Capture phase + preventDefault so the chart/page doesn't also pan.
+    const onKey = (event: KeyboardEvent) => {
+      const direction = replayStepFromKey(event, true, isTextEditingElement(event.target) || isTextEditingElement(document.activeElement));
+      if (direction == null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      stepReplay(direction);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [replayActive, stepReplay]);
   const replayPicking = replay?.phase === "pick";
   useEffect(() => {
     const chart = chartRef.current;
@@ -1741,9 +1756,9 @@ export function TradingWorkspace() {
             {replay?.phase === "pick" && <div className="replay-hint" role="status" data-replay-hint>{REPLAY_PICK_HINT}<button type="button" onClick={() => setReplay(null)}>×</button></div>}
             {replay?.phase === "active" && <div className="replay-controls" role="toolbar" aria-label="Replay controls" data-replay-cursor={replay.cursor}>
               <span className="replay-badge">REPLAY · {new Date(replay.cursor * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC</span>
-              <button type="button" aria-label="Step back" title="Step back" onClick={() => stepReplay(-1)}>⏮</button>
+              <button type="button" aria-label="Step back" title="Step back (Shift+←)" onClick={() => stepReplay(-1)}>⏮</button>
               <button type="button" aria-label={replay.playing ? "Pause replay" : "Play replay"} data-replay-play={replay.playing ? "on" : "off"} onClick={() => setReplay({ ...replay, playing: !replay.playing })}>{replay.playing ? "❚❚" : "▶"}</button>
-              <button type="button" aria-label="Step forward" title="Step forward" onClick={() => stepReplay(1)}>⏭</button>
+              <button type="button" aria-label="Step forward" title="Step forward (Shift+→)" onClick={() => stepReplay(1)}>⏭</button>
               <select aria-label="Replay speed" value={replay.speed} onChange={(event) => { const speed = Number(event.target.value) as ReplaySpeed; if ((REPLAY_SPEEDS as readonly number[]).includes(speed)) setReplay({ ...replay, speed }); }}>{REPLAY_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}</select>
               <button type="button" className="replay-exit" onClick={() => setReplay(null)}>{REPLAY_EXIT_LABEL}</button>
             </div>}
