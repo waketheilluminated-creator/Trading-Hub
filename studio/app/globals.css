@@ -128,15 +128,15 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .indicator-label i { display:inline-block; width:7px; height:2px; margin-right:6px; vertical-align:middle; }
 .indicator-remove { width:18px; height:18px; padding:0; color:#9aa5b4; border:0; border-radius:4px; background:#1b2330; cursor:pointer; line-height:18px; opacity:0; pointer-events:none; transition:opacity .12s, color .12s, background .12s; }
 .indicator-label:hover .indicator-remove, .indicator-remove:focus-visible { opacity:1; pointer-events:auto; }
-.chart-replay-button { height:24px; padding:0 8px; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#c9d1db; cursor:pointer; font-size:12px; margin-right:6px; }
+.chart-replay-button { height:24px; width:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#c9d1db; cursor:pointer; font-size:12px; margin-right:6px; }
 .chart-replay-button.active { border-color:#f0b90b; color:#f0b90b; background:rgba(240,185,11,.12); }
 .chart-alert-button:disabled { opacity:.45; cursor:not-allowed; }
 .replay-hint { position:absolute; top:52px; left:50%; transform:translateX(-50%); z-index:6; padding:6px 10px; border:1px solid #f0b90b; border-radius:6px; background:#151a21; color:#f0b90b; font-size:12px; display:flex; gap:8px; align-items:center; }
 .replay-hint button { border:0; background:transparent; color:#f0b90b; cursor:pointer; }
 .replay-controls { position:absolute; bottom:34px; left:50%; transform:translateX(-50%); z-index:6; display:flex; gap:6px; align-items:center; padding:5px 8px; border:1px solid #303b4b; border-radius:8px; background:rgba(21,26,33,.94); box-shadow:0 4px 14px rgba(0,0,0,.35); }
-.replay-controls button, .replay-controls select { height:24px; min-width:28px; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#c9d1db; cursor:pointer; font-size:12px; }
-.replay-controls .replay-exit { padding:0 8px; color:#f0b90b; }
-.replay-badge { color:#f0b90b; font:600 11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-right:4px; }
+.replay-controls button, .replay-controls select { height:24px; min-width:28px; display:inline-flex; align-items:center; justify-content:center; padding:0 4px; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#c9d1db; cursor:pointer; font-size:12px; }
+.replay-controls .replay-exit { color:#f0b90b; }
+.replay-badge { display:inline-flex; align-items:center; gap:4px; color:#f0b90b; font:600 11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-right:4px; }
 .liq-risk-key { display:inline-flex; align-items:center; gap:4px; color:#9aa5b4; }
 .liq-risk-key i { display:inline-block; width:12px; height:9px; border-radius:1px; background:rgba(154,165,180,.35); }
 .liq-risk-key i.liq-risk-extreme { margin-left:6px; box-shadow:inset 0 0 0 2px #9aa5b4; }
