@@ -7,7 +7,7 @@
  *  - spawned with an argv array, shell:false; the only request-derived argv value is an allowlisted symbol
  *  - output path is chosen server-side (temp dir + random name); never from the request
  *  - minimal child env (PATH/HOME/LANG + LIQ_SOCKS_PROXY only if set), 90 s timeout → SIGKILL
- *  - single-flight per symbol (409), 90 s cooldown per symbol (429 + Retry-After)
+ *  - single-flight per symbol (409), 30 s cooldown per symbol (429 + Retry-After)
  *  - POST only, localhost host + same-origin Origin required
  *  - output JSON must pass sanitizeLiqHeatmapSnapshot and match the symbol before it replaces the last good snapshot;
  *    any failure keeps the last good snapshot.
@@ -23,7 +23,7 @@ export { sanitizeVenuesFailed };
 export type LiqRefreshSymbol = string;
 
 export const LIQ_REFRESH_TIMEOUT_MS = 90_000;
-export const LIQ_REFRESH_COOLDOWN_MS = 90_000;
+export const LIQ_REFRESH_COOLDOWN_MS = 30_000; // per symbol; the 90 s child timeout is separate
 export const LIQ_REFRESH_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 export const LIQ_REFRESH_STDERR_CAP = 4096;
 export const LIQ_REFRESH_UNCONFIGURED = "Liquidation estimator is not configured on this server (set LIQ_ESTIMATOR_CMD).";

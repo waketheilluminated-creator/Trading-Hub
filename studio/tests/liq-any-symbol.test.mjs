@@ -78,7 +78,7 @@ function harness({ code = 0, hang = false, maxConcurrent, maxCached } = {}) {
     writeFile: async (p, d) => { files.set(p, d); },
     rename: async (a, b) => { files.set(b, files.get(a)); files.delete(a); },
     remove: async (p) => { removed.push(p); files.delete(p); },
-    mkdir: async () => {}, now: () => clock, timeoutMs: 30, cooldownMs: 90_000, maxConcurrent, maxCached,
+    mkdir: async () => {}, now: () => clock, timeoutMs: 30, cooldownMs: 30_000, maxConcurrent, maxCached,
   });
   return { refresher, calls, files, removed, advance: (ms) => { clock += ms; } };
 }

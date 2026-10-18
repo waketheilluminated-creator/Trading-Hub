@@ -53,7 +53,6 @@ function harness({ env = { LIQ_ESTIMATOR_CMD: CMD, HOME: "/home/u", PATH: "/usr/
     mkdir: async () => {},
     now: () => clock,
     timeoutMs,
-    cooldownMs: 90_000,
   });
   return { refresher, calls, files, children, advance: (ms) => { clock += ms; } };
 }
@@ -69,7 +68,7 @@ test("refresh spawns argv (no shell) with only the allowlisted symbol and a serv
   assert.equal(options.shell, false);
   assert.deepEqual(Object.keys(options.env).sort(), ["HOME", "PATH"]);
   assert.equal(result.body.snapshot.markPrice, zec.markPrice);
-  assert.equal(result.body.cooldownSec, 90);
+  assert.equal(result.body.cooldownSec, 30);
   assert.ok(h.files.has("/srv/liq/liq_heatmap_bands.ZECUSDT.json"), "atomic swap into last-good path");
   assert.ok(!h.files.has("/srv/liq/run-ZECUSDT-abc-123.json"), "temp output cleaned up");
   assert.equal(h.refresher.lastGood("ZECUSDT").markPrice, zec.markPrice);
@@ -127,12 +126,15 @@ test("deny: single-flight per symbol (409) while a run is in progress; other sym
 test("deny: cooldown → 429 with retry-after, then allowed again", async () => {
   const h = harness();
   assert.equal((await h.refresher.refresh("ZECUSDT")).status, 200);
-  h.advance(30_000);
+  h.advance(10_000);
   const cooled = await h.refresher.refresh("ZECUSDT");
   assert.equal(cooled.status, 429);
-  assert.equal(cooled.retryAfterSec, 60);
+  assert.equal(cooled.retryAfterSec, 20);
   assert.equal(h.calls.length, 1);
-  h.advance(60_000);
+  h.advance(19_999);
+  assert.equal((await h.refresher.refresh("ZECUSDT")).status, 429, "still cooling 1 ms before 30 s");
+  assert.equal(h.calls.length, 1, "no spawn while cooling");
+  h.advance(1);
   assert.equal((await h.refresher.refresh("ZECUSDT")).status, 200);
 });
 
@@ -222,7 +224,7 @@ test("priceDecimals drives price labels; 更新于 HH:MM from asOf; default-on f
 test("client refresh: POSTs once, re-sanitizes, maps 429 retry-after, rejects forged bodies", async () => {
   const seen = [];
   const reply = (status, body, headers = {}) => async (url, init) => { seen.push({ url, init }); return new Response(JSON.stringify(body), { status, headers }); };
-  const ok = await requestLiqRefresh("ZECUSDT", reply(200, { ok: true, snapshot: zec, cooldownSec: 90 }));
+  const ok = await requestLiqRefresh("ZECUSDT", reply(200, { ok: true, snapshot: zec, cooldownSec: 30 }));
   assert.equal(ok.ok, true);
   assert.equal(ok.model.zones.length, zec.zones.length);
   assert.equal(seen[0].url, "/api/liq-zones/refresh?symbol=ZECUSDT");
@@ -271,4 +273,15 @@ test("anchor wiring: workspace passes the asOf anchor (not the latest candle) an
   assert.match(workspace, /setZones\(showLiqHeatmap \? liqZones : \[\], liqAnchorTime as Time \| null, liqComputedLabel\)/);
   assert.doesNotMatch(workspace, /setZones\([^)]*latestCandleTime/);
   assert.match(primitive, /drawAnchorMarker\(context, anchorX/);
+});
+
+test("cooldown is 30 s per symbol (server + client default); the 90 s estimator timeout is unchanged", async () => {
+  const refresh = await import("../lib/liq-refresh.ts");
+  const heat = await import("../lib/liq-heatmap.ts");
+  assert.equal(refresh.LIQ_REFRESH_COOLDOWN_MS, 30_000);
+  assert.equal(refresh.LIQ_REFRESH_TIMEOUT_MS, 90_000);
+  assert.equal(heat.LIQ_REFRESH_DEFAULT_COOLDOWN_SEC, 30);
+  // a 200 without cooldownSec falls back to the 30 s client default
+  const ok = await requestLiqRefresh("ZECUSDT", async () => new Response(JSON.stringify({ ok: true, snapshot: zec }), { status: 200 }));
+  assert.equal(ok.cooldownSec, 30);
 });
