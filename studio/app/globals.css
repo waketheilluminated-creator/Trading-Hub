@@ -128,6 +128,9 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .indicator-label i { display:inline-block; width:7px; height:2px; margin-right:6px; vertical-align:middle; }
 .indicator-remove { width:18px; height:18px; padding:0; color:#9aa5b4; border:0; border-radius:4px; background:#1b2330; cursor:pointer; line-height:18px; opacity:0; pointer-events:none; transition:opacity .12s, color .12s, background .12s; }
 .indicator-label:hover .indicator-remove, .indicator-remove:focus-visible { opacity:1; pointer-events:auto; }
+.liq-risk-key { display:inline-flex; align-items:center; gap:4px; color:#9aa5b4; }
+.liq-risk-key i { display:inline-block; width:12px; height:9px; border-radius:1px; background:rgba(154,165,180,.35); }
+.liq-risk-key i.liq-risk-extreme { margin-left:6px; box-shadow:inset 0 0 0 2px #9aa5b4; }
 .liq-zone-bell { height:18px; padding:0 4px; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#9aa5b4; cursor:pointer; font-size:11px; line-height:16px; filter:grayscale(1); }
 .liq-zone-bell.active { border-color:#f0b90b; background:rgba(240,185,11,.14); filter:none; }
 .liq-zone-bell:disabled { opacity:.5; cursor:wait; }
