@@ -27,6 +27,24 @@ export function prevReplayTime(candles: readonly Timed[], cursor: number): numbe
   return best;
 }
 
+/** One replay step, clamped: at the first/last candle the cursor stays put (returns the same cursor). */
+export function stepReplayCursor(candles: readonly Timed[], cursor: number, direction: 1 | -1): number {
+  const next = direction > 0 ? nextReplayTime(candles, cursor) : prevReplayTime(candles, cursor);
+  return next ?? cursor;
+}
+
+export type ReplayKey = { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean };
+/**
+ * TradingView-style replay stepping: Shift+ArrowRight = +1 bar, Shift+ArrowLeft = -1 bar.
+ * Only while replay is active, never while typing (input/textarea/select/contenteditable), and not with Ctrl/Cmd/Alt.
+ */
+export function replayStepFromKey(event: ReplayKey, replayActive: boolean, editing: boolean): 1 | -1 | null {
+  if (!replayActive || editing || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return null;
+  if (event.key === "ArrowRight") return 1;
+  if (event.key === "ArrowLeft") return -1;
+  return null;
+}
+
 /** Snap a clicked time to the candle containing it (the latest candle opening at or before it). */
 export function snapReplayStart(candles: readonly Timed[], time: number): number | null {
   let best: number | null = null;
