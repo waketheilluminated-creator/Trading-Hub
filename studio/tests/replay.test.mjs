@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { computeReplayLiq, longLiqPrice, shortLiqPrice, truncateReplayInput, REPLAY_OUT_OF_RANGE } from "../lib/replay/liq-replay.ts";
+import { computeReplayLiq, longLiqPrice, shortLiqPrice, truncateReplayInput, REPLAY_OUT_OF_RANGE, scaleTierThresholds, riskOfUsd, BTC_TIER_EXTREME_USD } from "../lib/replay/liq-replay.ts";
 import { parseReplayQuery } from "../lib/replay/service.ts";
 import { fetchOiHistory, fetchPriceBars, clearReplayCache } from "../lib/replay/history.ts";
 import { nextReplayTime, prevReplayTime, replayCutoffMs, sliceReplayCandles, snapReplayStart } from "../lib/replay/replay-state.ts";
@@ -55,10 +55,10 @@ test("side invariant at many replay candles incl. the crash: support/long below 
     const price = m.bars.filter((b) => b.time + MIN <= cutoff).at(-1).close;
     assert.equal(r.mark, price, "mark = close of the replay candle");
     for (const z of r.snapshot.zones) {
-      if (z.role === "support") assert.ok(z.hi <= price && z.side === "long", `support ${z.lo}-${z.hi} vs ${price}`);
-      else assert.ok(z.lo >= price && z.side === "short", `resistance ${z.lo}-${z.hi} vs ${price}`);
+      if (z.role === "support") assert.ok(z.hi < price && z.side === "long", `support ${z.lo}-${z.hi} vs ${price}`);
+      else assert.ok(z.lo > price && z.side === "short", `resistance ${z.lo}-${z.hi} vs ${price}`);
     }
-    for (const b of r.snapshot.bands) assert.ok(b.side === "long" ? b.hi <= price : b.lo >= price);
+    for (const b of r.snapshot.bands) assert.ok(b.side === "long" ? b.hi < price : b.lo > price);
     checked += 1;
   }
   assert.ok(checked >= 20);
@@ -69,7 +69,7 @@ test("hand-checkable bucket: liq_m equals the sum of surviving cohort levels in 
   const r = run(cutoff);
   assert.ok(r.ok && r.snapshot.bands.length > 0);
   const band = r.snapshot.bands[0];
-  const step = (r.mark * 0.25) / 100;
+  const step = (r.mark * 0.5) / 100;
   const idx = Math.round((band.lo - r.mark) / step);
   const sum = r.levels.filter((l) => l.side === band.side && Math.floor((l.price - r.mark) / step) === idx).reduce((s, l) => s + l.usd, 0);
   assert.ok(Math.abs(sum / 1e6 - band.liq_m) < 0.01, `${sum / 1e6} vs ${band.liq_m}`);
@@ -143,4 +143,16 @@ test("workspace wiring: every consumer sees sliced candles; alerts disabled; zon
   assert.match(ws, /disabled=\{!!replay\} onClick=\{\(\) => setShowAlertForm\(true\)\}/);
   assert.match(ws, /liqZones\.length > 0 && !replay && <button type="button" className=\{`liq-zone-bell/);
   assert.match(ws, /candlesRef\.current = liveCandles/);
+});
+
+test("H2 tier scaling: BTC floors; alt scales by OI ratio", () => {
+  const btc = scaleTierThresholds(12e9, 12e9);
+  assert.equal(btc.extremeUsd, BTC_TIER_EXTREME_USD);
+  assert.equal(riskOfUsd(100e6, btc), "极高");
+  assert.equal(riskOfUsd(70e6, btc), "高");
+  assert.equal(riskOfUsd(15e6, btc), "中");
+  assert.equal(riskOfUsd(1e6, btc), "低");
+  const alt = scaleTierThresholds(50e6, 5e9); // 1%
+  assert.ok(Math.abs(alt.extremeUsd - 1e6) < 1e-6);
+  assert.equal(riskOfUsd(1e6, alt), "极高");
 });

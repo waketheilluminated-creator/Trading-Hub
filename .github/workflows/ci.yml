@@ -25,3 +25,26 @@ jobs:
             node --check "$f"
           done
       - run: npm test
+
+  studio-replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Replay + liq unit tests (no vinext build)
+        working-directory: studio
+        run: node --experimental-strip-types --test tests/replay.test.mjs tests/replay-keys.test.mjs tests/replay-icons.test.mjs
+
+  liq-h2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: H2 estimator unit + golden OOS
+        run: |
+          pip install pytest
+          python -m pytest tools/liq-estimator/tests/test_h2.py -v

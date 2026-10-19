@@ -1,0 +1,209 @@
+"""Unit + golden OOS tests for H2 (TH-FEAT-19)."""
+from __future__ import annotations
+
+import json
+import math
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from oi_liq.h2 import (  # noqa: E402
+    BTC_TIER_EXTREME_USD,
+    BTC_TIER_HIGH_USD,
+    BTC_TIER_MEDIUM_USD,
+    Bar1h,
+    aggregate_h2_buckets,
+    apply_h2_tiers,
+    h2_distribute,
+    long_liq_price,
+    scale_tier_thresholds,
+    short_liq_price,
+)
+
+GOLDEN = Path(__file__).resolve().parents[3] / ".." / "golden"
+# Prefer repo-relative goldens copied next to tests, else workspace path.
+for cand in (
+    Path(__file__).resolve().parents[1] / "golden",
+    Path("/workspace/th-h2/golden"),
+    Path("/workspace/btc-liq-compare/oos"),
+):
+    if cand.exists() and list(cand.glob("s*.json")):
+        GOLDEN = cand
+        break
+
+
+def test_scale_tier_thresholds_btc_unchanged():
+    t = scale_tier_thresholds(12e9, 12e9)
+    assert t.extreme_usd == BTC_TIER_EXTREME_USD
+    assert t.high_usd == BTC_TIER_HIGH_USD
+    assert t.medium_usd == BTC_TIER_MEDIUM_USD
+    assert t.risk(100e6) == "极高"
+    assert t.risk(70e6) == "高"
+    assert t.risk(15e6) == "中"
+    assert t.risk(14.9e6) == "低"
+
+
+def test_scale_tier_thresholds_alt_scales_with_oi_ratio():
+    # Alt with 1% of BTC OI → cutoffs at 1% of BTC floors.
+    t = scale_tier_thresholds(50e6, 5e9)  # ratio 0.01
+    assert t.extreme_usd == pytest.approx(1e6)
+    assert t.high_usd == pytest.approx(0.7e6)
+    assert t.medium_usd == pytest.approx(0.15e6)
+    assert t.risk(1e6) == "极高"
+    assert t.risk(0.5e6) == "中"
+
+
+def test_scale_tier_thresholds_missing_btc_falls_back():
+    t = scale_tier_thresholds(50e6, 0)
+    assert t.extreme_usd == BTC_TIER_EXTREME_USD
+
+
+def test_liq_price_formula():
+    assert long_liq_price(100, 10, 0.005) == pytest.approx(100 * (1 - 0.1 + 0.005))
+    assert short_liq_price(100, 10, 0.005) == pytest.approx(100 * (1 + 0.1 - 0.005))
+
+
+def _flat_bars(n=24, start_px=100.0, start_ts=1_000_000):
+    bars = []
+    for i in range(n):
+        px = start_px
+        bars.append(Bar1h(start_ts + i * 3_600_000, px, px + 1, px - 1, px, quote_vol=1_000.0))
+    return bars
+
+
+def test_h2_longs_below_shorts_above_mark():
+    bars = _flat_bars()
+    mark = 100.0
+    hits = h2_distribute(10_000_000, bars, mark)
+    assert hits
+    for h in hits:
+        if h.side == "long":
+            assert h.price < mark
+        else:
+            assert h.price > mark
+
+
+def test_h2_drop_crossed_removes_swept_levels():
+    # Heavy volume only on the first bar (entry). Second bar has zero volume so it
+    # contributes no mass but its low=85 is still on the post-entry path.
+    bars = [
+        Bar1h(0, 100, 101, 99, 100, 1_000),
+        Bar1h(3_600_000, 100, 101, 85, 100, 0),
+    ]
+    mark = 100.0
+    kept = h2_distribute(1_000_000, bars, mark, drop_crossed=True)
+    assert [h for h in kept if h.side == "long" and h.leverage == 10] == []
+    no_drop = h2_distribute(1_000_000, bars, mark, drop_crossed=False)
+    assert any(h.side == "long" and h.leverage == 10 and h.price < mark for h in no_drop)
+
+
+
+def test_h2_volume_weight_shifts_mass_to_heavy_bars():
+    bars = [
+        Bar1h(0, 100, 101, 99, 100, quote_vol=1),
+        Bar1h(3_600_000, 110, 111, 109, 110, quote_vol=99),
+    ]
+    mark = 110.0
+    hits = h2_distribute(1_000_000, bars, mark, drop_crossed=False)
+    # Most mass should come from the second entry (110).
+    from_heavy = sum(h.notional_usd for h in hits if abs(h.entry - 110) < 1e-9)
+    from_light = sum(h.notional_usd for h in hits if abs(h.entry - 100) < 1e-9)
+    assert from_heavy > 10 * from_light
+
+
+def test_aggregate_rejects_wrong_side_of_mark():
+    from oi_liq.h2 import H2Hit
+
+    hits = [
+        H2Hit(95, 1e6, "long", 10, 100, 0),
+        H2Hit(105, 1e6, "short", 10, 100, 0),
+        H2Hit(106, 1e6, "long", 10, 100, 0),  # long above mark — must not appear
+    ]
+    rows = aggregate_h2_buckets(hits, mark=100.0, bucket_width_pct=0.01)
+    assert all(r["side"] != "long" or r["hi"] <= 100 for r in rows)
+    assert all(r["side"] != "short" or r["lo"] >= 100 for r in rows)
+
+
+def _corr(a, b):
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    sa = math.sqrt(sum((x - ma) ** 2 for x in a))
+    sb = math.sqrt(sum((y - mb) ** 2 for y in b))
+    if sa == 0 or sb == 0:
+        return 0.0
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (sa * sb)
+
+
+def _pearson(a, b):
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    sa = math.sqrt(sum((x - ma) ** 2 for x in a))
+    sb = math.sqrt(sum((y - mb) ** 2 for y in b))
+    if sa == 0 or sb == 0:
+        return 0.0
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (sa * sb)
+
+
+def _iou_top(pred_usd, dy_extreme_idx, n=None):
+    """IoU of top-|X| predicted bins vs Dongyi 极高 set (campaign definition)."""
+    n = n if n is not None else max(1, len(dy_extreme_idx))
+    order = sorted(range(len(pred_usd)), key=lambda i: -pred_usd[i])
+    top = {i for i in order[:n] if pred_usd[i] > 0}
+    union = top | dy_extreme_idx
+    if not union:
+        return 0.0
+    return len(top & dy_extreme_idx) / len(union)
+
+
+@pytest.mark.skipif(not GOLDEN.exists(), reason="OOS golden JSON not present")
+def test_h2_golden_oos_tier_accuracy():
+    """Fixed-dollar BTC tiers match Dongyi labels on the 5 OOS snapshots (≥85%)."""
+    t = scale_tier_thresholds(1.0, 1.0)
+    assert t.risk(183.4e6) == "极高"
+    assert t.risk(75.1e6) == "高"
+    assert t.risk(18.8e6) == "中"
+    assert t.risk(0) == "低"
+    ok = total = 0
+    for path in sorted(GOLDEN.glob("s*.json")):
+        if path.name.startswith("scores") or path.name.startswith("h2_"):
+            continue
+        data = json.loads(path.read_text())
+        for r in data["rows"]:
+            pred = t.risk(r["m"] * 1e6)
+            total += 1
+            if pred == r["tier"]:
+                ok += 1
+    assert total >= 50
+    assert ok / total >= 0.85, f"tier accuracy {ok}/{total}"
+
+
+@pytest.mark.skipif(
+    not (GOLDEN / "h2_preds.json").exists() or not (GOLDEN / "scores.json").exists(),
+    reason="OOS h2_preds/scores not present",
+)
+def test_h2_golden_oos_corr_iou_thresholds():
+    """Reproduce validated H2 OOS corr/IoU on the 5 Dongyi snapshots.
+
+    Thresholds match the OOS campaign gate (corr ≥ 0.70; IoU pass flags in scores.json).
+    Pred grids are frozen H2 outputs; this locks the campaign, not live network OI.
+    """
+    preds = json.loads((GOLDEN / "h2_preds.json").read_text())
+    scores = json.loads((GOLDEN / "scores.json").read_text())["h2"]
+    assert set(preds["snaps"]) == set(scores)
+    for sid, snap in preds["snaps"].items():
+        grid = snap["grid"]
+        pred = [g["usd"] for g in grid]
+        dy = [g["dy"] for g in grid]
+        corr = _pearson(pred, dy)
+        dy_x = {i for i, g in enumerate(grid) if g.get("dy_tier") == "极高"}
+        iou = _iou_top(pred, dy_x)
+        gate = scores[sid]
+        assert corr >= 0.70, f"{sid} corr={corr}"
+        assert abs(corr - gate["corr"]) < 0.02, f"{sid} corr drift {corr} vs {gate['corr']}"
+        # IoU gate: campaign required pass_iou; allow 0.01 float noise vs frozen score
+        assert abs(iou - gate["iou"]) < 0.02, f"{sid} iou drift {iou} vs {gate['iou']}"
+        assert gate["PASS"] is True
+        assert gate["pass_corr"] is True
+        assert gate["pass_iou"] is True

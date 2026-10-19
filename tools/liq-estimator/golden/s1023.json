@@ -1,0 +1,429 @@
+{
+ "id": "s1023",
+ "label": "2026-10-15 21:23",
+ "bj": "2026-10-15T21:23:00+08:00",
+ "mark": 80350,
+ "ts_ms": 1792065780000,
+ "nrows": 52,
+ "sum_short_m": 818.2,
+ "sum_long_m": 1508.2,
+ "n_extreme": 6,
+ "rows": [
+  {
+   "price": 84303,
+   "usd": 122600000,
+   "m": 122.6,
+   "tier": "极高",
+   "side": "short",
+   "dist_pct": 4.92
+  },
+  {
+   "price": 84148,
+   "usd": 103700000,
+   "m": 103.7,
+   "tier": "极高",
+   "side": "short",
+   "dist_pct": 4.73
+  },
+  {
+   "price": 83994,
+   "usd": 35200000,
+   "m": 35.2,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 4.54
+  },
+  {
+   "price": 83839,
+   "usd": 31300000,
+   "m": 31.3,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 4.34
+  },
+  {
+   "price": 83684,
+   "usd": 40600000,
+   "m": 40.6,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 4.15
+  },
+  {
+   "price": 83529,
+   "usd": 47800000,
+   "m": 47.8,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 3.96
+  },
+  {
+   "price": 83375,
+   "usd": 32600000,
+   "m": 32.6,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 3.76
+  },
+  {
+   "price": 83220,
+   "usd": 31300000,
+   "m": 31.3,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 3.57
+  },
+  {
+   "price": 83065,
+   "usd": 26100000,
+   "m": 26.1,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 3.38
+  },
+  {
+   "price": 82910,
+   "usd": 32200000,
+   "m": 32.2,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 3.19
+  },
+  {
+   "price": 82755,
+   "usd": 41200000,
+   "m": 41.2,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 2.99
+  },
+  {
+   "price": 82601,
+   "usd": 54100000,
+   "m": 54.1,
+   "tier": "高",
+   "side": "short",
+   "dist_pct": 2.8
+  },
+  {
+   "price": 82446,
+   "usd": 59100000,
+   "m": 59.1,
+   "tier": "高",
+   "side": "short",
+   "dist_pct": 2.61
+  },
+  {
+   "price": 82291,
+   "usd": 46800000,
+   "m": 46.8,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 2.42
+  },
+  {
+   "price": 82136,
+   "usd": 24800000,
+   "m": 24.8,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 2.22
+  },
+  {
+   "price": 81982,
+   "usd": 21100000,
+   "m": 21.1,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 2.03
+  },
+  {
+   "price": 81827,
+   "usd": 25500000,
+   "m": 25.5,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 1.84
+  },
+  {
+   "price": 81672,
+   "usd": 21200000,
+   "m": 21.2,
+   "tier": "中",
+   "side": "short",
+   "dist_pct": 1.65
+  },
+  {
+   "price": 81517,
+   "usd": 7100000,
+   "m": 7.1,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 1.45
+  },
+  {
+   "price": 81363,
+   "usd": 5800000,
+   "m": 5.8,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 1.26
+  },
+  {
+   "price": 81208,
+   "usd": 7100000,
+   "m": 7.1,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 1.07
+  },
+  {
+   "price": 81053,
+   "usd": 1000000,
+   "m": 1.0,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 0.87
+  },
+  {
+   "price": 80898,
+   "usd": 0,
+   "m": 0.0,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 0.68
+  },
+  {
+   "price": 80743,
+   "usd": 0,
+   "m": 0.0,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 0.49
+  },
+  {
+   "price": 80589,
+   "usd": 0,
+   "m": 0.0,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 0.3
+  },
+  {
+   "price": 80434,
+   "usd": 0,
+   "m": 0.0,
+   "tier": "低",
+   "side": "short",
+   "dist_pct": 0.1
+  },
+  {
+   "price": 80279,
+   "usd": 25300000,
+   "m": 25.3,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -0.09
+  },
+  {
+   "price": 80124,
+   "usd": 115300000,
+   "m": 115.3,
+   "tier": "极高",
+   "side": "long",
+   "dist_pct": -0.28
+  },
+  {
+   "price": 79970,
+   "usd": 121200000,
+   "m": 121.2,
+   "tier": "极高",
+   "side": "long",
+   "dist_pct": -0.47
+  },
+  {
+   "price": 79815,
+   "usd": 100700000,
+   "m": 100.7,
+   "tier": "极高",
+   "side": "long",
+   "dist_pct": -0.67
+  },
+  {
+   "price": 79660,
+   "usd": 97700000,
+   "m": 97.7,
+   "tier": "极高",
+   "side": "long",
+   "dist_pct": -0.86
+  },
+  {
+   "price": 79505,
+   "usd": 82000000,
+   "m": 82.0,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -1.05
+  },
+  {
+   "price": 79350,
+   "usd": 77200000,
+   "m": 77.2,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -1.24
+  },
+  {
+   "price": 79196,
+   "usd": 70800000,
+   "m": 70.8,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -1.44
+  },
+  {
+   "price": 79041,
+   "usd": 71300000,
+   "m": 71.3,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -1.63
+  },
+  {
+   "price": 78886,
+   "usd": 71000000,
+   "m": 71.0,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -1.82
+  },
+  {
+   "price": 78731,
+   "usd": 68300000,
+   "m": 68.3,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -2.01
+  },
+  {
+   "price": 78577,
+   "usd": 66500000,
+   "m": 66.5,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -2.21
+  },
+  {
+   "price": 78422,
+   "usd": 63700000,
+   "m": 63.7,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -2.4
+  },
+  {
+   "price": 78267,
+   "usd": 63100000,
+   "m": 63.1,
+   "tier": "高",
+   "side": "long",
+   "dist_pct": -2.59
+  },
+  {
+   "price": 78112,
+   "usd": 53500000,
+   "m": 53.5,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -2.79
+  },
+  {
+   "price": 77958,
+   "usd": 53000000,
+   "m": 53.0,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -2.98
+  },
+  {
+   "price": 77803,
+   "usd": 46400000,
+   "m": 46.4,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -3.17
+  },
+  {
+   "price": 77648,
+   "usd": 42200000,
+   "m": 42.2,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -3.36
+  },
+  {
+   "price": 77493,
+   "usd": 38500000,
+   "m": 38.5,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -3.56
+  },
+  {
+   "price": 77338,
+   "usd": 34700000,
+   "m": 34.7,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -3.75
+  },
+  {
+   "price": 77184,
+   "usd": 29200000,
+   "m": 29.2,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -3.94
+  },
+  {
+   "price": 77029,
+   "usd": 27500000,
+   "m": 27.5,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -4.13
+  },
+  {
+   "price": 76874,
+   "usd": 25100000,
+   "m": 25.1,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -4.33
+  },
+  {
+   "price": 76719,
+   "usd": 23600000,
+   "m": 23.6,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -4.52
+  },
+  {
+   "price": 76565,
+   "usd": 22200000,
+   "m": 22.2,
+   "tier": "中",
+   "side": "long",
+   "dist_pct": -4.71
+  },
+  {
+   "price": 76410,
+   "usd": 18200000,
+   "m": 18.2,
+   "tier": "低",
+   "side": "long",
+   "dist_pct": -4.9
+  }
+ ]
+}
