@@ -42,6 +42,7 @@ import {
   formatLiqBandTooltip,
   liqSymbolsMatch,
   loadLiqHeatmapBands,
+  LIQ_HEATMAP_POLL_MS,
   bandsOutsideZones,
   formatLiqZoneTooltip,
   formatLiqUpdatedAt,
@@ -1004,16 +1005,23 @@ export function TradingWorkspace() {
     if (!showLiqHeatmap) return;
     let active = true;
     const sample = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("liqSample") === "1";
-    loadLiqHeatmapBands(symbol, fetch, { sample })
+    let lastAsOf: string | null | undefined;
+    const load = (initial: boolean) => loadLiqHeatmapBands(symbol, fetch, { sample })
       .then((result) => {
         if (!active) return;
+        // TH-BUG-06: polls only swap in a snapshot whose asOf moved (server auto-refresh); errors keep the last good one.
+        const asOf = result.asOf ?? null;
+        if (!initial && (result.notice || asOf === lastAsOf)) return;
+        lastAsOf = asOf;
         setLiqModel({ symbol, ...result });
       })
       .catch(() => {
-        if (!active) return;
+        if (!active || !initial) return;
         setLiqModel({ symbol, bands: [], zones: [], notice: LIQ_HEATMAP_UNAVAILABLE });
       });
-    return () => { active = false; };
+    void load(true);
+    const timer = window.setInterval(() => void load(false), LIQ_HEATMAP_POLL_MS);
+    return () => { active = false; window.clearInterval(timer); };
   }, [showLiqHeatmap, symbol]);
 
   useEffect(() => {

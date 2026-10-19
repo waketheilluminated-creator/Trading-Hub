@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { computeReplayLiq, longLiqPrice, shortLiqPrice, truncateReplayInput, REPLAY_OUT_OF_RANGE, scaleTierThresholds, riskOfUsd, BTC_TIER_EXTREME_USD } from "../lib/replay/liq-replay.ts";
+import { computeReplayLiq, longLiqPrice, shortLiqPrice, truncateReplayInput, REPLAY_OUT_OF_RANGE, scaleTierThresholds, riskOfUsd, BTC_TIER_EXTREME_USD, BTC_TIER_HIGH_USD, DONGYI_REF_BIN_PCT, REPLAY_BUCKET_PCT } from "../lib/replay/liq-replay.ts";
 import { parseReplayQuery } from "../lib/replay/service.ts";
 import { fetchOiHistory, fetchPriceBars, clearReplayCache } from "../lib/replay/history.ts";
 import { nextReplayTime, prevReplayTime, replayCutoffMs, sliceReplayCandles, snapReplayStart } from "../lib/replay/replay-state.ts";
@@ -155,4 +155,38 @@ test("H2 tier scaling: BTC floors; alt scales by OI ratio", () => {
   const alt = scaleTierThresholds(50e6, 5e9); // 1%
   assert.ok(Math.abs(alt.extremeUsd - 1e6) < 1e-6);
   assert.equal(riskOfUsd(1e6, alt), "极高");
+});
+
+// TH-BUG-06: dollar floors are per Dongyi ~0.19% BTC bin; wider buckets scale them (same contract as oi_liq/h2.py).
+test("TH-BUG-06 tier scaling: default = reference bin; 0.5% bucket scales floors; ratio kept", () => {
+  assert.equal(DONGYI_REF_BIN_PCT, 0.19);
+  const ref = scaleTierThresholds(12e9, 12e9);
+  assert.equal(ref.extremeUsd, BTC_TIER_EXTREME_USD);
+  const live = scaleTierThresholds(12e9, 12e9, REPLAY_BUCKET_PCT);
+  const f = REPLAY_BUCKET_PCT / 0.19;
+  assert.ok(Math.abs(live.extremeUsd - BTC_TIER_EXTREME_USD * f) < 1e-3);
+  assert.ok(Math.abs(live.highUsd / live.extremeUsd - BTC_TIER_HIGH_USD / BTC_TIER_EXTREME_USD) < 1e-12);
+  const alt = scaleTierThresholds(6.2e9, 10e9, 0.5); // OI share 0.62 composes with bucket factor
+  assert.ok(Math.abs(alt.extremeUsd - BTC_TIER_EXTREME_USD * 0.62 * f) < 1e-3);
+});
+
+test("TH-BUG-06 deny: invalid bucket width falls back to the reference bin; factor is clamped", () => {
+  for (const bad of [0, -0.5, Number.NaN, Number.POSITIVE_INFINITY, undefined, null]) {
+    assert.equal(scaleTierThresholds(12e9, 12e9, bad).extremeUsd, BTC_TIER_EXTREME_USD, String(bad));
+  }
+  assert.ok(scaleTierThresholds(12e9, 12e9, 1e-9).extremeUsd >= BTC_TIER_EXTREME_USD * 0.05 - 1e-6);
+  assert.ok(scaleTierThresholds(12e9, 12e9, 500).extremeUsd <= BTC_TIER_EXTREME_USD * 50 + 1e-6);
+});
+
+test("TH-BUG-06 live BTC 0.5% buckets are no longer mostly 极高", () => {
+  const data = JSON.parse(readFileSync(new URL("./fixtures/liq_btc_live_0p5.json", import.meta.url), "utf8"));
+  const rows = data.buckets;
+  assert.ok(rows.length >= 30);
+  const oldX = rows.filter((r) => riskOfUsd(r.liq_usd, scaleTierThresholds(1, 1)) === "极高").length;
+  assert.ok(oldX / rows.length > 0.5, "fixture reproduces the bug");
+  const t = scaleTierThresholds(1, 1, data.bucket_width_pct * 100);
+  const tiers = rows.map((r) => riskOfUsd(r.liq_usd, t));
+  const newX = tiers.filter((x) => x === "极高").length;
+  assert.ok(newX / rows.length < 0.5, `${newX}/${rows.length} still 极高`);
+  assert.ok(newX >= 1 && tiers.includes("高") && tiers.includes("中"));
 });

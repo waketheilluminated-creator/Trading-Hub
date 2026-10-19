@@ -15,6 +15,7 @@ from oi_liq.h2 import (  # noqa: E402
     BTC_TIER_EXTREME_USD,
     BTC_TIER_HIGH_USD,
     BTC_TIER_MEDIUM_USD,
+    DONGYI_REF_BIN_WIDTH_PCT,
     Bar1h,
     aggregate_h2_buckets,
     apply_h2_tiers,
@@ -60,6 +61,70 @@ def test_scale_tier_thresholds_alt_scales_with_oi_ratio():
 def test_scale_tier_thresholds_missing_btc_falls_back():
     t = scale_tier_thresholds(50e6, 0)
     assert t.extreme_usd == BTC_TIER_EXTREME_USD
+
+
+# --- TH-BUG-06: tier cutoffs scale with bucket width (calibrated on Dongyi ~0.19% BTC bins) ---
+
+
+def test_bucket_scaling_default_is_reference_bin():
+    """No bucket width → Dongyi reference bin → BTC floors unchanged (golden OOS contract)."""
+    assert DONGYI_REF_BIN_WIDTH_PCT == pytest.approx(0.0019)
+    t = scale_tier_thresholds(12e9, 12e9)
+    ref = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=DONGYI_REF_BIN_WIDTH_PCT)
+    assert (t.extreme_usd, t.high_usd, t.medium_usd) == (ref.extreme_usd, ref.high_usd, ref.medium_usd)
+
+
+def test_bucket_scaling_btc_live_half_percent():
+    t = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=0.005)
+    f = 0.005 / 0.0019
+    assert t.extreme_usd == pytest.approx(BTC_TIER_EXTREME_USD * f)
+    assert t.high_usd == pytest.approx(BTC_TIER_HIGH_USD * f)
+    assert t.medium_usd == pytest.approx(BTC_TIER_MEDIUM_USD * f)
+    # high/extreme ratio unchanged (no ETH-specific ratio yet)
+    assert t.high_usd / t.extreme_usd == pytest.approx(BTC_TIER_HIGH_USD / BTC_TIER_EXTREME_USD)
+
+
+def test_bucket_scaling_composes_with_oi_share_for_alts():
+    t = scale_tier_thresholds(6.2e9, 10e9, bucket_width_pct=0.005)  # ETH-like OI share 0.62
+    f = 0.62 * 0.005 / 0.0019
+    assert t.extreme_usd == pytest.approx(BTC_TIER_EXTREME_USD * f)
+    assert t.high_usd == pytest.approx(BTC_TIER_HIGH_USD * f)
+    assert t.medium_usd == pytest.approx(BTC_TIER_MEDIUM_USD * f)
+
+
+@pytest.mark.parametrize("bad", [0.0, -0.005, float("nan"), float("inf"), None])
+def test_bucket_scaling_invalid_width_falls_back_to_reference(bad):
+    """Deny path: a bogus bucket width must not zero or explode the cutoffs."""
+    t = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=bad)
+    assert t.extreme_usd == BTC_TIER_EXTREME_USD
+    assert t.high_usd == BTC_TIER_HIGH_USD
+
+
+def test_bucket_scaling_is_clamped():
+    tiny = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=1e-9)
+    huge = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=5.0)
+    assert tiny.extreme_usd >= BTC_TIER_EXTREME_USD * 0.05 - 1e-6
+    assert huge.extreme_usd <= BTC_TIER_EXTREME_USD * 50 + 1e-6
+
+
+def _live_btc_rows():
+    data = json.loads((Path(__file__).parent / "fixture_btc_live_0p5.json").read_text(encoding="utf-8"))
+    return data, [dict(b) for b in data["buckets"]]
+
+
+def test_live_btc_half_percent_no_longer_mostly_extreme():
+    """Real H2 output (2026-10-19 18:47Z, 0.5% buckets): fixed 0.19%-bin cutoffs marked most buckets 极高."""
+    data, rows = _live_btc_rows()
+    assert len(rows) >= 30
+    old = apply_h2_tiers([dict(r) for r in rows], scale_tier_thresholds(1.0, 1.0))
+    old_x = sum(r["risk"] == "极高" for r in old)
+    assert old_x / len(old) > 0.5  # reproduces the bug
+    new = apply_h2_tiers(rows, scale_tier_thresholds(1.0, 1.0, bucket_width_pct=data["bucket_width_pct"]))
+    new_x = sum(r["risk"] == "极高" for r in new)
+    assert new_x / len(new) < 0.5, f"{new_x}/{len(new)} buckets still 极高"
+    assert new_x >= 1  # the real clusters still surface
+    tiers = {r["risk"] for r in new}
+    assert {"极高", "高", "中"} <= tiers
 
 
 def test_liq_price_formula():

@@ -13,9 +13,14 @@ timeout enforced by the studio refresh route).
 - **MM:** 0.5%. Long liq = `entry*(1-1/L+mm)`; short = `entry*(1+1/L-mm)`.
 - **Drop crossed:** levels the post-entry path already swept are removed (TH-BUG-05).
 - **Sides:** longs only below mark (green support); shorts only above (red resistance).
-- **Tiers (BTC):** 极高 ≥ $100M, 高 ≥ $70M, 中 ≥ $15M, else 低.
-- **Tiers (alts):** same floors scaled by `symbol_OI / btc_OI` via
-  `oi_liq.h2.scale_tier_thresholds` (clamped `[1e-4, 1e2]`).
+- **Tiers (BTC):** 极高 ≥ $100M, 高 ≥ $70M, 中 ≥ $15M, else 低 — per **Dongyi BTC bin
+  (~0.19% of price)**.
+- **Bucket width (TH-BUG-06):** a wider bucket sums several Dongyi bins, so the floors
+  scale by `bucket_width_pct / 0.0019` (clamped `[0.05, 50]`). Live 0.5% buckets →
+  ×2.63 (BTC 极高 ≥ $263M / 高 ≥ $184M / 中 ≥ $39M). Missing/invalid width = reference bin.
+- **Tiers (alts):** same floors also scaled by `symbol_OI / btc_OI` via
+  `oi_liq.h2.scale_tier_thresholds` (clamped `[1e-4, 1e2]`). The 高/极高 ratio is the
+  same for every symbol (no ETH-specific ratio until more Model 1 snapshots).
 - **Zones:** merge ≥2 adjacent 高/极高 same-side bins into one box.
 
 ### OKX coverage

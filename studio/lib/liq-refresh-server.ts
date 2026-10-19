@@ -1,10 +1,16 @@
 /** Process-wide refresher (Node runtime). Kept out of the client bundle; imported only by API routes. */
 import { createLiqRefresher, type ChildLike, type LiqRefresher } from "./liq-refresh.ts";
+import { autoRefreshConfigFromEnv, createLiqAutoRefresh, type LiqAutoRefresh } from "./liq-auto-refresh.ts";
 
-let refresher: Promise<LiqRefresher> | null = null;
+// One refresher + one scheduler per server process, shared by every route bundle and instrumentation
+// (globalThis, not module scope, so cooldown/single-flight state cannot fork between bundles).
+const KEY = Symbol.for("tradinghub.liq.refresher");
+const AUTO_KEY = Symbol.for("tradinghub.liq.autoRefresh");
+type GlobalWithLiq = typeof globalThis & { [KEY]?: Promise<LiqRefresher>; [AUTO_KEY]?: Promise<LiqAutoRefresh | null> };
 
 export function liqRefresher(): Promise<LiqRefresher> {
-  refresher ??= (async () => {
+  const g = globalThis as GlobalWithLiq;
+  g[KEY] ??= (async () => {
     const [{ spawn }, fs, os, path, crypto] = await Promise.all([
       import("node:child_process"),
       import("node:fs/promises"),
@@ -29,5 +35,36 @@ export function liqRefresher(): Promise<LiqRefresher> {
       log: (message) => console.warn(message),
     });
   })();
-  return refresher;
+  return g[KEY];
+}
+
+/**
+ * TH-BUG-06: start the background auto-refresh once per process (idempotent). Returns null when disabled
+ * (estimator unconfigured or LIQ_AUTO_REFRESH_SEC=0). Runs only through {@link liqRefresher}'s rails.
+ */
+export function startLiqAutoRefresh(): Promise<LiqAutoRefresh | null> {
+  const g = globalThis as GlobalWithLiq;
+  g[AUTO_KEY] ??= (async () => {
+    const config = autoRefreshConfigFromEnv(process.env);
+    if (!config.enabled) {
+      console.warn(`liq auto-refresh: off (${config.reason})`);
+      return null;
+    }
+    const refresher = await liqRefresher();
+    const auto = createLiqAutoRefresh({
+      refresher,
+      now: () => Date.now(),
+      intervalMs: config.intervalMs,
+      symbols: config.symbols,
+      log: (message) => console.warn(message),
+    });
+    auto.start();
+    void auto.tick().catch(() => console.warn("liq auto-refresh: first tick failed"));
+    console.warn(`liq auto-refresh: every ${Math.round(config.intervalMs / 1000)} s for ${config.symbols.join(",")} + viewed symbols`);
+    return auto;
+  })().catch(() => {
+    console.warn("liq auto-refresh: failed to start");
+    return null;
+  });
+  return g[AUTO_KEY];
 }

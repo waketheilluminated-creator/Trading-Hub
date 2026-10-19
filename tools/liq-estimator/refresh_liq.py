@@ -32,6 +32,7 @@ from oi_liq.fetch import (
     fetch_tick_size,
 )
 from oi_liq.h2 import (
+    DONGYI_REF_BIN_WIDTH_PCT,
     H2_LOOKBACK_DAYS,
     Bar1h,
     aggregate_h2_buckets,
@@ -206,7 +207,7 @@ def main() -> int:
                 btc_oi = btc_oi_fut.result(timeout=15)
             except Exception:
                 btc_oi = None
-        thresholds = scale_tier_thresholds(total_oi, btc_oi or total_oi)
+        thresholds = scale_tier_thresholds(total_oi, btc_oi or total_oi, bucket_width_pct=a.bucket_width_pct)
         apply_h2_tiers(bucket_rows, thresholds)
 
         # Round for display
@@ -238,6 +239,8 @@ def main() -> int:
             "medium_usd": thresholds.medium_usd,
             "btc_oi_usd": btc_oi,
             "symbol_oi_usd": total_oi,
+            "bucket_width_pct": a.bucket_width_pct,
+            "ref_bin_width_pct": DONGYI_REF_BIN_WIDTH_PCT,
         }
         payload["assumptions"] = {
             "lookback_days": a.days,
