@@ -13,8 +13,10 @@ Algorithm (validated OOS against Youtube东一 Model2 | 7d screenshots):
     (TH-BUG-05). Longs only below mark (support/green); shorts only above
     (resistance/red).
   - Risk tiers: fixed-dollar on BTC (极高 ≥ $100M, 高 ≥ $70M, 中 ≥ $15M, else 低).
-    For other symbols, scale those cutoffs by symbol_OI / btc_OI at the same time
-    (see ``scale_tier_thresholds``).
+    For other symbols, scale those cutoffs by symbol_OI / btc_OI at the same time.
+    The dollar floors are per *Dongyi BTC bin* (~0.19% of price); a wider bucket
+    (live chart: 0.5%) sums more bins, so the floors scale by bucket / 0.19%
+    (TH-BUG-06; see ``scale_tier_thresholds``).
 
 OKX OI history is only ~2.5–6 days of 5m samples; H2 uses *current* OI only, so
 OKX is included whenever its ticker OI is available. Replay uses the last OI
@@ -23,6 +25,7 @@ sample at or before the cutoff.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -41,6 +44,11 @@ H2_LONG_SHARE = 0.5
 BTC_TIER_EXTREME_USD = 100_000_000.0
 BTC_TIER_HIGH_USD = 70_000_000.0
 BTC_TIER_MEDIUM_USD = 15_000_000.0
+# Bin width (fraction of price) the floors were calibrated on: Dongyi BTC rows are
+# ~$157 apart at ~$82k (OOS s1020) ≈ 0.19%. TH-BUG-06.
+DONGYI_REF_BIN_WIDTH_PCT = 0.0019
+_BUCKET_FACTOR_MIN = 0.05
+_BUCKET_FACTOR_MAX = 50.0
 
 
 @dataclass(frozen=True)
@@ -71,28 +79,49 @@ class TierThresholds:
         return "低"
 
 
+def _bucket_factor(bucket_width_pct: float | None) -> float:
+    """bucket / Dongyi reference bin, clamped. Missing or non-finite/non-positive → 1 (reference)."""
+    if bucket_width_pct is None:
+        return 1.0
+    try:
+        w = float(bucket_width_pct)
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(w) or w <= 0:
+        return 1.0
+    return max(_BUCKET_FACTOR_MIN, min(_BUCKET_FACTOR_MAX, w / DONGYI_REF_BIN_WIDTH_PCT))
+
+
 def scale_tier_thresholds(
     symbol_oi_usd: float,
     btc_oi_usd: float,
     *,
+    bucket_width_pct: float | None = None,
     extreme: float = BTC_TIER_EXTREME_USD,
     high: float = BTC_TIER_HIGH_USD,
     medium: float = BTC_TIER_MEDIUM_USD,
 ) -> TierThresholds:
-    """Scale BTC fixed-dollar tiers by symbol_OI / btc_OI.
+    """Scale BTC fixed-dollar tiers by symbol_OI / btc_OI and by bucket width.
 
-    When ``btc_oi_usd`` is missing or non-positive, or the symbol is BTC-scale
-    (ratio ≈ 1), returns the BTC floors unchanged. Ratio is clamped to
-    [1e-4, 1e2] so a tiny alt cannot drive thresholds to zero and a mis-read
-    BTC OI cannot explode them.
+    OI share: when ``btc_oi_usd`` is missing or non-positive, or the symbol is
+    BTC-scale (ratio ≈ 1), the OI factor is 1. It is clamped to [1e-4, 1e2] so a
+    tiny alt cannot drive thresholds to zero and a mis-read BTC OI cannot explode
+    them.
+
+    Bucket width (fraction of price, e.g. 0.005 for the live 0.5% bucket): the
+    floors are per Dongyi ~0.19% bin, so they scale by
+    ``bucket_width_pct / DONGYI_REF_BIN_WIDTH_PCT`` (clamped to [0.05, 50]).
+    ``None`` or an invalid width means the reference bin (factor 1), which keeps
+    the golden OOS tier contract. The 高/极高 ratio is unchanged.
     """
-    if not (btc_oi_usd and btc_oi_usd > 0) or not (symbol_oi_usd and symbol_oi_usd > 0):
-        return TierThresholds(extreme, high, medium)
-    ratio = symbol_oi_usd / btc_oi_usd
-    if abs(ratio - 1.0) < 0.05:  # treat as BTC
-        return TierThresholds(extreme, high, medium)
-    ratio = max(1e-4, min(1e2, ratio))
-    return TierThresholds(extreme * ratio, high * ratio, medium * ratio)
+    f = _bucket_factor(bucket_width_pct)
+    ratio = 1.0
+    if btc_oi_usd and btc_oi_usd > 0 and symbol_oi_usd and symbol_oi_usd > 0:
+        r = symbol_oi_usd / btc_oi_usd
+        if abs(r - 1.0) >= 0.05:  # else treat as BTC
+            ratio = max(1e-4, min(1e2, r))
+    k = ratio * f
+    return TierThresholds(extreme * k, high * k, medium * k)
 
 
 def long_liq_price(entry: float, lev: float, mm: float = H2_MAINT_MARGIN) -> float:

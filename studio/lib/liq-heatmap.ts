@@ -346,6 +346,8 @@ export type LiqRefreshClientResult =
   | { ok: false; error: string; retryAfterSec: number | null };
 
 export const LIQ_REFRESH_DEFAULT_COOLDOWN_SEC = 30;
+/** TH-BUG-06: re-read the (server auto-refreshed) snapshot while the overlay is on. Read-only GET, no recompute. */
+export const LIQ_HEATMAP_POLL_MS = 60_000;
 
 /** Click-only refresh: POST /api/liq-zones/refresh, then validate the returned snapshot client-side too. */
 export async function requestLiqRefresh(chartSymbol: string, fetchImpl: typeof fetch = fetch): Promise<LiqRefreshClientResult> {

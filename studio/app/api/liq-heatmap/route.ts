@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import liqHeatmapFixture from "../../../fixtures/liq_heatmap_bands.sample.json";
-import { liqRefresher } from "@/lib/liq-refresh-server.ts";
+import { liqRefresher, startLiqAutoRefresh } from "@/lib/liq-refresh-server.ts";
+import { autoRefreshWatchAllowed } from "@/lib/liq-auto-refresh.ts";
 import { allowlistedSymbol } from "@/lib/liq-refresh.ts";
 import { LIQ_HEATMAP_NO_SNAPSHOT, buildLiqHeatmapPayload, parseLiqHeatmapQuery, selectLiqSnapshotSource } from "@/lib/liq-heatmap.ts";
 
@@ -17,6 +18,10 @@ export async function GET(request: Request) {
   // TH-FEAT-11: a snapshot refreshed on demand (validated before swap-in) wins over the bundled fixture.
   const refreshable = allowlistedSymbol(parsed.symbol);
   if (refreshable) {
+    // TH-BUG-06: keep the viewed symbol fresh in the background (same-origin localhost overlay loads only, not the
+    // default-on probe; idempotent start).
+    const watch = autoRefreshWatchAllowed(request) && new URL(request.url).searchParams.get("probe") !== "1";
+    void startLiqAutoRefresh().then((auto) => { if (watch) auto?.watch(refreshable); }).catch(() => {});
     const refreshed = await liqRefresher().then((r) => r.restore(refreshable)).catch(() => null);
     if (refreshed) {
       const fresh = buildLiqHeatmapPayload(parsed.symbol, null, refreshed);

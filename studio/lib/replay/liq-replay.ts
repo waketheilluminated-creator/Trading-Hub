@@ -28,6 +28,10 @@ export const REPLAY_OUT_OF_RANGE = "超出可回溯范围";
 export const BTC_TIER_EXTREME_USD = 100_000_000;
 export const BTC_TIER_HIGH_USD = 70_000_000;
 export const BTC_TIER_MEDIUM_USD = 15_000_000;
+/** Bin width (% of price) the floors were calibrated on: Dongyi BTC rows ≈ 0.19% apart (TH-BUG-06). */
+export const DONGYI_REF_BIN_PCT = 0.19;
+const BUCKET_FACTOR_MIN = 0.05;
+const BUCKET_FACTOR_MAX = 50;
 
 export type OiPoint = { ts: number; oiUsd: number };
 export type PriceBar = { time: number; open: number; high: number; low: number; close: number; volume?: number };
@@ -53,14 +57,25 @@ export function shortLiqPrice(p: number, lev: number, mm = REPLAY_MAINT_MARGIN):
 
 export type TierThresholds = { extremeUsd: number; highUsd: number; mediumUsd: number };
 
-/** Scale BTC fixed-dollar tiers by symbolOi/btcOi (clamped). Same contract as oi_liq/h2.scale_tier_thresholds. */
-export function scaleTierThresholds(symbolOiUsd: number, btcOiUsd: number | undefined | null): TierThresholds {
-  const extreme = BTC_TIER_EXTREME_USD, high = BTC_TIER_HIGH_USD, medium = BTC_TIER_MEDIUM_USD;
-  if (!(btcOiUsd && btcOiUsd > 0) || !(symbolOiUsd > 0)) return { extremeUsd: extreme, highUsd: high, mediumUsd: medium };
-  let ratio = symbolOiUsd / btcOiUsd;
-  if (Math.abs(ratio - 1) < 0.05) return { extremeUsd: extreme, highUsd: high, mediumUsd: medium };
-  ratio = Math.max(1e-4, Math.min(1e2, ratio));
-  return { extremeUsd: extreme * ratio, highUsd: high * ratio, mediumUsd: medium * ratio };
+/** bucketPct / Dongyi reference bin, clamped; missing or non-finite/non-positive → 1 (reference bin). */
+function bucketFactor(bucketPct: number | undefined | null): number {
+  if (bucketPct == null || !Number.isFinite(bucketPct) || bucketPct <= 0) return 1;
+  return Math.max(BUCKET_FACTOR_MIN, Math.min(BUCKET_FACTOR_MAX, bucketPct / DONGYI_REF_BIN_PCT));
+}
+
+/**
+ * Scale BTC fixed-dollar tiers by symbolOi/btcOi (clamped) and by bucket width (% of price; floors are per
+ * Dongyi ~0.19% bin, so a 0.5% bucket scales them ×2.63). High/extreme ratio unchanged.
+ * Same contract as oi_liq/h2.scale_tier_thresholds.
+ */
+export function scaleTierThresholds(symbolOiUsd: number, btcOiUsd: number | undefined | null, bucketPct?: number | null): TierThresholds {
+  let ratio = 1;
+  if (btcOiUsd && btcOiUsd > 0 && symbolOiUsd > 0) {
+    const r = symbolOiUsd / btcOiUsd;
+    if (Math.abs(r - 1) >= 0.05) ratio = Math.max(1e-4, Math.min(1e2, r));
+  }
+  const k = ratio * bucketFactor(bucketPct);
+  return { extremeUsd: BTC_TIER_EXTREME_USD * k, highUsd: BTC_TIER_HIGH_USD * k, mediumUsd: BTC_TIER_MEDIUM_USD * k };
 }
 
 export function riskOfUsd(usd: number, t: TierThresholds): "极高" | "高" | "中" | "低" {
@@ -174,7 +189,7 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
     .filter((b) => (b.side === "long" ? b.hi < mark : b.lo > mark))
     .sort((a, b) => a.lo - b.lo);
 
-  const thresholds = scaleTierThresholds(totalOi, input.btcOiUsd ?? (raw.symbol.startsWith("BTC") ? totalOi : undefined));
+  const thresholds = scaleTierThresholds(totalOi, input.btcOiUsd ?? (raw.symbol.startsWith("BTC") ? totalOi : undefined), bucketPct);
   const riskOf = (usd: number) => {
     const r = riskOfUsd(usd, thresholds);
     return r === "极高" || r === "高" ? r : null;
