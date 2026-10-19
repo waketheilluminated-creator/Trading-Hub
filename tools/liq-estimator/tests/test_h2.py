@@ -21,6 +21,7 @@ from oi_liq.h2 import (  # noqa: E402
     apply_h2_tiers,
     h2_distribute,
     long_liq_price,
+    matched_oi_totals,
     scale_tier_thresholds,
     short_liq_price,
 )
@@ -125,6 +126,38 @@ def test_live_btc_half_percent_no_longer_mostly_extreme():
     assert new_x >= 1  # the real clusters still surface
     tiers = {r["risk"] for r in new}
     assert {"极高", "高", "中"} <= tiers
+
+
+def test_matched_oi_totals_compares_like_with_like():
+    """TH-BUG-06b: alt OI share must use BTC OI over the same venues as the symbol total."""
+    eth = {"binance": 5.482e9, "okx": 1.408e9, "bybit": 0.95e9}
+    btc = {"binance": 7.823e9, "okx": 2.446e9, "bybit": 2.377e9}
+    sym, ref = matched_oi_totals(eth, btc)
+    assert sym == pytest.approx(7.84e9)
+    assert ref == pytest.approx(12.646e9)
+    t = scale_tier_thresholds(sym, ref, bucket_width_pct=0.005)
+    assert t.extreme_usd == pytest.approx(100e6 * (7.84 / 12.646) * 0.005 / 0.0019, rel=1e-6)
+
+
+def test_matched_oi_regression_binance_only_btc_snapped_eth_to_btc_floors():
+    """The live bug: 3-venue ETH (7.84B) vs Binance-only BTC (7.82B) → ratio≈1 → BTC floors for ETH."""
+    snapped = scale_tier_thresholds(7.8407e9, 7.8167e9)
+    assert snapped.extreme_usd == BTC_TIER_EXTREME_USD
+    sym, ref = matched_oi_totals({"binance": 5.482e9, "okx": 1.408e9, "bybit": 0.95e9}, {"binance": 7.8167e9, "okx": 2.446e9, "bybit": 2.377e9})
+    assert scale_tier_thresholds(sym, ref).extreme_usd < 0.7 * BTC_TIER_EXTREME_USD
+
+
+def test_matched_oi_totals_only_shared_positive_venues():
+    sym, ref = matched_oi_totals({"binance": 1e9, "okx": 2e8, "bybit": 0.0}, {"binance": 8e9, "bybit": 2e9, "gate": 1e9})
+    assert sym == pytest.approx(1e9) and ref == pytest.approx(8e9)  # okx missing on BTC side, bybit zero on symbol side
+
+
+@pytest.mark.parametrize("btc", [{}, None, {"binance": 0.0}, {"binance": float("nan")}, {"okx": 5e9}])
+def test_matched_oi_totals_no_overlap_fails_to_reference(btc):
+    """Deny path: no comparable BTC OI → ref None → scale_tier_thresholds keeps BTC floors (never 0/inf)."""
+    sym, ref = matched_oi_totals({"binance": 1e9}, btc)
+    assert ref is None
+    assert scale_tier_thresholds(sym, ref or 0).extreme_usd == BTC_TIER_EXTREME_USD
 
 
 def test_liq_price_formula():

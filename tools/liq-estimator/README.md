@@ -19,7 +19,9 @@ timeout enforced by the studio refresh route).
   scale by `bucket_width_pct / 0.0019` (clamped `[0.05, 50]`). Live 0.5% buckets →
   ×2.63 (BTC 极高 ≥ $263M / 高 ≥ $184M / 中 ≥ $39M). Missing/invalid width = reference bin.
 - **Tiers (alts):** same floors also scaled by `symbol_OI / btc_OI` via
-  `oi_liq.h2.scale_tier_thresholds` (clamped `[1e-4, 1e2]`). The 高/极高 ratio is the
+  `oi_liq.h2.scale_tier_thresholds` (clamped `[1e-4, 1e2]`). Both OI sums are taken over the
+  **same venues** (`matched_oi_totals`, TH-BUG-06b). Comparing a 3-venue alt total against a
+  Binance-only BTC OI snapped ETH to the BTC floors. The 高/极高 ratio is the
   same for every symbol (no ETH-specific ratio until more Model 1 snapshots).
 - **Zones:** merge ≥2 adjacent 高/极高 same-side bins into one box.
 

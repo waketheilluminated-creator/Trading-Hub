@@ -1293,6 +1293,21 @@ def fetch_binance_klines_1h(base: str, days: float = 7.0) -> list[dict]:
     raise RuntimeError(f"binance 1h klines failed: {last_err}")
 
 
+def fetch_btc_oi_by_venue(venues=None, venue_timeout: Optional[float] = None) -> dict[str, float]:
+    """Best-effort BTCUSDT current one-sided OI (USD) per venue, same venue set as the symbol (TH-BUG-06b)."""
+    out: dict[str, float] = {}
+    try:
+        for r in fetch_all(days=1.0, base="BTC", venues=venues, venue_timeout=venue_timeout):
+            if not r.ok:
+                continue
+            oi = r.current_oi_usd or (r.points[-1].oi_usd if r.points else 0.0)
+            if oi and oi > 0:
+                out[r.exchange] = float(oi)
+    except Exception:
+        return {}
+    return out
+
+
 def fetch_btc_oi_usd() -> float | None:
     """Best-effort Binance BTCUSDT one-sided OI in USD for alt tier scaling."""
     try:

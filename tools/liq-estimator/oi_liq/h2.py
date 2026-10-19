@@ -124,6 +124,30 @@ def scale_tier_thresholds(
     return TierThresholds(extreme * k, high * k, medium * k)
 
 
+def matched_oi_totals(
+    symbol_oi_by_venue: dict | None,
+    btc_oi_by_venue: dict | None,
+) -> tuple[float, float | None]:
+    """Symbol and BTC current OI summed over the venues that report a positive finite OI for *both*.
+
+    The OI share in ``scale_tier_thresholds`` must compare like with like (TH-BUG-06b): a 3-venue alt
+    total against a Binance-only BTC OI can land near 1.0 and snap the alt to BTC floors. Returns
+    ``(symbol_total_all_venues, None)`` when there is no overlap, which keeps the BTC floors.
+    """
+    def ok(v) -> bool:
+        try:
+            return v is not None and math.isfinite(float(v)) and float(v) > 0
+        except (TypeError, ValueError):
+            return False
+
+    sym = {k: float(v) for k, v in (symbol_oi_by_venue or {}).items() if ok(v)}
+    btc = {k: float(v) for k, v in (btc_oi_by_venue or {}).items() if ok(v)}
+    shared = sorted(set(sym) & set(btc))
+    if not shared:
+        return sum(sym.values()), None
+    return sum(sym[k] for k in shared), sum(btc[k] for k in shared)
+
+
 def long_liq_price(entry: float, lev: float, mm: float = H2_MAINT_MARGIN) -> float:
     return entry * (1.0 - 1.0 / lev + mm)
 

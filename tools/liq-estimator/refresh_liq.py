@@ -28,7 +28,7 @@ from oi_liq.fetch import (
     VENUES,
     fetch_all,
     fetch_binance_klines_1h,
-    fetch_btc_oi_usd,
+    fetch_btc_oi_by_venue,
     fetch_tick_size,
 )
 from oi_liq.h2 import (
@@ -38,6 +38,7 @@ from oi_liq.h2 import (
     aggregate_h2_buckets,
     apply_h2_tiers,
     h2_distribute,
+    matched_oi_totals,
     scale_tier_thresholds,
 )
 from oi_liq.model import price_decimals
@@ -137,7 +138,7 @@ def main() -> int:
         tex = cf.ThreadPoolExecutor(max_workers=2)
         tick_fut = tex.submit(fetch_tick_size, base)
         klines_fut = tex.submit(fetch_binance_klines_1h, base, a.days)
-        btc_oi_fut = tex.submit(fetch_btc_oi_usd) if base != "BTC" else None
+        btc_oi_fut = tex.submit(fetch_btc_oi_by_venue, venues, a.venue_timeout) if base != "BTC" else None
 
         results = fetch_all(days=a.days, base=base, venues=venues, venue_timeout=a.venue_timeout)
         ok = [r for r in results if r.ok and r.mid]
@@ -168,6 +169,7 @@ def main() -> int:
 
         # One-sided current OI sum (FetchResult.current_oi_usd already prefers single-side on Bybit).
         total_oi = 0.0
+        oi_by_venue: dict[str, float] = {}
         mid = next((e.mid for e in ok if e.exchange == "okx"), None) or next(
             (e.mid for e in ok if e.exchange == "binance"), ok[0].mid
         )
@@ -175,6 +177,7 @@ def main() -> int:
             oi = fr.current_oi_usd or (fr.points[-1].oi_usd if fr.points else 0.0)
             if oi and oi > 0:
                 total_oi += float(oi)
+                oi_by_venue[fr.exchange] = float(oi)
             if fr.mid:
                 mid = fr.mid if fr.exchange == "binance" else mid
 
@@ -201,13 +204,15 @@ def main() -> int:
 
         hits = h2_distribute(total_oi, bars, mid)
         bucket_rows = aggregate_h2_buckets(hits, mid, bucket_width_pct=a.bucket_width_pct)
-        btc_oi = total_oi if base == "BTC" else None
+        # OI share over the same venues on both sides (TH-BUG-06b); BTC compares with itself.
+        btc_by_venue: dict[str, float] = dict(oi_by_venue) if base == "BTC" else {}
         if btc_oi_fut is not None:
             try:
-                btc_oi = btc_oi_fut.result(timeout=15)
+                btc_by_venue = btc_oi_fut.result(timeout=max(15.0, a.venue_timeout + 5.0)) or {}
             except Exception:
-                btc_oi = None
-        thresholds = scale_tier_thresholds(total_oi, btc_oi or total_oi, bucket_width_pct=a.bucket_width_pct)
+                btc_by_venue = {}
+        share_sym_oi, btc_oi = matched_oi_totals(oi_by_venue, btc_by_venue)
+        thresholds = scale_tier_thresholds(share_sym_oi, btc_oi or 0.0, bucket_width_pct=a.bucket_width_pct)
         apply_h2_tiers(bucket_rows, thresholds)
 
         # Round for display
@@ -238,7 +243,8 @@ def main() -> int:
             "high_usd": thresholds.high_usd,
             "medium_usd": thresholds.medium_usd,
             "btc_oi_usd": btc_oi,
-            "symbol_oi_usd": total_oi,
+            "symbol_oi_usd": share_sym_oi,
+            "oi_share_venues": sorted(set(oi_by_venue) & set(btc_by_venue)),
             "bucket_width_pct": a.bucket_width_pct,
             "ref_bin_width_pct": DONGYI_REF_BIN_WIDTH_PCT,
         }
