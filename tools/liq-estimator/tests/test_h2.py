@@ -305,3 +305,141 @@ def test_h2_golden_oos_corr_iou_thresholds():
         assert gate["PASS"] is True
         assert gate["pass_corr"] is True
         assert gate["pass_iou"] is True
+
+
+# --- TH-FEAT-20: live/replay buckets at the Dongyi bin (~0.19%); same-tier boxes; 中+ shown ---
+from oi_liq.h2 import LIVE_BUCKET_WIDTH_PCT  # noqa: E402
+from oi_liq.zones import ZONE_RISKS, build_bands, build_sample_payload, merge_zones  # noqa: E402
+
+
+def _row(lo, hi, side, usd, risk):
+    return {"lo": lo, "hi": hi, "side": side, "liq_usd": usd, "liq_m": usd / 1e6, "risk": risk, "dist_pct": 0.0}
+
+
+def test_live_bucket_is_dongyi_bin_and_cutoffs_are_btc_floors():
+    assert LIVE_BUCKET_WIDTH_PCT == DONGYI_REF_BIN_WIDTH_PCT == pytest.approx(0.0019)
+    t = scale_tier_thresholds(12e9, 12e9, bucket_width_pct=LIVE_BUCKET_WIDTH_PCT)
+    assert (t.extreme_usd, t.high_usd, t.medium_usd) == (BTC_TIER_EXTREME_USD, BTC_TIER_HIGH_USD, BTC_TIER_MEDIUM_USD)
+    # refresh_liq imports requests (not installed in CI): check its argparse default statically.
+    src = (Path(__file__).resolve().parents[1] / "refresh_liq.py").read_text(encoding="utf-8")
+    assert '"--bucket-width-pct", type=float, default=LIVE_BUCKET_WIDTH_PCT' in src
+    assert "default=0.005" not in src
+
+
+def test_bands_include_medium_but_never_low():
+    rows = [_row(90, 91, "long", 20e6, "中"), _row(91, 92, "long", 5e6, "低"), _row(110, 111, "short", 80e6, "高")]
+    assert ZONE_RISKS == frozenset({"中", "高", "极高"})
+    risks = sorted(b["risk"] for b in build_bands(rows))
+    assert risks == ["中", "高"]
+
+
+def test_zones_merge_same_tier_only_and_singles_stay_bands():
+    mid = 100.0
+    rows = [
+        _row(95.0, 96.0, "long", 120e6, "极高"),
+        _row(96.0, 97.0, "long", 130e6, "极高"),
+        _row(97.0, 98.0, "long", 80e6, "高"),  # adjacent but different tier → its own (single) band
+        _row(98.0, 99.0, "long", 20e6, "中"),
+        _row(101.0, 102.0, "short", 20e6, "中"),
+        _row(102.0, 103.0, "short", 25e6, "中"),
+        _row(104.0, 105.0, "short", 150e6, "极高"),  # isolated → band only
+    ]
+    zones = merge_zones(rows, mid, bucket_width_pct=0.01)
+    got = [(z["lo"], z["hi"], z["risk_max"], z["bucket_count"]) for z in zones]
+    assert got == [(95.0, 97.0, "极高", 2), (101.0, 103.0, "中", 2)]
+    payload = build_sample_payload(symbol="BTCUSDT", mid=mid, buckets=rows, bucket_pct=1.0)
+    assert len(payload["bands"]) == 7
+    assert "SAME tier" in payload["zoneRule"]
+
+
+def test_zones_never_merge_across_sides_or_gaps():
+    rows = [_row(95.0, 96.0, "long", 120e6, "极高"), _row(96.5, 97.5, "long", 120e6, "极高"), _row(100.5, 101.5, "short", 120e6, "极高")]
+    assert merge_zones(rows, 100.0, bucket_width_pct=0.01) == []
+
+
+def test_s1020_btc_long_extreme_box_vs_dongyi():
+    """Live BTC at Beijing 2026-10-20 02:47 (18:47Z), 0.19% buckets, BTC floors.
+
+    东一 long 极高 = 79,462–79,619 (2 rows). H2's long-side peak sits lower: within ±5% of mark there is ONE
+    merged long 极高 box, 78,508–79,598 (7 bins), which reaches into 东一's range at its top bin but is centred
+    ~500 below it. Asserted as-is (honest gap, no tuning).
+    """
+    data = json.loads((Path(__file__).parent / "fixture_btc_s1020_0p19.json").read_text(encoding="utf-8"))
+    mark, w = data["mark"], data["bucket_width_pct"]
+    rows = apply_h2_tiers([dict(r) for r in data["buckets"]], scale_tier_thresholds(1.0, 1.0, bucket_width_pct=w))
+    zones = merge_zones(rows, mark, bucket_width_pct=w)
+    near = [z for z in zones if z["risk_max"] == "极高" and abs((z["lo"] + z["hi"]) / 2 / mark - 1) < 0.05]
+    longs = [z for z in near if z["side"] == "long"]
+    assert len(longs) == 1, longs
+    box = longs[0]
+    (dy_lo, dy_hi), = data["dongyi_extreme"]["long"]
+    assert box["lo"] < dy_hi and box["hi"] > dy_lo, "long box must overlap 东一 79,462–79,619"
+    assert round(box["lo"]) == 78508 and round(box["hi"]) == 79598 and box["bucket_count"] == 7
+    assert (box["lo"] + box["hi"]) / 2 < (dy_lo + dy_hi) / 2 - 300  # model peak is below 东一's (documented gap)
+    shorts = [z for z in near if z["side"] == "short"]
+    assert any(z["lo"] < 84948 and z["hi"] > 84165 for z in shorts)
+    # 东一's lower short pair (83,224–83,694) is two NON-adjacent single 极高 bins in H2 (83,178 / 83,490):
+    # not a box, but still drawn as bands (the old ">=2 bins or nothing" rule hid them).
+    bands = build_bands(rows)
+    assert not any(z["lo"] < 83694 and z["hi"] > 83224 for z in shorts)
+    assert sum(1 for b in bands if b["risk"] == "极高" and b["side"] == "short" and b["lo"] < 83694 and b["hi"] > 83224) == 2
+    # 中+ singles still visible as bands; 低 never.
+    assert all(b["risk"] in ("中", "高", "极高") for b in bands)
+    assert sum(r["risk"] != "低" for r in rows) == len(bands)
+
+
+# --- TH-FEAT-20b: small-OI alts never collapse to zero bands (relative tier floor) ---
+from oi_liq.h2 import REL_FLOOR_HIGH, REL_FLOOR_MEDIUM, TierThresholds, apply_relative_tier_floor  # noqa: E402
+
+
+def _tiered(rows, t):
+    return apply_h2_tiers([dict(r) for r in rows], t)
+
+
+def test_relative_floor_only_when_a_side_has_no_tiered_bin():
+    t = TierThresholds(extreme_usd=1e9, high_usd=7e8, medium_usd=1.5e8)
+    rows = _tiered([
+        {"lo": 1, "hi": 2, "side": "long", "liq_usd": 100.0}, {"lo": 2, "hi": 3, "side": "long", "liq_usd": 85.0},
+        {"lo": 3, "hi": 4, "side": "long", "liq_usd": 60.0}, {"lo": 4, "hi": 5, "side": "long", "liq_usd": 10.0},
+        {"lo": 6, "hi": 7, "side": "short", "liq_usd": 2e8}, {"lo": 7, "hi": 8, "side": "short", "liq_usd": 1.0},
+    ], t)
+    assert [r["risk"] for r in rows] == ["低"] * 4 + ["中", "低"]
+    used = apply_relative_tier_floor(rows)
+    assert used == ["long"]
+    assert [r["risk"] for r in rows] == ["高", "高", "中", "低", "中", "低"]  # short side untouched (has a 中)
+    assert all(r.get("tier_basis") == "relative" for r in rows[:3]) and "tier_basis" not in rows[4]
+    assert REL_FLOOR_HIGH == 0.8 and REL_FLOOR_MEDIUM == 0.5
+    assert not any(r["risk"] == "极高" for r in rows[:4]), "the floor never invents 极高"
+
+
+def test_relative_floor_deny_paths():
+    assert apply_relative_tier_floor([]) == []
+    zero = [{"lo": 1, "hi": 2, "side": "long", "liq_usd": 0.0, "risk": "低"}]
+    assert apply_relative_tier_floor(zero) == [] and zero[0]["risk"] == "低"
+    bad = [{"lo": 1, "hi": 2, "side": "long", "liq_usd": float("nan"), "risk": "低"},
+           {"lo": 2, "hi": 3, "side": "bid", "liq_usd": 5.0, "risk": "低"}]
+    assert apply_relative_tier_floor(bad) == [] and [r["risk"] for r in bad] == ["低", "低"]
+
+
+def test_pyth_like_alt_gets_bands_and_a_box():
+    # PYTHUSDT 0.5% live (10-20 03:47 BJ): max bucket 84k vs OI-scaled 中 cutoff 54k / 高 251k → only 中.
+    t = scale_tier_thresholds(17.2e6, 12.6e9, bucket_width_pct=0.005)
+    usd = [83_910, 79_798, 75_658, 51_243, 45_076]
+    rows = _tiered([{"lo": 1.0 + i, "hi": 2.0 + i, "side": "long", "liq_usd": u, "liq_m": u / 1e6, "dist_pct": -1} for i, u in enumerate(usd)], t)
+    apply_relative_tier_floor(rows)
+    assert [r["risk"] for r in rows] == ["中", "中", "中", "低", "低"]
+    # Same alt with 4× smaller OI: absolute → nothing; floor → its top bins still show + merge.
+    tiny = _tiered([dict(r, liq_usd=r["liq_usd"] / 4) for r in rows], t)
+    assert all(r["risk"] == "低" for r in tiny)
+    assert apply_relative_tier_floor(tiny) == ["long"]
+    assert [r["risk"] for r in tiny] == ["高", "高", "高", "中", "中"]  # ratios 1, .95, .90, .61, .54 of peak
+    assert len(build_bands(tiny)) == 5
+    zones = merge_zones(tiny, 10.0, bucket_width_pct=0.1)
+    assert [(z["risk_max"], z["bucket_count"]) for z in zones] == [("高", 3), ("中", 2)]
+
+
+def test_refresh_applies_relative_floor_after_absolute_tiers():
+    src = (Path(__file__).resolve().parents[1] / "refresh_liq.py").read_text(encoding="utf-8")
+    i, j = src.index("apply_h2_tiers(bucket_rows, thresholds)"), src.index("apply_relative_tier_floor(bucket_rows)")
+    assert i < j < src.index("build_sample_payload(\n")
+    assert '"relative_floor_sides": tier_fallback' in src

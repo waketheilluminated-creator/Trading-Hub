@@ -139,6 +139,8 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .replay-badge { display:inline-flex; align-items:center; gap:4px; color:#f0b90b; font:600 11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-right:4px; }
 .liq-risk-key { display:inline-flex; align-items:center; gap:4px; color:#9aa5b4; }
 .liq-risk-key i { display:inline-block; width:12px; height:9px; border-radius:1px; background:rgba(154,165,180,.35); }
+.liq-risk-key i.liq-risk-medium { background:rgba(154,165,180,.16); }
+.liq-risk-key i.liq-risk-high { margin-left:6px; }
 .liq-risk-key i.liq-risk-extreme { margin-left:6px; box-shadow:inset 0 0 0 2px #9aa5b4; }
 .liq-zone-bell { height:18px; padding:0 4px; border:1px solid #303b4b; border-radius:4px; background:#1b2330; color:#9aa5b4; cursor:pointer; font-size:11px; line-height:16px; filter:grayscale(1); }
 .liq-zone-bell.active { border-color:#f0b90b; background:rgba(240,185,11,.14); filter:none; }

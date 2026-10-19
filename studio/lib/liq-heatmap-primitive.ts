@@ -254,6 +254,8 @@ export function drawLiqZone(context: CanvasRenderingContext2D, zone: PlacedLiqZo
   context.textBaseline = "middle";
   const textWidth = context.measureText(label).width;
   if (zone.width < textWidth + 12) return;
+  // TH-FEAT-20: 中 boxes are labelled only when the label fits inside (no above-box labels → less clutter).
+  if (zone.zone.risk_max === "中" && zone.height < 14) return;
   const y = zone.height >= 14 ? zone.top + zone.height / 2 : zone.top - 7;
   context.fillStyle = zone.text;
   context.fillText(label, zone.left + 6, y);

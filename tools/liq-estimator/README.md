@@ -16,14 +16,21 @@ timeout enforced by the studio refresh route).
 - **Tiers (BTC):** 极高 ≥ $100M, 高 ≥ $70M, 中 ≥ $15M, else 低 — per **Dongyi BTC bin
   (~0.19% of price)**.
 - **Bucket width (TH-BUG-06):** a wider bucket sums several Dongyi bins, so the floors
-  scale by `bucket_width_pct / 0.0019` (clamped `[0.05, 50]`). Live 0.5% buckets →
-  ×2.63 (BTC 极高 ≥ $263M / 高 ≥ $184M / 中 ≥ $39M). Missing/invalid width = reference bin.
+  scale by `bucket_width_pct / 0.0019` (clamped `[0.05, 50]`). Missing/invalid width = reference bin.
+- **Live + replay bucket (TH-FEAT-20):** `0.0019` (0.19%, the Dongyi BTC bin; BTC ≈ $157 at $82k),
+  so the BTC floors apply as-is. `--bucket-width-pct` still overrides (e.g. 0.005 → ×2.63).
 - **Tiers (alts):** same floors also scaled by `symbol_OI / btc_OI` via
   `oi_liq.h2.scale_tier_thresholds` (clamped `[1e-4, 1e2]`). Both OI sums are taken over the
   **same venues** (`matched_oi_totals`, TH-BUG-06b). Comparing a 3-venue alt total against a
   Binance-only BTC OI snapped ETH to the BTC floors. The 高/极高 ratio is the
   same for every symbol (no ETH-specific ratio until more Model 1 snapshots).
-- **Zones:** merge ≥2 adjacent 高/极高 same-side bins into one box.
+- **Bands / zones (TH-FEAT-20):** every bin tiered 中/高/极高 is a band (isolated single bins stay
+  visible, like Dongyi's table rows); 低 is never drawn. ≥2 adjacent bins of the **same tier** and
+  side merge into one box (consecutive 极高 → one 极高 box). Zone alerts use 高/极高 boxes only.
+- **Relative floor (TH-FEAT-20b):** OI-scaled cutoffs can leave a small-OI alt with zero tiered bins
+  (PYTHUSDT showed nothing). Only on a side with **no** 中+ bin, that side is re-tiered against its own
+  peak bin: ≥0.8×peak → 高, ≥0.5×peak → 中 (`tier_basis="relative"`, `tierThresholds.relative_floor_sides`).
+  It never creates 极高 and never touches a side that already has a 中+ bin. Replay uses the same rule.
 
 ### OKX coverage
 

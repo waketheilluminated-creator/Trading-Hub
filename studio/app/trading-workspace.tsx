@@ -49,7 +49,8 @@ import {
   formatLiqComputedAt,
   liqZoneAnchorTime,
   liqHeatmapDefaultOn,
-  LIQ_LEGEND_ABOVE, LIQ_LEGEND_RISK_EXTREME, LIQ_LEGEND_RISK_HIGH, liqZoneBorderWidth,
+  LIQ_LEGEND_ABOVE, LIQ_LEGEND_RISK_EXTREME, LIQ_LEGEND_RISK_HIGH, LIQ_LEGEND_RISK_MEDIUM, liqZoneBorderWidth,
+  LIQ_REFRESH_EMPTY_MS, LIQ_REFRESH_EMPTY_TITLE, liqRefreshEmptyNotice,
   LIQ_LEGEND_BELOW,
   LIQ_LONG_RGB,
   LIQ_SHORT_RGB,
@@ -509,6 +510,7 @@ export function TradingWorkspace() {
   const [liqCooldown, setLiqCooldown] = useState<{ symbol: string; until: number } | null>(null);
   const [liqClock, setLiqClock] = useState(0);
   const [liqToast, setLiqToast] = useState<string | null>(null);
+  const [liqEmpty, setLiqEmpty] = useState<{ symbol: string; label: string } | null>(null);
   const liqDecimalsRef = useRef<number | null>(null);
   const [replayLiq, setReplayLiq] = useState<{ key: string; model: LiqHeatmapChartModel } | null>(null);
   const replayLiqKey = replayCursor == null ? null : `${symbol}:${interval}:${replayCursor}`;
@@ -543,16 +545,24 @@ export function TradingWorkspace() {
     const id = window.setTimeout(() => setLiqToast(null), 6000);
     return () => window.clearTimeout(id);
   }, [liqToast]);
+  useEffect(() => {
+    if (!liqEmpty) return;
+    const id = window.setTimeout(() => setLiqEmpty(null), LIQ_REFRESH_EMPTY_MS);
+    return () => window.clearTimeout(id);
+  }, [liqEmpty]);
   const refreshLiqZones = useCallback(() => {
     const target = symbol;
     if (!chartSupportsLiqSample(target) || liqRefreshing) return;
     setLiqRefreshing(target);
     setLiqToast(null);
+    setLiqEmpty(null);
     if (!showLiqHeatmap) setShowLiqHeatmap(true);
     requestLiqRefresh(target, fetch)
       .then((result) => {
         if (result.ok) {
           setLiqModel({ symbol: target, ...result.model });
+          const empty = liqRefreshEmptyNotice(result.model);
+          if (empty) setLiqEmpty({ symbol: target, label: empty });
           setLiqProbe({ symbol: target, has: true });
           setLiqCooldown({ symbol: target, until: Date.now() + result.cooldownSec * 1000 });
         } else {
@@ -1743,7 +1753,7 @@ export function TradingWorkspace() {
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price" data-price-precision={pricePrecision ?? ""}>{fmtPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {fmtPrice(last?.high ?? null)}</span><span>L {fmtPrice(last?.low ?? null)}</span></div>
               <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
-              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqZones.length > 0 && <span className="liq-risk-key" data-liq-legend-risk><i className="liq-risk-high" data-border-px={liqZoneBorderWidth("高")} />{LIQ_LEGEND_RISK_HIGH}<i className="liq-risk-extreme" data-border-px={liqZoneBorderWidth("极高")} />{LIQ_LEGEND_RISK_EXTREME}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={replay ? `No historical OI for replay: ${liqVenuesFailed.join(", ")}` : `Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {replay ? `回放不可用 unavailable: ${liqVenuesFailed.join(", ")}` : `${liqVenuesFailed.length} venue${liqVenuesFailed.length > 1 ? "s" : ""} failed`}</span>}{liqZones.length > 0 && !replay && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
+              {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqZones.length > 0 && <span className="liq-risk-key" data-liq-legend-risk><i className="liq-risk-medium" data-border-px={liqZoneBorderWidth("中")} />{LIQ_LEGEND_RISK_MEDIUM}<i className="liq-risk-high" data-border-px={liqZoneBorderWidth("高")} />{LIQ_LEGEND_RISK_HIGH}<i className="liq-risk-extreme" data-border-px={liqZoneBorderWidth("极高")} />{LIQ_LEGEND_RISK_EXTREME}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={replay ? `No historical OI for replay: ${liqVenuesFailed.join(", ")}` : `Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {replay ? `回放不可用 unavailable: ${liqVenuesFailed.join(", ")}` : `${liqVenuesFailed.length} venue${liqVenuesFailed.length > 1 ? "s" : ""} failed`}</span>}{liqZones.length > 0 && !replay && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock
               showUnfilled={showLargeOrderSr}
@@ -1762,6 +1772,7 @@ export function TradingWorkspace() {
             {showLargeOrderSr && <div ref={wallTipRef} className="liq-heatmap-tip wall-zone-tip" role="tooltip" data-wall-zone-tip hidden />}
             {showLiqHeatmap && liqNotice && <div className="liq-heatmap-notice" role="status" data-liq-heatmap-notice>{liqNotice}</div>}
             {liqRefreshing === symbol && <div className="liq-refresh-status" role="status" data-liq-refreshing>刷新清算中… (10–60 s)</div>}
+            {liqEmpty && liqEmpty.symbol === symbol && liqRefreshing !== symbol && <div className="liq-refresh-status liq-refresh-empty" role="status" data-liq-refresh-empty title={LIQ_REFRESH_EMPTY_TITLE}>{liqEmpty.label}</div>}
             {replay?.phase === "pick" && <div className="replay-hint" role="status" data-replay-hint>{REPLAY_PICK_HINT}<button type="button" aria-label="Cancel replay" title="取消回放" onClick={() => setReplay(null)}>×</button></div>}
             {replay?.phase === "active" && <div className="replay-controls" role="toolbar" aria-label="Replay controls" data-replay-cursor={replay.cursor}>
               <span className="replay-badge" title="回放时间 (UTC)"><ReplayIcon />{new Date(replay.cursor * 1000).toISOString().slice(0, 16).replace("T", " ")}</span>

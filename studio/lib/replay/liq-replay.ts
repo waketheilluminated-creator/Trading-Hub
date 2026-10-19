@@ -8,15 +8,16 @@
  *     (1h bars are aggregated from the 1m series the service already loads).
  *  3. Leverage 10/25/50/100× @ 0.30/0.30/0.25/0.15, 50/50 long/short, 0.5% MM.
  *  4. Drop levels the post-entry price path has already crossed (TH-BUG-05).
- *  5. Bucket around mark; fixed-dollar tiers (BTC: 极高≥$100M / 高≥$70M / 中≥$15M),
- *     scaled for alts by symbol_OI/btc_OI; ≥2 adjacent 高/极高 merge into a zone.
+ *  5. Bucket around mark at the Dongyi bin (0.19%, TH-FEAT-20); fixed-dollar tiers (BTC: 极高≥$100M /
+ *     高≥$70M / 中≥$15M), scaled for alts by symbol_OI/btc_OI over the SAME venues; every 中+ bin is a band
+ *     and ≥2 adjacent bins of the same tier merge into a zone.
  * No lookahead: every input is cut at `cutoff` before any computation.
  */
 import { LIQ_HEATMAP_KIND, sanitizeLiqHeatmapSnapshot, type LiqHeatmapSnapshot } from "../liq-heatmap.ts";
 
 export const REPLAY_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 export const REPLAY_COHORT_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // H2: 7d
-export const REPLAY_BUCKET_PCT = 0.5; // 0.5% of mid (chart contract)
+export const REPLAY_BUCKET_PCT = 0.19; // % of mid — Dongyi BTC bin (TH-FEAT-20), same as live
 export const REPLAY_RANGE_PCT = 12;
 export const REPLAY_LEVERAGE_TIERS: readonly { lev: number; weight: number }[] = [
   { lev: 10, weight: 0.3 }, { lev: 25, weight: 0.3 }, { lev: 50, weight: 0.25 }, { lev: 100, weight: 0.15 },
@@ -40,8 +41,10 @@ export type ReplayInput = {
   cutoff: number;
   bars: readonly PriceBar[]; // 1m (or any); aggregated to 1h for entry weights
   oi: Readonly<Record<string, readonly OiPoint[]>>;
-  /** Optional BTC one-sided OI at cutoff for alt tier scaling. */
+  /** Optional BTC one-sided OI at cutoff for alt tier scaling (explicit total; wins over btcOi). */
   btcOiUsd?: number;
+  /** Optional BTC OI history per venue; summed over the venues the symbol also used (TH-FEAT-20). */
+  btcOi?: Readonly<Record<string, readonly OiPoint[]>>;
   barMs?: number;
   lookbackMs?: number;
   bucketPct?: number;
@@ -50,6 +53,8 @@ export type ReplayLevel = { venue: string; side: "long" | "short"; price: number
 export type ReplayResult = {
   ok: true; snapshot: LiqHeatmapSnapshot; mark: number; venuesUsed: string[]; venuesUnavailable: string[]; levels: ReplayLevel[];
   buckets: { idx: number; lo: number; hi: number; side: "long" | "short"; usd: number }[];
+  tierThresholds: TierThresholds;
+  relativeFloorSides: string[];
 } | { ok: false; error: string };
 
 export function longLiqPrice(p: number, lev: number, mm = REPLAY_MAINT_MARGIN): number { return p * (1 - 1 / lev + mm); }
@@ -113,6 +118,57 @@ export function aggregateTo1h(bars: readonly PriceBar[], lookbackStart: number, 
   return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([ts, v]) => ({ ts, ...v }));
 }
 
+/** Venue OI at cutoff = last finite positive sample in [cutoff − lookback, cutoff] no older than 1h; else null. */
+export function venueOiAt(points: readonly OiPoint[] | undefined, cutoff: number, lookbackMs = REPLAY_COHORT_LOOKBACK_MS): number | null {
+  if (!points) return null;
+  let last: OiPoint | null = null;
+  for (const p of points) {
+    if (p.ts > cutoff || p.ts < cutoff - lookbackMs || !Number.isFinite(p.oiUsd) || !(p.oiUsd > 0)) continue;
+    if (!last || p.ts >= last.ts) last = p;
+  }
+  return last && cutoff - last.ts <= 60 * 60_000 ? last.oiUsd : null;
+}
+
+/**
+ * Same-venue OI totals for the alt/BTC tier ratio (TS twin of oi_liq/h2.matched_oi_totals): sum only venues
+ * present (finite, >0) in both maps. No overlap → btc null (caller falls back to unscaled floors).
+ */
+export function matchedReplayOiTotals(symByVenue: Readonly<Record<string, number>>, btcByVenue: Readonly<Record<string, number>>): { sym: number; btc: number | null } {
+  let sym = 0, btc = 0, n = 0;
+  for (const [venue, value] of Object.entries(symByVenue)) {
+    const b = btcByVenue[venue];
+    if (!(Number.isFinite(value) && value > 0 && Number.isFinite(b) && b > 0)) continue;
+    sym += value; btc += b; n += 1;
+  }
+  const symTotal = Object.values(symByVenue).reduce((s, v) => (Number.isFinite(v) && v > 0 ? s + v : s), 0);
+  return n ? { sym, btc } : { sym: symTotal, btc: null };
+}
+
+/** TH-FEAT-20b relative floor (twin of oi_liq/h2.apply_relative_tier_floor). */
+export const REL_FLOOR_HIGH = 0.8;
+export const REL_FLOOR_MEDIUM = 0.5;
+type Tier = "极高" | "高" | "中" | "低";
+/**
+ * Only on a side where no bin reached 中: re-tier that side against its own max bin (≥0.8×max → 高,
+ * ≥0.5×max → 中). Never produces 极高; sides that already have a 中+ bin are untouched.
+ * Returns the tiers (same order as `bins`) and the sides the floor was applied to.
+ */
+export function applyRelativeTierFloor(bins: readonly { side: string; usd: number }[], tiers: readonly Tier[]): { tiers: Tier[]; sides: string[] } {
+  const out = [...tiers];
+  const sides: string[] = [];
+  for (const side of ["long", "short"]) {
+    const idx = bins.map((b, i) => i).filter((i) => bins[i].side === side && Number.isFinite(bins[i].usd) && bins[i].usd > 0);
+    if (!idx.length || idx.some((i) => out[i] !== "低")) continue;
+    const peak = Math.max(...idx.map((i) => bins[i].usd));
+    for (const i of idx) {
+      if (bins[i].usd >= REL_FLOOR_HIGH * peak) out[i] = "高";
+      else if (bins[i].usd >= REL_FLOOR_MEDIUM * peak) out[i] = "中";
+    }
+    sides.push(side);
+  }
+  return { tiers: out, sides };
+}
+
 export function computeReplayLiq(raw: ReplayInput): ReplayResult {
   const input = truncateReplayInput(raw);
   const barMs = input.barMs ?? 60_000;
@@ -126,6 +182,7 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
   const venuesUsed: string[] = [];
   const venuesUnavailable: string[] = [];
   let totalOi = 0;
+  const symByVenue: Record<string, number> = {};
   for (const [venue, allPoints] of Object.entries(input.oi)) {
     const points = allPoints.filter((p) => p.ts >= input.cutoff - lookback && Number.isFinite(p.oiUsd) && p.oiUsd > 0);
     if (points.length < 1 || input.cutoff - points[points.length - 1].ts > 60 * 60_000) {
@@ -134,6 +191,7 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
     }
     venuesUsed.push(venue);
     totalOi += points[points.length - 1].oiUsd;
+    symByVenue[venue] = points[points.length - 1].oiUsd;
   }
   if (!venuesUsed.length || !(totalOi > 0)) return { ok: false, error: REPLAY_OUT_OF_RANGE };
 
@@ -189,24 +247,38 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
     .filter((b) => (b.side === "long" ? b.hi < mark : b.lo > mark))
     .sort((a, b) => a.lo - b.lo);
 
-  const thresholds = scaleTierThresholds(totalOi, input.btcOiUsd ?? (raw.symbol.startsWith("BTC") ? totalOi : undefined), bucketPct);
-  const riskOf = (usd: number) => {
-    const r = riskOfUsd(usd, thresholds);
-    return r === "极高" || r === "高" ? r : null;
+  let thresholds: TierThresholds;
+  if (input.btcOiUsd != null) thresholds = scaleTierThresholds(totalOi, input.btcOiUsd, bucketPct);
+  else if (raw.symbol.startsWith("BTC")) thresholds = scaleTierThresholds(totalOi, totalOi, bucketPct);
+  else if (input.btcOi) {
+    const btcByVenue: Record<string, number> = {};
+    for (const [venue, points] of Object.entries(input.btcOi)) {
+      const v = venueOiAt(points, input.cutoff, lookback);
+      if (v != null) btcByVenue[venue] = v;
+    }
+    const matched = matchedReplayOiTotals(symByVenue, btcByVenue);
+    thresholds = scaleTierThresholds(matched.sym, matched.btc, bucketPct);
+  } else thresholds = scaleTierThresholds(totalOi, undefined, bucketPct);
+  // TH-FEAT-20: every bin tiered 中 or above is drawn (Dongyi shows isolated rows); 低 is not.
+  const floored = applyRelativeTierFloor(buckets, buckets.map((b) => riskOfUsd(b.usd, thresholds) as Tier));
+  const riskAt = (i: number) => {
+    const r = floored.tiers[i];
+    return r === "极高" || r === "高" || r === "中" ? r : null;
   };
   const decimals = mark >= 1000 ? 1 : mark >= 1 ? 4 : 6;
   const scale = Math.pow(10, decimals);
   const px = (v: number, side: "long" | "short") => (side === "long" ? Math.floor(v * scale) : Math.ceil(v * scale)) / scale;
   const distPct = (lo: number, hi: number) => Number(((((lo + hi) / 2) - mark) / mark * 100).toFixed(2));
-  const bands = buckets.flatMap((b) => {
-    const risk = riskOf(b.usd);
+  const bands = buckets.flatMap((b, i) => {
+    const risk = riskAt(i);
     return risk ? [{ lo: px(b.lo, b.side), hi: px(b.hi, b.side), side: b.side, liq_m: Number((b.usd / 1e6).toFixed(2)), risk, dist_pct: distPct(b.lo, b.hi) }] : [];
   });
   const zones: unknown[] = [];
   for (let i = 0; i < bands.length;) {
     let j = i;
     const adjacent = (a: { hi: number }, b: { lo: number }) => Math.abs(b.lo - a.hi) <= step * 0.01 + Math.pow(10, -decimals);
-    while (j + 1 < bands.length && bands[j + 1].side === bands[i].side && adjacent(bands[j], bands[j + 1])) j += 1;
+    // Same side AND same tier only (TH-FEAT-20): consecutive 极高 bins become one box; 高 next to 极高 does not.
+    while (j + 1 < bands.length && bands[j + 1].side === bands[i].side && bands[j + 1].risk === bands[i].risk && adjacent(bands[j], bands[j + 1])) j += 1;
     if (j > i) {
       const group = bands.slice(i, j + 1);
       const lo = group[0].lo, hi = group[group.length - 1].hi;
@@ -214,7 +286,7 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
         zones.push({
           lo, hi, role: bands[i].side === "long" ? "support" : "resistance", side: bands[i].side,
           liq_m: Number(group.reduce((s, b) => s + b.liq_m, 0).toFixed(2)),
-          risk_max: group.some((b) => b.risk === "极高") ? "极高" : "高",
+          risk_max: bands[i].risk,
           dist_pct: distPct(lo, hi), bucket_count: group.length,
           band_idx: group.map((_, k) => i + k),
         });
@@ -230,5 +302,5 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
   };
   const parsed = sanitizeLiqHeatmapSnapshot(rawSnapshot);
   if (!parsed.ok) return { ok: false, error: parsed.error };
-  return { ok: true, snapshot: parsed.snapshot, mark, venuesUsed, venuesUnavailable, levels, buckets };
+  return { ok: true, snapshot: parsed.snapshot, mark, venuesUsed, venuesUnavailable, levels, buckets, tierThresholds: thresholds, relativeFloorSides: floored.sides };
 }

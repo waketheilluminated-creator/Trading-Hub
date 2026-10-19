@@ -35,7 +35,7 @@ jobs:
           node-version: 22
       - name: Replay + liq unit tests (no vinext build)
         working-directory: studio
-        run: node --experimental-strip-types --test tests/replay.test.mjs tests/replay-keys.test.mjs tests/replay-icons.test.mjs tests/liq-auto-refresh.test.mjs tests/liq-refresh.test.mjs tests/liq-heatmap.test.mjs
+        run: node --experimental-strip-types --test tests/replay.test.mjs tests/replay-keys.test.mjs tests/replay-icons.test.mjs tests/liq-auto-refresh.test.mjs tests/liq-refresh.test.mjs tests/liq-heatmap.test.mjs tests/liq-bucket-019.test.mjs tests/liq-zones.test.mjs
 
   liq-h2:
     runs-on: ubuntu-latest

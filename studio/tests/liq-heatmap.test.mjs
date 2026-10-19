@@ -95,8 +95,8 @@ test("drops bad bands and keeps the remaining extreme zones", () => {
       { lo: 12, hi: 9, side: "long", liq_m: 10, risk: "极高", dist_pct: 0 },
       { lo: Number.NaN, hi: 11, side: "long", liq_m: 10, risk: "极高", dist_pct: 0 },
       { lo: 10, hi: 11, side: "bid", liq_m: 10, risk: "极高", dist_pct: 0 },
-      // TH-FEAT-10: bands[] now carries 高 and 极高 (TRADINGHUB.md); lower tiers are still rejected.
-      { lo: 10, hi: 11, side: "long", liq_m: 10, risk: "中", dist_pct: 0 },
+      // TH-FEAT-20: bands[] carries 中, 高 and 极高 (0.19% Dongyi bins); 低 and unknown tiers are still rejected.
+      { lo: 10, hi: 11, side: "long", liq_m: 10, risk: "低", dist_pct: 0 },
       { lo: 10, hi: 11, side: "LONG", liq_m: 10, risk: "极高", dist_pct: 0 },
       { lo: 10, hi: 11, side: "long", liq_m: Number.POSITIVE_INFINITY, risk: "极高", dist_pct: 0 },
       { lo: 1500, hi: 1501, side: "short", liq_m: 4, risk: "极高", dist_pct: 8.3, color: "green", admin: true },
@@ -110,11 +110,11 @@ test("drops bad bands and keeps the remaining extreme zones", () => {
   assert.equal(parsed.snapshot.bands[1].side, "short");
   assert.equal(parsed.snapshot.bands[1].liq_m, 4);
   assert.deepEqual(Object.keys(parsed.snapshot.bands[1]), ["lo", "hi", "side", "liq_m", "risk", "dist_pct"]);
-  for (const risk of ["高", "极高"]) {
+  for (const risk of ["中", "高", "极高"]) {
     const kept = sanitizeLiqHeatmapSnapshot({ ...sample, bands: [{ ...sample.bands[0], risk }] });
     assert.equal(kept.ok && kept.snapshot.bands[0].risk, risk);
   }
-  for (const risk of ["中", "低", "high", "extreme", "", null]) {
+  for (const risk of ["低", "medium", "high", "extreme", "", null]) {
     const rejected = sanitizeLiqHeatmapSnapshot({ ...sample, bands: [{ ...sample.bands[0], risk }] });
     assert.equal(rejected.ok && rejected.snapshot.bands.length, 0, String(risk));
   }

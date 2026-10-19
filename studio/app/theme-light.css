@@ -233,6 +233,9 @@ html.theme-light .liq-risk-key {
 html.theme-light .liq-risk-key i {
     background: rgba(56, 65, 76, 0.35)
 }
+html.theme-light .liq-risk-key i.liq-risk-medium {
+    background: rgba(56, 65, 76, 0.16)
+}
 html.theme-light .liq-risk-key i.liq-risk-extreme {
     box-shadow: inset 0 0 0 2px #38414c
 }

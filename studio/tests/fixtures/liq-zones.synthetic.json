@@ -17,7 +17,7 @@
     { "lo": 1, "hi": 0, "side": "long", "liq_m": 10, "risk": "极高", "dist_pct": -4.5 },
     { "lo": 95.5, "hi": 96, "side": "long", "liq_m": 8, "risk": "高", "dist_pct": -4 },
     { "lo": 90, "hi": 90.5, "side": "long", "liq_m": 5, "risk": "高", "dist_pct": -9.5 },
-    { "lo": 105, "hi": 105.5, "side": "short", "liq_m": 7, "risk": "中", "dist_pct": 5 },
+    { "lo": 105, "hi": 105.5, "side": "short", "liq_m": 7, "risk": "低", "dist_pct": 5 },
     { "lo": 110, "hi": 110.5, "side": "short", "liq_m": 6, "risk": "极高", "dist_pct": 10 },
     { "lo": 110.5, "hi": 111, "side": "short", "liq_m": 4, "risk": "高", "dist_pct": 10.5 }
   ],
@@ -28,7 +28,7 @@
     { "lo": 80, "hi": 81, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": -19, "bucket_count": 2 },
     { "lo": 120, "hi": 121, "role": "admin", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
     { "lo": 120, "hi": 121, "role": "resistance", "liq_m": "3", "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
-    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "中", "dist_pct": 20, "bucket_count": 2 },
+    { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "低", "dist_pct": 20, "bucket_count": 2 },
     { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 1 },
     { "lo": 120, "hi": 121, "role": "resistance", "color": "green", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2 },
     { "lo": 120, "hi": 121, "role": "resistance", "liq_m": 3, "risk_max": "高", "dist_pct": 20, "bucket_count": 2, "band_idx": [-1] },
