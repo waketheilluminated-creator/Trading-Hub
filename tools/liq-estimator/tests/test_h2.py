@@ -1,4 +1,4 @@
-"""Unit + golden OOS tests for H2 (TH-FEAT-19)."""
+﻿"""Unit + golden OOS tests for H2 (TH-FEAT-19)."""
 from __future__ import annotations
 
 import json
@@ -169,7 +169,7 @@ def test_h2_golden_oos_tier_accuracy():
     for path in sorted(GOLDEN.glob("s*.json")):
         if path.name.startswith("scores") or path.name.startswith("h2_"):
             continue
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         for r in data["rows"]:
             pred = t.risk(r["m"] * 1e6)
             total += 1
@@ -189,8 +189,8 @@ def test_h2_golden_oos_corr_iou_thresholds():
     Thresholds match the OOS campaign gate (corr ≥ 0.70; IoU pass flags in scores.json).
     Pred grids are frozen H2 outputs; this locks the campaign, not live network OI.
     """
-    preds = json.loads((GOLDEN / "h2_preds.json").read_text())
-    scores = json.loads((GOLDEN / "scores.json").read_text())["h2"]
+    preds = json.loads((GOLDEN / "h2_preds.json").read_text(encoding="utf-8"))
+    scores = json.loads((GOLDEN / "scores.json").read_text(encoding="utf-8"))["h2"]
     assert set(preds["snaps"]) == set(scores)
     for sid, snap in preds["snaps"].items():
         grid = snap["grid"]
