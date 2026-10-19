@@ -5,7 +5,7 @@
  * Imported only by lib/alerts/server.ts (Node runtime, Vite-bundled).
  */
 import liqHeatmapFixture from "../../fixtures/liq_heatmap_bands.sample.json";
-import { buildLiqHeatmapPayload, selectLiqSnapshotSource } from "../liq-heatmap.ts";
+import { alertableLiqZones, buildLiqHeatmapPayload, selectLiqSnapshotSource } from "../liq-heatmap.ts";
 import { allowlistedSymbol } from "../liq-refresh.ts";
 import { liqRefresher } from "../liq-refresh-server.ts";
 import { normalizeZoneSpecs, type ZoneSpec } from "./zones.ts";
@@ -31,7 +31,7 @@ export function createZoneSource(env: Readonly<Record<string, string | undefined
     if (built?.ok) {
       asOf = built.body.asOf ?? null;
       decimals = built.body.priceDecimals ?? null;
-      zones = normalizeZoneSpecs(built.body.zones);
+      zones = normalizeZoneSpecs(alertableLiqZones(built.body.zones));
     }
     const testFile = env.ALERTS_TEST_ZONES_FILE;
     if (testFile) {

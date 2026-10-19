@@ -1,4 +1,4 @@
-"""Merge adjacent 高/极高 liquidation buckets into TradingHub box zones."""
+"""Merge adjacent same-tier (中/高/极高) liquidation buckets into TradingHub box zones."""
 
 from __future__ import annotations
 
@@ -9,12 +9,13 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/Toronto")
 
 RISK_RANK = {"低": 0, "中": 1, "高": 2, "极高": 3}
-ZONE_RISKS = frozenset({"高", "极高"})
+# TH-FEAT-20: bins tiered 中 and above are shown (as in the Dongyi table); 低 is not.
+ZONE_RISKS = frozenset({"中", "高", "极高"})
 
 ZONE_RULE = (
-    "H2 (TH-FEAT-19): merge runs of >=2 price-adjacent 0.5%-of-mid buckets with "
-    "risk 高 or 极高, same side of markPrice, same liquidation side (long|short). "
-    "Isolated 高/极高 buckets are not zones. "
+    "H2 (TH-FEAT-20): ~0.19%-of-mid buckets (Dongyi BTC bin). Merge runs of >=2 price-adjacent "
+    "buckets with the SAME tier (中, 高 or 极高), same side of markPrice, same liquidation side "
+    "(long|short). Isolated 中+ buckets stay as single bands. "
     "Strictly below markPrice = support (green); strictly above = resistance (red). "
     "Boxes drawn from the latest candle rightward only (boxStart=latest_candle)."
 )
@@ -47,7 +48,7 @@ def _adjacent(prev: dict, nxt: dict, bucket_width: float) -> bool:
 
 
 def build_bands(buckets: list[dict]) -> list[dict]:
-    """Volume-ranked 高 + 极高 bands for the TradingHub sample."""
+    """Volume-ranked 中 + 高 + 极高 bands for the TradingHub sample."""
     rows = [b for b in buckets if b.get("risk") in ZONE_RISKS and float(b.get("liq_m", 0)) > 0]
     rows = sorted(rows, key=lambda r: (-float(r["liq_m"]), float(r["lo"])))
     bands = []
@@ -68,7 +69,7 @@ def build_bands(buckets: list[dict]) -> list[dict]:
 def merge_zones(
     buckets: list[dict],
     mid: float,
-    bucket_width_pct: float = 0.005,
+    bucket_width_pct: float = 0.0019,
     bands: list[dict] | None = None,
 ) -> list[dict]:
     """Return non-overlapping zones sorted by lo ascending (within each side)."""
@@ -100,6 +101,7 @@ def merge_zones(
             _adjacent(prev, row, bucket_width)
             and _same_mid_side(prev, row, mid)
             and prev.get("side") == row.get("side")
+            and prev.get("risk") == row.get("risk")  # TH-FEAT-20: same-tier runs only
         ):
             cur.append(row)
         else:
@@ -165,7 +167,7 @@ def build_sample_payload(
     mid: float,
     buckets: list[dict],
     venue: str = "multi",
-    bucket_pct: float = 0.5,
+    bucket_pct: float = 0.19,
     source: str = "oi_liq_estimator",
 ) -> dict[str, Any]:
     """Full TradingHub liq_heatmap_bands sample including zones."""

@@ -167,7 +167,7 @@ test("TH-BUG-06 tier scaling: default = reference bin; 0.5% bucket scales floors
   assert.ok(Math.abs(live.extremeUsd - BTC_TIER_EXTREME_USD * f) < 1e-3);
   assert.ok(Math.abs(live.highUsd / live.extremeUsd - BTC_TIER_HIGH_USD / BTC_TIER_EXTREME_USD) < 1e-12);
   const alt = scaleTierThresholds(6.2e9, 10e9, 0.5); // OI share 0.62 composes with bucket factor
-  assert.ok(Math.abs(alt.extremeUsd - BTC_TIER_EXTREME_USD * 0.62 * f) < 1e-3);
+  assert.ok(Math.abs(alt.extremeUsd - BTC_TIER_EXTREME_USD * 0.62 * (0.5 / 0.19)) < 1e-3);
 });
 
 test("TH-BUG-06 deny: invalid bucket width falls back to the reference bin; factor is clamped", () => {

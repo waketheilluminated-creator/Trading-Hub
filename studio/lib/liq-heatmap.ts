@@ -7,8 +7,11 @@ export const LIQ_HEATMAP_SAMPLE_SYMBOL = "ZECUSDT";
 export const LIQ_HEATMAP_SYMBOLS = ["ZECUSDT", "PYTHUSDT"] as const;
 export const LIQ_ZONE_MAX = 200;
 /** Bands and zones carry only the top two volume-percentile tiers (TRADINGHUB.md): 高 = high, 极高 = extreme. */
-export const LIQ_ZONE_RISKS = ["高", "极高"] as const;
+// TH-FEAT-20: 0.19% (Dongyi) bins; every bin tiered 中 or above is shown, as in the Dongyi table. 低 never.
+export const LIQ_ZONE_RISKS = ["中", "高", "极高"] as const;
 export const LIQ_BAND_RISKS = LIQ_ZONE_RISKS;
+/** Hard cap on bands per snapshot (±12% at 0.19% ≈ 126 bins per side-range; keeps paint bounded). */
+export const LIQ_BAND_MAX = 400;
 export const LIQ_HEATMAP_NO_SNAPSHOT = "尚未计算，点刷新生成";
 /** TH-FEAT-12: any USDT perpetual, strict format (leading digits allowed: 1000PEPEUSDT ≠ PEPEUSDT). */
 export const LIQ_SYMBOL_PATTERN = /^[A-Z0-9]{2,20}USDT$/;
@@ -253,6 +256,7 @@ export function sanitizeLiqHeatmapSnapshot(input: unknown): SanitizeResult {
   const bandIndexMap = new Map<number, number>();
   let dropped = 0;
   raw.bands.forEach((item, rawIndex) => {
+    if (rawIndex >= LIQ_BAND_MAX) { dropped += 1; return; }
     const band = sanitizeBand(item);
     // TH-BUG-05: drop already-swept buckets (long above mark / short below mark).
     if (band && liqSideConsistent(band.side, band.lo, band.hi, markPrice)) { bandIndexMap.set(rawIndex, bands.length); bands.push(band); }
@@ -401,22 +405,38 @@ export function bandsOutsideZones(bands: readonly LiqBand[], zones: readonly Liq
 export const LIQ_SUPPORT_RGB = LIQ_LONG_RGB;
 export const LIQ_RESISTANCE_RGB = LIQ_SHORT_RGB;
 
-export function liqZoneColors(role: LiqZoneRole): { fill: string; edge: string; text: string } {
+/** Zone fill: 高/极高 unchanged (0.2); 中 (TH-FEAT-20) is a lighter 0.1 fill so it reads below 高. */
+export const LIQ_ZONE_FILL_ALPHA: Record<LiqZoneRisk, number> = { 中: 0.1, 高: 0.2, 极高: 0.2 };
+export function liqZoneColors(role: LiqZoneRole, risk: LiqZoneRisk = "高"): { fill: string; edge: string; text: string } {
   const rgb = role === "support" ? LIQ_SUPPORT_RGB : LIQ_RESISTANCE_RGB;
-  return { fill: `rgba(${rgb}, 0.2)`, edge: `rgba(${rgb}, 0.9)`, text: `rgba(${rgb}, 1)` };
+  const alpha = LIQ_ZONE_FILL_ALPHA[risk] ?? 0.2;
+  return { fill: `rgba(${rgb}, ${alpha})`, edge: `rgba(${rgb}, 0.9)`, text: `rgba(${rgb}, 1)` };
 }
 
 /**
  * Zone box border by risk: 高 (high) = fill only, no border; 极高 (extreme) = fill + 2px border in the solid side colour.
  * Same in live and replay, both themes.
  */
-export const LIQ_ZONE_BORDER_PX: Record<LiqZoneRisk, number> = { 高: 0, 极高: 2 };
+export const LIQ_ZONE_BORDER_PX: Record<LiqZoneRisk, number> = { 中: 0, 高: 0, 极高: 2 };
 export function liqZoneBorderWidth(risk: LiqZoneRisk): number {
   return LIQ_ZONE_BORDER_PX[risk] ?? 0;
 }
 export function liqZoneBorderColor(role: LiqZoneRole): string {
   return `rgb(${role === "support" ? LIQ_SUPPORT_RGB : LIQ_RESISTANCE_RGB})`;
 }
+/** Zone alerts stay on 高/极高 boxes only (TH-FEAT-20 adds 中 boxes for display, not for alerting). */
+export const LIQ_ALERT_ZONE_RISKS: readonly LiqZoneRisk[] = ["高", "极高"];
+export function alertableLiqZones<T extends { risk_max?: unknown }>(zones: readonly T[] | null | undefined): T[] {
+  return (zones ?? []).filter((zone) => (LIQ_ALERT_ZONE_RISKS as readonly unknown[]).includes(zone.risk_max));
+}
+/** TH-FEAT-20b: a refresh that succeeds with zero zones gets a brief icon notice instead of silence. */
+export const LIQ_REFRESH_EMPTY_LABEL = "∅ 无清算区";
+export const LIQ_REFRESH_EMPTY_TITLE = "刷新完成：暂无合并清算区（仅单桶或无分级桶）";
+export const LIQ_REFRESH_EMPTY_MS = 5000;
+export function liqRefreshEmptyNotice(model: Pick<LiqHeatmapChartModel, "zones"> | null | undefined): string | null {
+  return model && Array.isArray(model.zones) && model.zones.length === 0 ? LIQ_REFRESH_EMPTY_LABEL : null;
+}
+export const LIQ_LEGEND_RISK_MEDIUM = "中：浅填充";
 export const LIQ_LEGEND_RISK_HIGH = "高：仅填充";
 export const LIQ_LEGEND_RISK_EXTREME = "极高：填充 + 边框";
 
@@ -450,7 +470,7 @@ export function placeLiqZones(
     if (yLo == null || yHi == null || !Number.isFinite(yLo) || !Number.isFinite(yHi)) continue;
     const top = Math.min(yLo, yHi);
     const height = Math.max(1, Math.abs(yHi - yLo));
-    placed.push({ zone, left, top, width, height, ...liqZoneColors(zone.role), edge: liqZoneBorderColor(zone.role), borderWidth: liqZoneBorderWidth(zone.risk_max) });
+    placed.push({ zone, left, top, width, height, ...liqZoneColors(zone.role, zone.risk_max), edge: liqZoneBorderColor(zone.role), borderWidth: liqZoneBorderWidth(zone.risk_max) });
   }
   return placed.sort((a, b) => a.zone.liq_m - b.zone.liq_m);
 }
@@ -495,7 +515,7 @@ export function findLiqZoneAt(zones: readonly LiqZone[], price: number): LiqZone
 }
 
 export function formatLiqRisk(risk: LiqZoneRisk): string {
-  return risk === "极高" ? "Extreme" : "High";
+  return risk === "极高" ? "Extreme" : risk === "高" ? "High" : "Medium";
 }
 
 /** Compact on-box label: liq_m · risk_max · dist_pct. */

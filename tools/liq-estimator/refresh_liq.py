@@ -34,6 +34,8 @@ from oi_liq.fetch import (
 from oi_liq.h2 import (
     DONGYI_REF_BIN_WIDTH_PCT,
     H2_LOOKBACK_DAYS,
+    LIVE_BUCKET_WIDTH_PCT,
+    apply_relative_tier_floor,
     Bar1h,
     aggregate_h2_buckets,
     apply_h2_tiers,
@@ -94,7 +96,7 @@ def main() -> int:
     ap.add_argument("--symbol", required=True, help="USDT perp, e.g. BTCUSDT")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--days", type=float, default=H2_LOOKBACK_DAYS)
-    ap.add_argument("--bucket-width-pct", type=float, default=0.005)
+    ap.add_argument("--bucket-width-pct", type=float, default=LIVE_BUCKET_WIDTH_PCT, help="fraction of mid (TH-FEAT-20 default 0.0019 = Dongyi BTC bin)")
     ap.add_argument("--venue-timeout", type=float, default=float(os.environ.get("LIQ_VENUE_TIMEOUT", "25")))
     ap.add_argument("--venues", default="binance,okx,bybit", help="comma list (H2 default: binance,okx,bybit)")
     ap.add_argument("--png", action="store_true")
@@ -214,6 +216,8 @@ def main() -> int:
         share_sym_oi, btc_oi = matched_oi_totals(oi_by_venue, btc_by_venue)
         thresholds = scale_tier_thresholds(share_sym_oi, btc_oi or 0.0, bucket_width_pct=a.bucket_width_pct)
         apply_h2_tiers(bucket_rows, thresholds)
+        # TH-FEAT-20b: a side with zero tiered bins falls back to relative tiers (never empty).
+        tier_fallback = apply_relative_tier_floor(bucket_rows)
 
         # Round for display
         dec = price_decimals(mid)
@@ -247,6 +251,7 @@ def main() -> int:
             "oi_share_venues": sorted(set(oi_by_venue) & set(btc_by_venue)),
             "bucket_width_pct": a.bucket_width_pct,
             "ref_bin_width_pct": DONGYI_REF_BIN_WIDTH_PCT,
+            "relative_floor_sides": tier_fallback,
         }
         payload["assumptions"] = {
             "lookback_days": a.days,

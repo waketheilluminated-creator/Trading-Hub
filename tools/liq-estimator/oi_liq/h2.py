@@ -47,6 +47,8 @@ BTC_TIER_MEDIUM_USD = 15_000_000.0
 # Bin width (fraction of price) the floors were calibrated on: Dongyi BTC rows are
 # ~$157 apart at ~$82k (OOS s1020) ≈ 0.19%. TH-BUG-06.
 DONGYI_REF_BIN_WIDTH_PCT = 0.0019
+# TH-FEAT-20: live + replay buckets use the Dongyi bin, so cutoffs are the BTC floors as-is.
+LIVE_BUCKET_WIDTH_PCT = DONGYI_REF_BIN_WIDTH_PCT
 _BUCKET_FACTOR_MIN = 0.05
 _BUCKET_FACTOR_MAX = 50.0
 
@@ -240,7 +242,7 @@ def h2_distribute(
 def aggregate_h2_buckets(
     hits: Iterable[H2Hit],
     mark: float,
-    bucket_width_pct: float = 0.005,
+    bucket_width_pct: float = LIVE_BUCKET_WIDTH_PCT,
     *,
     range_pct: float = 12.0,
 ) -> list[dict]:
@@ -312,3 +314,38 @@ def apply_h2_tiers(
     for r in rows:
         r["risk"] = thresholds.risk(float(r.get("liq_usd") or float(r.get("liq_m", 0)) * 1e6))
     return rows
+
+
+# TH-FEAT-20b: relative tier floor. Absolute (OI-scaled) cutoffs can leave a small-OI alt with zero
+# tiered bins, so the chart shows nothing ("no reaction"). Only on a side where NO bin reached 中,
+# re-tier that side relative to its own max bin: >= 0.8×max → 高, >= 0.5×max → 中. The floor never
+# produces 极高 and never touches a side that already has a 中+ bin. Marked tier_basis="relative".
+REL_FLOOR_HIGH = 0.8
+REL_FLOOR_MEDIUM = 0.5
+_TIERED = frozenset({"中", "高", "极高"})
+
+
+def apply_relative_tier_floor(rows: list[dict]) -> list[str]:
+    """Apply the relative floor in place; return the sides it was applied to (sorted)."""
+    used: list[str] = []
+    for side in ("long", "short"):
+        side_rows = []
+        for r in rows:
+            if r.get("side") != side:
+                continue
+            try:
+                usd = float(r.get("liq_usd") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(usd) and usd > 0:
+                side_rows.append((r, usd))
+        if not side_rows or any(r.get("risk") in _TIERED for r, _ in side_rows):
+            continue
+        peak = max(usd for _, usd in side_rows)
+        for r, usd in side_rows:
+            if usd >= REL_FLOOR_HIGH * peak:
+                r["risk"], r["tier_basis"] = "高", "relative"
+            elif usd >= REL_FLOOR_MEDIUM * peak:
+                r["risk"], r["tier_basis"] = "中", "relative"
+        used.append(side)
+    return used

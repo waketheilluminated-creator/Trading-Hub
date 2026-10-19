@@ -62,7 +62,7 @@ test("synthetic edge cases: bad zone rows are dropped, never repaired", () => {
   const parsed = sanitizeLiqHeatmapSnapshot(synthetic);
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
-  assert.equal(parsed.dropped, 2, "inverted band + risk 中 band dropped");
+  assert.equal(parsed.dropped, 2, "inverted band + risk 低 band dropped (TH-FEAT-20: 中 is now kept, 低 never)");
   assert.equal(parsed.snapshot.zones.length, 2);
   assert.equal(parsed.droppedZones, synthetic.zones.length - 2);
   const [support, resistance] = parsed.snapshot.zones;
