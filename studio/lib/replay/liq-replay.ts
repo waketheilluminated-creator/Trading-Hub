@@ -1,22 +1,22 @@
 /**
- * TH-FEAT-17 Bar Replay: liquidation zones computed ON DEMAND as of a replay candle from historical open interest
- * and historical price. Nothing is persisted; callers may keep a small in-memory cache.
+ * TH-FEAT-19 / TH-FEAT-17 Bar Replay: H2 Dongyi-replica liquidation zones,
+ * computed ON DEMAND as of a replay candle. Nothing is persisted.
  *
- * Model (same idea as the oi_liq estimator, simplified and fully deterministic):
- *  1. Every OI increase ΔOI (USD) between two 5m samples opens a cohort at that sample's price,
- *     split 50/50 long/short and across leverage tiers.
- *  2. OI decreases close existing cohorts proportionally.
- *  3. Liquidation price: long p·(1 − 1/L + mm), short p·(1 + 1/L − mm).
- *  4. A cohort level already reached by the later price path (5m low/high up to the cutoff) is swept.
- * * 5. Remaining levels are bucketed around the mark (close of the replay candle); the top percentile tiers (P85/P95) become
- *     bands (高/极高) and ≥2 adjacent same-side high/extreme buckets merge into a zone.
- * No lookahead: every input is cut at `cutoff` before any computation, so passing future bars/OI cannot change the result.
+ * H2 (validated OOS against Youtube东一 Model2 | 7d):
+ *  1. Sum each venue's last one-sided OI sample at or before cutoff.
+ *  2. Distribute that total over the last 7d of 1h entries, weighted by quote volume
+ *     (1h bars are aggregated from the 1m series the service already loads).
+ *  3. Leverage 10/25/50/100× @ 0.30/0.30/0.25/0.15, 50/50 long/short, 0.5% MM.
+ *  4. Drop levels the post-entry price path has already crossed (TH-BUG-05).
+ *  5. Bucket around mark; fixed-dollar tiers (BTC: 极高≥$100M / 高≥$70M / 中≥$15M),
+ *     scaled for alts by symbol_OI/btc_OI; ≥2 adjacent 高/极高 merge into a zone.
+ * No lookahead: every input is cut at `cutoff` before any computation.
  */
 import { LIQ_HEATMAP_KIND, sanitizeLiqHeatmapSnapshot, type LiqHeatmapSnapshot } from "../liq-heatmap.ts";
 
-export const REPLAY_HISTORY_MS = 30 * 24 * 60 * 60 * 1000; // Binance openInterestHist keeps ~30 days
-export const REPLAY_COHORT_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
-export const REPLAY_BUCKET_PCT = 0.25;
+export const REPLAY_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
+export const REPLAY_COHORT_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // H2: 7d
+export const REPLAY_BUCKET_PCT = 0.5; // 0.5% of mid (chart contract)
 export const REPLAY_RANGE_PCT = 12;
 export const REPLAY_LEVERAGE_TIERS: readonly { lev: number; weight: number }[] = [
   { lev: 10, weight: 0.3 }, { lev: 25, weight: 0.3 }, { lev: 50, weight: 0.25 }, { lev: 100, weight: 0.15 },
@@ -24,16 +24,20 @@ export const REPLAY_LEVERAGE_TIERS: readonly { lev: number; weight: number }[] =
 export const REPLAY_MAINT_MARGIN = 0.005;
 export const REPLAY_OUT_OF_RANGE = "超出可回溯范围";
 
+/** BTC fixed-dollar tier floors (USD). Alts scale via {@link scaleTierThresholds}. */
+export const BTC_TIER_EXTREME_USD = 100_000_000;
+export const BTC_TIER_HIGH_USD = 70_000_000;
+export const BTC_TIER_MEDIUM_USD = 15_000_000;
+
 export type OiPoint = { ts: number; oiUsd: number };
-export type PriceBar = { time: number; open: number; high: number; low: number; close: number }; // time = open, ms
+export type PriceBar = { time: number; open: number; high: number; low: number; close: number; volume?: number };
 export type ReplayInput = {
   symbol: string;
-  /** Close time (ms) of the replay candle: the latest instant whose data is visible. */
   cutoff: number;
-  /** Price bars, barMs apart (1m from the service; any range; cut here). */
-  bars: readonly PriceBar[];
-  /** OI history per venue (any range; cut here). Missing/empty = unavailable venue. */
+  bars: readonly PriceBar[]; // 1m (or any); aggregated to 1h for entry weights
   oi: Readonly<Record<string, readonly OiPoint[]>>;
+  /** Optional BTC one-sided OI at cutoff for alt tier scaling. */
+  btcOiUsd?: number;
   barMs?: number;
   lookbackMs?: number;
   bucketPct?: number;
@@ -47,75 +51,119 @@ export type ReplayResult = {
 export function longLiqPrice(p: number, lev: number, mm = REPLAY_MAINT_MARGIN): number { return p * (1 - 1 / lev + mm); }
 export function shortLiqPrice(p: number, lev: number, mm = REPLAY_MAINT_MARGIN): number { return p * (1 + 1 / lev - mm); }
 
-/** Cut every series at the cutoff (bars must have CLOSED by then; OI samples at or before it). */
+export type TierThresholds = { extremeUsd: number; highUsd: number; mediumUsd: number };
+
+/** Scale BTC fixed-dollar tiers by symbolOi/btcOi (clamped). Same contract as oi_liq/h2.scale_tier_thresholds. */
+export function scaleTierThresholds(symbolOiUsd: number, btcOiUsd: number | undefined | null): TierThresholds {
+  const extreme = BTC_TIER_EXTREME_USD, high = BTC_TIER_HIGH_USD, medium = BTC_TIER_MEDIUM_USD;
+  if (!(btcOiUsd && btcOiUsd > 0) || !(symbolOiUsd > 0)) return { extremeUsd: extreme, highUsd: high, mediumUsd: medium };
+  let ratio = symbolOiUsd / btcOiUsd;
+  if (Math.abs(ratio - 1) < 0.05) return { extremeUsd: extreme, highUsd: high, mediumUsd: medium };
+  ratio = Math.max(1e-4, Math.min(1e2, ratio));
+  return { extremeUsd: extreme * ratio, highUsd: high * ratio, mediumUsd: medium * ratio };
+}
+
+export function riskOfUsd(usd: number, t: TierThresholds): "极高" | "高" | "中" | "低" {
+  if (usd >= t.extremeUsd) return "极高";
+  if (usd >= t.highUsd) return "高";
+  if (usd >= t.mediumUsd) return "中";
+  return "低";
+}
+
 export function truncateReplayInput(input: ReplayInput): ReplayInput {
-  const barMs = input.barMs ?? 5 * 60_000;
+  const barMs = input.barMs ?? 60_000;
   const oi: Record<string, OiPoint[]> = {};
   for (const [venue, points] of Object.entries(input.oi)) oi[venue] = points.filter((p) => p.ts <= input.cutoff).sort((a, b) => a.ts - b.ts);
   return { ...input, bars: input.bars.filter((b) => b.time + barMs <= input.cutoff).sort((a, b) => a.time - b.time), oi };
 }
 
+/** Aggregate 1m (or finer) bars into 1h OHLCV with quote-volume proxy (close * base volume when available, else 1). */
+export function aggregateTo1h(bars: readonly PriceBar[], lookbackStart: number, cutoff: number): { ts: number; open: number; high: number; low: number; close: number; quoteVol: number }[] {
+  const HOUR = 3_600_000;
+  const buckets = new Map<number, { open: number; high: number; low: number; close: number; quoteVol: number }>();
+  for (const b of bars) {
+    if (b.time < lookbackStart || b.time > cutoff) continue;
+    const hour = Math.floor(b.time / HOUR) * HOUR;
+    if (hour + HOUR > cutoff) continue; // only fully closed 1h bars
+    const q = (b.volume ?? 1) * b.close;
+    const cur = buckets.get(hour);
+    if (!cur) buckets.set(hour, { open: b.open, high: b.high, low: b.low, close: b.close, quoteVol: q });
+    else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close;
+      cur.quoteVol += q;
+    }
+  }
+  return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([ts, v]) => ({ ts, ...v }));
+}
+
 export function computeReplayLiq(raw: ReplayInput): ReplayResult {
   const input = truncateReplayInput(raw);
-  const barMs = input.barMs ?? 5 * 60_000;
+  const barMs = input.barMs ?? 60_000;
   const lookback = input.lookbackMs ?? REPLAY_COHORT_LOOKBACK_MS;
   const bucketPct = input.bucketPct ?? REPLAY_BUCKET_PCT;
-  const bars = input.bars.filter((b) => b.time >= input.cutoff - lookback - barMs);
-  if (bars.length < 60) return { ok: false, error: REPLAY_OUT_OF_RANGE };
-  const mark = bars[bars.length - 1].close;
-  const barTimes = bars.map((b) => b.time);
-  // suffix min/max of the path after bar i (inclusive) for sweeping
-  const sufMin = new Array<number>(bars.length + 1).fill(Infinity);
-  const sufMax = new Array<number>(bars.length + 1).fill(-Infinity);
-  for (let i = bars.length - 1; i >= 0; i -= 1) { sufMin[i] = Math.min(sufMin[i + 1], bars[i].low); sufMax[i] = Math.max(sufMax[i + 1], bars[i].high); }
-  const barIndexAt = (ts: number): number => {
-    // the bar containing ts (open <= ts < open+barMs); -1 if none
-    let lo = 0, hi = barTimes.length - 1, found = -1;
-    while (lo <= hi) { const mid = (lo + hi) >> 1; if (barTimes[mid] <= ts) { found = mid; lo = mid + 1; } else hi = mid - 1; }
-    return found >= 0 && ts < barTimes[found] + barMs ? found : -1;
-  };
+  const bars1m = input.bars.filter((b) => b.time >= input.cutoff - lookback - barMs);
+  if (bars1m.length < 60) return { ok: false, error: REPLAY_OUT_OF_RANGE };
+  const mark = bars1m[bars1m.length - 1].close;
 
-  const levels: ReplayLevel[] = [];
+  // Venue current OI at cutoff = last sample ≤ cutoff within lookback.
   const venuesUsed: string[] = [];
   const venuesUnavailable: string[] = [];
+  let totalOi = 0;
   for (const [venue, allPoints] of Object.entries(input.oi)) {
     const points = allPoints.filter((p) => p.ts >= input.cutoff - lookback && Number.isFinite(p.oiUsd) && p.oiUsd > 0);
-    // Need coverage reaching the replay candle (within 1h) and a meaningful history.
-    if (points.length < 12 || input.cutoff - points[points.length - 1].ts > 60 * 60_000) { venuesUnavailable.push(venue); continue; }
-    venuesUsed.push(venue);
-    type Cohort = { openedAt: number; price: number; usd: number; barIdx: number };
-    let cohorts: Cohort[] = [];
-    for (let i = 1; i < points.length; i += 1) {
-      const delta = points[i].oiUsd - points[i - 1].oiUsd;
-      const barIdx = barIndexAt(points[i].ts - 1); // the bar that ended at this sample
-      if (barIdx < 0) continue;
-      if (delta > 0) cohorts.push({ openedAt: points[i].ts, price: bars[barIdx].close, usd: delta, barIdx });
-      else if (delta < 0) {
-        const total = cohorts.reduce((sum, c) => sum + c.usd, 0);
-        if (total > 0) { const keep = Math.max(0, 1 + delta / total); cohorts = cohorts.map((c) => ({ ...c, usd: c.usd * keep })); }
-      }
+    if (points.length < 1 || input.cutoff - points[points.length - 1].ts > 60 * 60_000) {
+      venuesUnavailable.push(venue);
+      continue;
     }
-    for (const c of cohorts) {
-      const after = c.barIdx + 1; // path strictly after the cohort opened
-      const pathMin = Math.min(sufMin[after], mark);
-      const pathMax = Math.max(sufMax[after], mark);
-      for (const tier of REPLAY_LEVERAGE_TIERS) {
-        const half = (c.usd * tier.weight) / 2;
-        const lp = longLiqPrice(c.price, tier.lev);
-        const sp = shortLiqPrice(c.price, tier.lev);
-        if (pathMin > lp) levels.push({ venue, side: "long", price: lp, usd: half, openedAt: c.openedAt, openPrice: c.price, lev: tier.lev });
-        if (pathMax < sp) levels.push({ venue, side: "short", price: sp, usd: half, openedAt: c.openedAt, openPrice: c.price, lev: tier.lev });
+    venuesUsed.push(venue);
+    totalOi += points[points.length - 1].oiUsd;
+  }
+  if (!venuesUsed.length || !(totalOi > 0)) return { ok: false, error: REPLAY_OUT_OF_RANGE };
+
+  const hours = aggregateTo1h(bars1m, input.cutoff - lookback, input.cutoff);
+  if (hours.length < 6) return { ok: false, error: REPLAY_OUT_OF_RANGE };
+
+  // Suffix min/max of 1h path after hour i (and 1m path is approximated by 1h OHLC — sufficient for H2).
+  const n = hours.length;
+  const sufMin = new Array<number>(n + 1).fill(Infinity);
+  const sufMax = new Array<number>(n + 1).fill(-Infinity);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    sufMin[i] = Math.min(sufMin[i + 1], hours[i].low);
+    sufMax[i] = Math.max(sufMax[i + 1], hours[i].high);
+  }
+  const volSum = hours.reduce((s, h) => s + Math.max(0, h.quoteVol), 0) || hours.length;
+
+  const levels: ReplayLevel[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const h = hours[i];
+    const weight = (h.quoteVol > 0 ? h.quoteVol : volSum / n) / volSum;
+    const entryOi = totalOi * weight;
+    if (!(entryOi > 0) || !(h.close > 0)) continue;
+    const pathMin = Math.min(sufMin[i + 1], mark);
+    const pathMax = Math.max(sufMax[i + 1], mark);
+    for (const tier of REPLAY_LEVERAGE_TIERS) {
+      const half = (entryOi * tier.weight) / 2;
+      const lp = longLiqPrice(h.close, tier.lev);
+      const sp = shortLiqPrice(h.close, tier.lev);
+      if (pathMin > lp && lp < mark) {
+        levels.push({ venue: "multi", side: "long", price: lp, usd: half, openedAt: h.ts, openPrice: h.close, lev: tier.lev });
+      }
+      if (pathMax < sp && sp > mark) {
+        levels.push({ venue: "multi", side: "short", price: sp, usd: half, openedAt: h.ts, openPrice: h.close, lev: tier.lev });
       }
     }
   }
-  if (!venuesUsed.length) return { ok: false, error: REPLAY_OUT_OF_RANGE };
 
-  // Bucket around the mark: bucket k covers [mark·(1 + k·b), mark·(1 + (k+1)·b)).
   const step = (mark * bucketPct) / 100;
   const map = new Map<string, { idx: number; side: "long" | "short"; usd: number }>();
   for (const level of levels) {
-    if (Math.abs(level.price - mark) / mark * 100 > REPLAY_RANGE_PCT) continue;
+    if ((Math.abs(level.price - mark) / mark) * 100 > REPLAY_RANGE_PCT) continue;
     const idx = Math.floor((level.price - mark) / step);
+    const lo = mark + idx * step, hi = lo + step;
+    if (level.side === "long" && hi >= mark) continue;
+    if (level.side === "short" && lo <= mark) continue;
     const key = `${level.side}:${idx}`;
     const entry = map.get(key) ?? { idx, side: level.side, usd: 0 };
     entry.usd += level.usd;
@@ -123,16 +171,15 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
   }
   const buckets = [...map.values()]
     .map((b) => ({ ...b, lo: mark + b.idx * step, hi: mark + (b.idx + 1) * step }))
-    // a long bucket must sit fully below the mark, a short one fully above (invariant)
-    .filter((b) => (b.side === "long" ? b.hi <= mark : b.lo >= mark))
+    .filter((b) => (b.side === "long" ? b.hi < mark : b.lo > mark))
     .sort((a, b) => a.lo - b.lo);
-  // Top two volume-percentile tiers (as in the estimator): ≥P95 = 极高 (extreme), ≥P85 = 高 (high).
-  const sorted = buckets.map((b) => b.usd).filter((v) => v > 0).sort((x, y) => x - y);
-  const pct = (q: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : Infinity);
-  const p95 = pct(0.95), p85 = pct(0.85);
-  const riskOf = (usd: number): "高" | "极高" | null => (!(usd > 0) ? null : usd >= p95 ? "极高" : usd >= p85 ? "高" : null);
+
+  const thresholds = scaleTierThresholds(totalOi, input.btcOiUsd ?? (raw.symbol.startsWith("BTC") ? totalOi : undefined));
+  const riskOf = (usd: number) => {
+    const r = riskOfUsd(usd, thresholds);
+    return r === "极高" || r === "高" ? r : null;
+  };
   const decimals = mark >= 1000 ? 1 : mark >= 1 ? 4 : 6;
-  // Round away from the mark so rounding can never put a long level above price (or a short one below).
   const scale = Math.pow(10, decimals);
   const px = (v: number, side: "long" | "short") => (side === "long" ? Math.floor(v * scale) : Math.ceil(v * scale)) / scale;
   const distPct = (lo: number, hi: number) => Number(((((lo + hi) / 2) - mark) / mark * 100).toFixed(2));
@@ -148,19 +195,21 @@ export function computeReplayLiq(raw: ReplayInput): ReplayResult {
     if (j > i) {
       const group = bands.slice(i, j + 1);
       const lo = group[0].lo, hi = group[group.length - 1].hi;
-      zones.push({
-        lo, hi, role: bands[i].side === "long" ? "support" : "resistance", side: bands[i].side,
-        liq_m: Number(group.reduce((s, b) => s + b.liq_m, 0).toFixed(2)),
-        risk_max: group.some((b) => b.risk === "极高") ? "极高" : "高",
-        dist_pct: distPct(lo, hi), bucket_count: group.length,
-        band_idx: group.map((_, k) => i + k),
-      });
+      if (bands[i].side === "long" ? hi < mark : lo > mark) {
+        zones.push({
+          lo, hi, role: bands[i].side === "long" ? "support" : "resistance", side: bands[i].side,
+          liq_m: Number(group.reduce((s, b) => s + b.liq_m, 0).toFixed(2)),
+          risk_max: group.some((b) => b.risk === "极高") ? "极高" : "高",
+          dist_pct: distPct(lo, hi), bucket_count: group.length,
+          band_idx: group.map((_, k) => i + k),
+        });
+      }
     }
     i = j + 1;
   }
   const rawSnapshot = {
     kind: LIQ_HEATMAP_KIND, venue: "multi", symbol: raw.symbol, mid: mark, markPrice: mark, bucket_pct: bucketPct,
-    updatedAt: input.cutoff, source: "oi_liq_estimator/replay", unit: "usd_millions", schemaVersion: 1,
+    updatedAt: input.cutoff, source: "oi_liq_estimator", unit: "usd_millions", schemaVersion: 1,
     asOf: new Date(input.cutoff).toISOString().replace(/\.\d{3}Z$/, "Z"), bands, zones,
     venuesFailed: venuesUnavailable, priceDecimals: decimals,
   };
