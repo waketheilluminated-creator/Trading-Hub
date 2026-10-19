@@ -345,7 +345,7 @@ export type LiqRefreshClientResult =
   | { ok: true; model: LiqHeatmapChartModel; cooldownSec: number }
   | { ok: false; error: string; retryAfterSec: number | null };
 
-export const LIQ_REFRESH_DEFAULT_COOLDOWN_SEC = 90;
+export const LIQ_REFRESH_DEFAULT_COOLDOWN_SEC = 30;
 
 /** Click-only refresh: POST /api/liq-zones/refresh, then validate the returned snapshot client-side too. */
 export async function requestLiqRefresh(chartSymbol: string, fetchImpl: typeof fetch = fetch): Promise<LiqRefreshClientResult> {
