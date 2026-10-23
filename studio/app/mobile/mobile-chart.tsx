@@ -1,0 +1,843 @@
+"use client";
+
+/**
+ * Page 1 of Trading Hub mobile: K-line chart, drawing tools, liquidation boxes, touch alerts.
+ * Pine Script is intentionally not on this page.
+ * Overlay toggles (showLiq, showDrawings, alertsOn) only swap primitive data — they never fit or rescale.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CandlestickSeries,
+  ColorType,
+  CrosshairMode,
+  HistogramSeries,
+  createChart,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
+  type UTCTimestamp,
+} from "lightweight-charts";
+import { fitChartView } from "@/lib/chart-fit.ts";
+import { candleThemeOptions, chartThemeOptions } from "@/lib/chart-theme.ts";
+import { LIQ_HEATMAP_POLL_MS, loadLiqHeatmapBands, requestLiqRefresh, type LiqBand, type LiqZone } from "@/lib/liq-heatmap.ts";
+import { LiqHeatmapPrimitive } from "@/lib/liq-heatmap-primitive.ts";
+import { inferTickFromCandles, precisionFromTick, priceFormatForTick } from "@/lib/price-precision.ts";
+import { applyTheme, currentDocumentTheme, nextTheme, subscribeTheme } from "@/lib/theme.ts";
+import { createMobileAlertSound, type MobileAlertSound } from "@/lib/mobile-alert-sound.ts";
+import {
+  applyTap,
+  historyCommit,
+  historyInit,
+  historyRedo,
+  historyUndo,
+  hitMobileDrawing,
+  loadMobileDrawings,
+  saveMobileDrawings,
+  type DrawingHistory,
+  type HitPart,
+  type MobileDraft,
+  type MobileDrawing,
+  type MobilePoint,
+  type MobileTool,
+} from "@/lib/mobile/drawings.ts";
+import { MobileDrawingPrimitive, previewDrawing } from "@/lib/mobile/drawing-primitive.ts";
+import {
+  defaultTouchTolerance,
+  evaluateTouches,
+  formatAlertPrice,
+  selectMobileLiqBoxes,
+  stackBadgeYs,
+  type MobileLiqBox,
+  type TouchFire,
+} from "@/lib/mobile/touch.ts";
+import type { ChartInterval, MarketCandle, MarketVenue } from "@/lib/market-venues.ts";
+
+const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "PYTHUSDT", "ZECUSDT"] as const;
+const INTERVALS: { id: ChartInterval; label: string }[] = [
+  { id: "1", label: "1m" },
+  { id: "5", label: "5m" },
+  { id: "15", label: "15m" },
+  { id: "30", label: "30m" },
+  { id: "60", label: "1h" },
+  { id: "240", label: "4h" },
+  { id: "D", label: "1D" },
+];
+const TOOLS: { id: MobileTool; label: string }[] = [
+  { id: "select", label: "Select drawing" },
+  { id: "rectangle", label: "Rectangle" },
+  { id: "long", label: "Long position" },
+  { id: "short", label: "Short position" },
+  { id: "text", label: "Text annotation" },
+  { id: "trend-line", label: "Trendline" },
+  { id: "horizontal-line", label: "Horizontal line" },
+  { id: "horizontal-ray", label: "Horizontal ray" },
+  { id: "price-range", label: "Price range" },
+  { id: "crosshair", label: "Crosshair" },
+];
+
+type FeedStatus = "loading" | "online" | "polling" | "error";
+type TabId = "watchlist" | "chart" | "explore" | "community" | "menu";
+type LogRow = { id: string; message: string; at: number };
+type Badge = { id: string; y: number; label: string; role: "support" | "resistance" };
+
+const VENUES: MarketVenue[] = ["binance", "bybit", "okx", "bitget"];
+
+function titleFor(symbol: string): string {
+  return `${symbol.replace(/USDT$/, "")} / Tether PERPETUAL FUT…`;
+}
+
+function formatVol(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(Math.round(value));
+}
+
+function toCandle(candle: MarketCandle) {
+  return {
+    time: candle.time as UTCTimestamp,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+  };
+}
+
+function toVolume(candle: MarketCandle) {
+  return {
+    time: candle.time as UTCTimestamp,
+    value: candle.volume,
+    color: candle.close >= candle.open ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)",
+  };
+}
+
+function toLiqZone(box: MobileLiqBox, price: number): LiqZone {
+  const mid = (box.lo + box.hi) / 2;
+  return {
+    lo: box.lo,
+    hi: box.hi,
+    role: box.role,
+    liq_m: box.liq_m,
+    risk_max: box.risk,
+    dist_pct: price ? ((mid - price) / price) * 100 : 0,
+    bucket_count: 2,
+    side: box.role === "support" ? "long" : "short",
+    band_idx: null,
+  };
+}
+
+function notifyKind(target: TouchFire["target"]): "trendline" | "horizontal" | "ray" | "rectangle" | "liq-support" | "liq-resistance" {
+  switch (target) {
+    case "trendline": return "trendline";
+    case "horizontal": return "horizontal";
+    case "ray": return "ray";
+    case "rectangle": return "rectangle";
+    case "support": return "liq-support";
+    case "resistance": return "liq-resistance";
+    default: {
+      const neverTarget: never = target;
+      return neverTarget;
+    }
+  }
+}
+
+function movePoint(drawing: MobileDrawing, part: HitPart, point: MobilePoint): MobileDrawing {
+  switch (drawing.type) {
+    case "trend-line":
+    case "rectangle":
+    case "long":
+    case "short":
+    case "price-range": {
+      if (part === "body") {
+        const dt = point.time - drawing.a.time;
+        const dp = point.price - drawing.a.price;
+        return { ...drawing, a: point, b: { time: drawing.b.time + dt, price: drawing.b.price + dp } };
+      }
+      return part === "p0" ? { ...drawing, a: point } : { ...drawing, b: point };
+    }
+    case "horizontal-line":
+      return { ...drawing, time: point.time, price: point.price };
+    case "horizontal-ray":
+      return { ...drawing, time: point.time, price: point.price };
+    case "text":
+      return { ...drawing, time: point.time, price: point.price };
+    default: {
+      const neverDrawing: never = drawing;
+      return neverDrawing;
+    }
+  }
+}
+
+async function fetchCandles(symbol: string, interval: ChartInterval, limit: number, signal?: AbortSignal): Promise<{ candles: MarketCandle[]; venue: MarketVenue }> {
+  let lastError = "No candles";
+  for (const exchange of VENUES) {
+    const response = await fetch(`/api/klines?exchange=${exchange}&symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`, {
+      signal, cache: "no-store", credentials: "same-origin",
+    });
+    const body = await response.json().catch(() => null) as { candles?: MarketCandle[]; error?: string } | null;
+    if (response.ok && body?.candles?.length) return { candles: body.candles, venue: exchange };
+    if (body?.error) lastError = body.error;
+  }
+  throw new Error(lastError);
+}
+
+function ToolGlyph({ tool }: { tool: MobileTool }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 18 18", fill: "none", "aria-hidden": true as const };
+  switch (tool) {
+    case "select":
+      return <svg {...common}><path d="M4 2.5 14 9.2l-4.6.9L7.6 15.5 4 2.5Z" stroke="currentColor" strokeWidth="1.4" /></svg>;
+    case "rectangle":
+      return <svg {...common}><rect x="3" y="4" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.4" /></svg>;
+    case "long":
+      return <svg {...common}><path d="M9 14V4M5.5 7.5 9 4l3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
+    case "short":
+      return <svg {...common}><path d="M9 4v10M5.5 10.5 9 14l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
+    case "text":
+      return <svg {...common}><path d="M4 4h10M9 4v10M6.5 14h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
+    case "trend-line":
+      return <svg {...common}><path d="M3 14 15 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><circle cx="3" cy="14" r="1.2" fill="currentColor" /><circle cx="15" cy="4" r="1.2" fill="currentColor" /></svg>;
+    case "horizontal-line":
+      return <svg {...common}><path d="M2 9h14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><circle cx="3" cy="9" r="1.2" fill="currentColor" /><circle cx="15" cy="9" r="1.2" fill="currentColor" /></svg>;
+    case "horizontal-ray":
+      return <svg {...common}><path d="M3 9h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><circle cx="3" cy="9" r="1.3" fill="currentColor" /></svg>;
+    case "price-range":
+      return <svg {...common}><path d="M4 13 14 5" stroke="currentColor" strokeWidth="1.4" /><path d="M4 6v7h7" stroke="currentColor" strokeWidth="1.2" /></svg>;
+    case "crosshair":
+      return <svg {...common}><path d="M9 2v14M2 9h14" stroke="currentColor" strokeWidth="1.4" /></svg>;
+    default: {
+      const neverTool: never = tool;
+      return neverTool;
+    }
+  }
+}
+
+export function MobileChart() {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const liqRef = useRef<LiqHeatmapPrimitive | null>(null);
+  const drawRef = useRef<MobileDrawingPrimitive | null>(null);
+  const symbolRef = useRef("BTCUSDT");
+  const intervalRef = useRef<ChartInterval>("30");
+  const venueRef = useRef<MarketVenue>("binance");
+  const toolRef = useRef<MobileTool>("select");
+  const draftRef = useRef<MobileDraft>(null);
+  const drawingsRef = useRef<MobileDrawing[]>([]);
+  const selectedRef = useRef<string | null>(null);
+  const showDrawingsRef = useRef(true);
+  const showLiqRef = useRef(true);
+  const layoutRef = useRef<() => void>(() => {});
+  const boxesRef = useRef<MobileLiqBox[]>([]);
+  const cooldownRef = useRef<Record<string, number>>({});
+  const soundRef = useRef<MobileAlertSound | null>(null);
+  const postedRef = useRef(new Set<string>());
+  const readyRef = useRef(false);
+  const idRef = useRef(1);
+
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [interval, setInterval] = useState<ChartInterval>("30");
+  const [candles, setCandles] = useState<MarketCandle[]>([]);
+  const [status, setStatus] = useState<FeedStatus>("loading");
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [tool, setTool] = useState<MobileTool>("select");
+  const [toolbarOpen, setToolbarOpen] = useState(true);
+  const [drawings, setDrawings] = useState<MobileDrawing[]>([]);
+  const [history, setHistory] = useState<DrawingHistory>(() => historyInit([]));
+  const [draft, setDraft] = useState<MobileDraft>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<MobileDrawing | null>(null);
+  const [showLiq, setShowLiq] = useState(true);
+  const [showDrawings, setShowDrawings] = useState(true);
+  const [alertsOn, setAlertsOn] = useState(false);
+  const [rawZones, setRawZones] = useState<LiqZone[]>([]);
+  const [rawBands, setRawBands] = useState<LiqBand[]>([]);
+  const [liqNotice, setLiqNotice] = useState<string | null>(null);
+  const [coolSec, setCoolSec] = useState(0);
+  const [tab, setTab] = useState<TabId>("chart");
+  const [toast, setToast] = useState<string | null>(null);
+  const [log, setLog] = useState<LogRow[]>([]);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [badges, setBadges] = useState<Badge[]>([]);
+
+  const price = candles.length ? candles[candles.length - 1].close : 0;
+  const boxes = useMemo(() => selectMobileLiqBoxes(rawZones, rawBands, price || Number.NaN), [rawZones, rawBands, price]);
+  const quote = useMemo(() => {
+    if (candles.length < 1) return { price: "—", delta: "", up: true, volume: "—" };
+    const last = candles[candles.length - 1];
+    const prev = candles[candles.length - 2] ?? last;
+    const diff = last.close - prev.close;
+    const pct = prev.close ? (diff / prev.close) * 100 : 0;
+    const sign = diff > 0 ? "+" : "";
+    const digits = precisionFromTick(inferTickFromCandles(candles) ?? 0.1);
+    return {
+      price: last.close.toLocaleString("en-US", { minimumFractionDigits: Math.min(1, digits), maximumFractionDigits: digits }),
+      delta: `${sign}${Math.abs(diff) >= 100 ? diff.toFixed(1) : diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)`,
+      up: diff >= 0,
+      volume: formatVol(last.volume),
+    };
+  }, [candles]);
+  const selected = drawings.find((drawing) => drawing.id === selectedId) ?? null;
+
+  const layoutBadges = useCallback(() => {
+    const series = candleRef.current;
+    const host = hostRef.current;
+    if (!series || !host || !showLiqRef.current) { setBadges([]); return; }
+    const height = host.clientHeight || 0;
+    const rows = boxesRef.current.flatMap((box) => {
+      const y = series.priceToCoordinate((box.lo + box.hi) / 2);
+      if (y == null || !Number.isFinite(y)) return [];
+      const edge = box.role === "support" ? box.hi : box.lo;
+      return [{ id: box.id, y, label: formatAlertPrice(edge), role: box.role }];
+    });
+    const ys = stackBadgeYs(rows.map((row) => row.y), 18, 12, Math.max(12, height - 28));
+    setBadges(rows.map((row, index) => ({ ...row, y: ys[index] ?? row.y })));
+  }, []);
+
+  const paintReplace = useCallback((next: MarketCandle[]) => {
+    const series = candleRef.current;
+    const volume = volumeRef.current;
+    const chart = chartRef.current;
+    if (!series || !volume || !chart) return;
+    series.applyOptions({ priceFormat: priceFormatForTick(inferTickFromCandles(next)) });
+    series.setData(next.map(toCandle));
+    volume.setData(next.map(toVolume));
+    fitChartView(chart);
+    layoutBadges();
+  }, [layoutBadges]);
+
+  const paintTick = useCallback((next: MarketCandle) => {
+    candleRef.current?.update(toCandle(next));
+    volumeRef.current?.update(toVolume(next));
+  }, []);
+
+  useEffect(() => {
+    symbolRef.current = symbol;
+    intervalRef.current = interval;
+    toolRef.current = tool;
+    draftRef.current = draft;
+    drawingsRef.current = drawings;
+    selectedRef.current = selectedId;
+    showDrawingsRef.current = showDrawings;
+    showLiqRef.current = showLiq;
+    boxesRef.current = boxes;
+    layoutRef.current = layoutBadges;
+  }, [symbol, interval, tool, draft, drawings, selectedId, showDrawings, showLiq, boxes, layoutBadges]);
+
+  function commitDrawings(next: MobileDrawing[]) {
+    drawingsRef.current = next;
+    setDrawings(next);
+    setHistory((current) => historyCommit(current, next));
+  }
+
+  function pointFromEvent(x: number, y: number): MobilePoint | null {
+    const chart = chartRef.current;
+    const series = candleRef.current;
+    if (!chart || !series) return null;
+    const priceAt = series.coordinateToPrice(y);
+    const time = chart.timeScale().coordinateToTime(x);
+    if (priceAt == null || typeof time !== "number") return null;
+    return { time, price: priceAt };
+  }
+
+  async function deliver(event: TouchFire) {
+    const message = event.message;
+    setToast(message);
+    setLog((rows) => [{ id: `${event.id}:${Date.now()}`, message, at: Date.now() }, ...rows].slice(0, 40));
+    const sound = soundRef.current;
+    if (sound?.unlocked) void sound.play();
+    const title = "Trading Hub";
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration();
+      if (registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        await registration.showNotification(title, { body: message, silent: false });
+      }
+    } catch { /* notification unavailable until the PWA is installed */ }
+    const kind = notifyKind(event.target);
+    const ranged = kind === "liq-support" || kind === "liq-resistance" || kind === "rectangle";
+    const payload = { symbol: symbolRef.current, kind, price: event.price, lo: ranged ? event.lo : null, hi: ranged ? event.hi : null };
+    try {
+      await fetch("/api/mobile/notify", {
+        method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+      });
+    } catch { /* local alert already shown */ }
+    if (!postedRef.current.has(event.id)) {
+      postedRef.current.add(event.id);
+      try {
+        await fetch("/api/alerts", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            symbol: symbolRef.current,
+            venue: venueRef.current,
+            interval: intervalRef.current,
+            operator: "crossing",
+            level: event.price,
+            frequency: "every",
+            name: message.slice(0, 80),
+            message,
+          }),
+        });
+      } catch { /* alerts backend is optional */ }
+    }
+  }
+
+  async function enableSoundAndNotify() {
+    const sound = soundRef.current ?? createMobileAlertSound();
+    soundRef.current = sound;
+    await sound.unlock();
+    await sound.play();
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission !== "granted") await Notification.requestPermission();
+      const registration = await navigator.serviceWorker?.ready;
+      if (registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        await registration.showNotification("Trading Hub", { body: "测试响铃", silent: false });
+      }
+    } catch { /* permission prompt dismissed */ }
+    setAlertsOn(true);
+    setToast("测试响铃");
+    setBellOpen(false);
+  }
+
+  async function reloadZones(current = symbolRef.current) {
+    const model = await loadLiqHeatmapBands(current);
+    if (symbolRef.current !== current) return;
+    setRawZones(model.zones);
+    setRawBands(model.bands);
+    setLiqNotice(model.notice);
+  }
+
+  async function refreshZones() {
+    if (coolSec > 0) return;
+    setCoolSec(30);
+    const result = await requestLiqRefresh(symbolRef.current);
+    if (!result.ok) {
+      if (result.retryAfterSec) setCoolSec(result.retryAfterSec);
+      setLiqNotice(result.error);
+      return;
+    }
+    setRawZones(result.model.zones);
+    setRawBands(result.model.bands);
+    setLiqNotice(result.model.notice);
+    setCoolSec(result.cooldownSec || 30);
+  }
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const chart = createChart(host, {
+      autoSize: true,
+      layout: {
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#434651",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        fontSize: 10,
+      },
+      grid: { vertLines: { color: "#f0f3fa" }, horzLines: { color: "#f0f3fa" } },
+      rightPriceScale: { borderColor: "#e0e3eb", scaleMargins: { top: 0.08, bottom: 0.22 } },
+      timeScale: { borderColor: "#e0e3eb", timeVisible: true, secondsVisible: false, rightOffset: 6, barSpacing: 6, minBarSpacing: 0.5 },
+      crosshair: { mode: CrosshairMode.Normal },
+      handleScroll: { pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false, mouseWheel: true },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+      kineticScroll: { touch: true, mouse: false },
+    });
+    chart.applyOptions(chartThemeOptions(currentDocumentTheme()));
+    const series = chart.addSeries(CandlestickSeries, { ...candleThemeOptions(currentDocumentTheme()), borderVisible: false, priceLineVisible: true });
+    const volume = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" }, priceScaleId: "volume", priceLineVisible: false, lastValueVisible: false,
+    });
+    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    const liq = new LiqHeatmapPrimitive();
+    const draws = new MobileDrawingPrimitive();
+    series.attachPrimitive(liq);
+    series.attachPrimitive(draws);
+    chartRef.current = chart;
+    candleRef.current = series;
+    volumeRef.current = volume;
+    liqRef.current = liq;
+    drawRef.current = draws;
+    soundRef.current = createMobileAlertSound();
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+    const project = (point: MobilePoint) => {
+      const x = chart.timeScale().timeToCoordinate(point.time as UTCTimestamp);
+      const y = series.priceToCoordinate(point.price);
+      if (x == null || y == null) return null;
+      return { x, y };
+    };
+    const hitAt = (at: { x: number; y: number }) => {
+      const width = host.clientWidth || 390;
+      for (let index = drawingsRef.current.length - 1; index >= 0; index -= 1) {
+        const hit = hitMobileDrawing(drawingsRef.current[index], at, project, 14, width);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const onClick = (param: { point?: { x: number; y: number }; time?: Time }) => {
+      if (!param.point || !showDrawingsRef.current) return;
+      const at = pointFromEvent(param.point.x, param.point.y);
+      if (!at) return;
+      const active = toolRef.current;
+      if (active === "select" || active === "crosshair") {
+        const hit = hitAt(param.point);
+        setSelectedId(hit?.id ?? null);
+        return;
+      }
+      const placed = applyTap(active, draftRef.current, drawingsRef.current, at, Date.now(), `m-${idRef.current++}`);
+      setDraft(placed.draft);
+      setPreview(null);
+      if (placed.committed) {
+        commitDrawings(placed.drawings);
+        setSelectedId(placed.drawings[placed.drawings.length - 1]?.id ?? null);
+      }
+    };
+    chart.subscribeClick(onClick);
+    chart.subscribeCrosshairMove((param) => {
+      const pending = draftRef.current;
+      if (!pending || !param.point) { setPreview((current) => current ? null : current); return; }
+      const at = pointFromEvent(param.point.x, param.point.y);
+      if (!at) return;
+      const ghost = applyTap(pending.tool, pending, [], at, Date.now(), "preview");
+      const created = ghost.drawings[0];
+      setPreview(created ? previewDrawing(created) : null);
+    });
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => layoutRef.current());
+
+    let drag: { id: string; part: HitPart } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      if (toolRef.current !== "select" || !showDrawingsRef.current) return;
+      const rect = host.getBoundingClientRect();
+      const at = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const hit = hitAt(at);
+      if (!hit || hit.part === "body") return;
+      drag = hit;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!drag) return;
+      const rect = host.getBoundingClientRect();
+      const at = pointFromEvent(event.clientX - rect.left, event.clientY - rect.top);
+      if (!at) return;
+      const next = drawingsRef.current.map((drawing) => drawing.id === drag?.id ? movePoint(drawing, drag.part, at) : drawing);
+      drawingsRef.current = next;
+      setDrawings(next);
+    };
+    const onPointerUp = () => {
+      if (!drag) return;
+      drag = null;
+      setHistory((current) => historyCommit(current, drawingsRef.current));
+    };
+    host.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    const applyThemeToChart = () => {
+      const theme = currentDocumentTheme();
+      chart.applyOptions(chartThemeOptions(theme));
+      series.applyOptions(candleThemeOptions(theme));
+    };
+    const unsubscribe = subscribeTheme(applyThemeToChart);
+    return () => {
+      unsubscribe();
+      host.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      chart.remove();
+      chartRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const placing = tool !== "select" && tool !== "crosshair";
+    chart.applyOptions({
+      handleScroll: { pressedMouseMove: !placing, horzTouchDrag: !placing, vertTouchDrag: false, mouseWheel: true },
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: !placing },
+    });
+  }, [tool]);
+
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    fetchCandles(symbol, interval, 300, controller.signal).then((result) => {
+      if (!live) return;
+      venueRef.current = result.venue;
+      setCandles(result.candles);
+      setStatus("online");
+      paintReplace(result.candles);
+    }).catch((error: unknown) => {
+      if (!live || (error instanceof DOMException && error.name === "AbortError")) return;
+      setStatus("error");
+      setFeedError(error instanceof Error ? error.message : "Chart data unavailable");
+    });
+    const poll = window.setInterval(() => {
+      fetchCandles(symbolRef.current, intervalRef.current, 5).then((result) => {
+        if (!live || result.candles.length === 0) return;
+        const last = result.candles[result.candles.length - 1];
+        paintTick(last);
+        setCandles((prev) => {
+          const map = new Map(prev.map((candle) => [candle.time, candle]));
+          for (const candle of result.candles) map.set(candle.time, candle);
+          return [...map.values()].sort((a, b) => a.time - b.time);
+        });
+        setStatus("online");
+      }).catch(() => { if (live) setStatus("error"); });
+    }, 15_000);
+    return () => { live = false; controller.abort(); window.clearInterval(poll); };
+  }, [symbol, interval, paintReplace, paintTick]);
+
+  useEffect(() => {
+    let live = true;
+    void reloadZones(symbol).catch(() => { if (live) setLiqNotice("∅"); });
+    return () => { live = false; };
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!showLiq) return;
+    const id = window.setInterval(() => { void reloadZones(symbolRef.current).catch(() => {}); }, LIQ_HEATMAP_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [showLiq, symbol]);
+
+  useEffect(() => {
+    if (coolSec <= 0) return;
+    const id = window.setInterval(() => setCoolSec((value) => (value <= 1 ? 0 : value - 1)), 1000);
+    return () => window.clearInterval(id);
+  }, [coolSec]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      readyRef.current = true;
+      if (symbolRef.current !== "BTCUSDT" || intervalRef.current !== "30" || drawingsRef.current.length > 0) return;
+      const loaded = loadMobileDrawings(window.localStorage, "BTCUSDT", "30");
+      if (loaded.length === 0) return;
+      drawingsRef.current = loaded;
+      setDrawings(loaded);
+      setHistory(historyInit(loaded));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!readyRef.current) return;
+    saveMobileDrawings(window.localStorage, symbol, interval, drawings);
+  }, [drawings, symbol, interval]);
+
+  useEffect(() => {
+    liqRef.current?.setBands([]);
+    const anchor = candles.length ? candles[candles.length - 1].time as Time : null;
+    liqRef.current?.setZones(showLiq ? boxes.map((box) => toLiqZone(box, price)) : [], anchor, null);
+    layoutBadges();
+  }, [showLiq, boxes, candles, price, layoutBadges]);
+
+  useEffect(() => {
+    drawRef.current?.setState(showDrawings ? drawings : [], showDrawings ? selectedId : null, showDrawings ? preview : null);
+  }, [showDrawings, drawings, selectedId, preview]);
+
+  useEffect(() => {
+    if (!alertsOn || candles.length < 2) return;
+    const prev = candles[candles.length - 2];
+    const bar = candles[candles.length - 1];
+    const result = evaluateTouches({
+      prev,
+      bar,
+      drawings: showDrawings ? drawings : [],
+      zones: showLiq ? boxes : [],
+      cooldown: cooldownRef.current,
+      now: Date.now(),
+      tolerance: defaultTouchTolerance(bar.close),
+      alertsArmed: true,
+    });
+    cooldownRef.current = result.cooldown;
+    if (!result.fired.length) return;
+    for (const event of result.fired) void deliver(event);
+  }, [alertsOn, showDrawings, showLiq, candles, drawings, boxes]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 4200);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+
+  function switchMarket(nextSymbol: string, nextInterval: ChartInterval) {
+    const same = nextSymbol === symbolRef.current && nextInterval === intervalRef.current;
+    if (!same) {
+      if (readyRef.current) {
+        saveMobileDrawings(window.localStorage, symbolRef.current, intervalRef.current, drawingsRef.current);
+      }
+      const loaded = loadMobileDrawings(window.localStorage, nextSymbol, nextInterval);
+      drawingsRef.current = loaded;
+      symbolRef.current = nextSymbol;
+      intervalRef.current = nextInterval;
+      setDrawings(loaded);
+      setHistory(historyInit(loaded));
+      setDraft(null);
+      setPreview(null);
+      setSelectedId(null);
+      setSymbol(nextSymbol);
+      setInterval(nextInterval);
+      setStatus("loading");
+      setFeedError(null);
+    }
+    setTab("chart");
+  }
+
+  function undo() {
+    setHistory((current) => {
+      const next = historyUndo(current);
+      setDrawings(next.present);
+      return next;
+    });
+  }
+
+  function redo() {
+    setHistory((current) => {
+      const next = historyRedo(current);
+      setDrawings(next.present);
+      return next;
+    });
+  }
+
+  function patchSelected(update: (drawing: MobileDrawing) => MobileDrawing | null) {
+    if (!selectedId) return;
+    const next = drawings.flatMap((drawing) => {
+      if (drawing.id !== selectedId) return [drawing];
+      const patched = update(drawing);
+      return patched ? [patched] : [];
+    });
+    commitDrawings(next);
+    if (!next.some((drawing) => drawing.id === selectedId)) setSelectedId(null);
+  }
+
+  return (
+    <div className="m-app" data-mobile-page="chart">
+      <header className="m-head">
+        <div className="m-head-top">
+          <span className="m-coin" aria-hidden="true">₿</span>
+          <button type="button" className="m-title" aria-label={`${symbol} symbol`} onClick={() => setTab("watchlist")}>
+            <strong>{titleFor(symbol)}</strong>
+          </button>
+          <span className={`live-dot ${status === "loading" ? "" : status}`} data-feed={status} aria-label={status === "online" ? "Live" : status} />
+          <span className="m-quote" aria-label="Quote currency USDT">USDT</span>
+        </div>
+        <div className="m-quote-line">
+          <span className="m-price">{quote.price}</span>
+          <span className={quote.up ? "m-up" : "m-down"}>{quote.delta}</span>
+        </div>
+        <div className="m-sub">Vol · {quote.volume}</div>
+      </header>
+
+      <div className="m-stage">
+        <div ref={hostRef} className="m-chart" data-hidden={tab === "chart" ? "false" : "true"} aria-label={`${symbol} ${interval} chart`} />
+        {showLiq && tab === "chart" && badges.map((badge) => (
+          <span key={badge.id} className={`m-badge m-badge-${badge.role}`} style={{ top: badge.y }}>{badge.label}</span>
+        ))}
+        {showLiq && boxes.length === 0 && tab === "chart" && (
+          <div className="m-empty" role="status" data-liq-empty="true" aria-label={liqNotice || "暂无符合条件的清算区"}>∅</div>
+        )}
+        {feedError && tab === "chart" && <div className="m-feed-error" role="status">{feedError}</div>}
+        {toast && <div className="m-toast" role="status">{toast}</div>}
+        {tab === "chart" && showDrawings && (
+          <div className={`m-tools ${toolbarOpen ? "" : "is-collapsed"}`} role="toolbar" aria-label="Drawing tools">
+            <button type="button" className="m-tool" aria-label={toolbarOpen ? "Collapse drawing tools" : "Expand drawing tools"} title={toolbarOpen ? "Collapse" : "Expand"} onClick={() => setToolbarOpen((open) => !open)}>
+              <span aria-hidden="true">{toolbarOpen ? "⌃" : "⌄"}</span>
+            </button>
+            {toolbarOpen && TOOLS.map((item) => (
+              <button key={item.id} type="button" className={`m-tool ${tool === item.id ? "is-on" : ""}`} data-tool={item.id} aria-label={item.label} aria-pressed={tool === item.id} title={item.label} onClick={() => { setTool(item.id); setDraft(null); setPreview(null); }}>
+                <ToolGlyph tool={item.id} />
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === "chart" && selected && (
+          <div className="m-selection" role="group" aria-label="Selected drawing">
+            {selected.type === "text" && (
+              <input aria-label="Text annotation" value={selected.text} onChange={(event) => patchSelected((drawing) => drawing.type === "text" ? { ...drawing, text: event.target.value.slice(0, 40) || "注" } : drawing)} />
+            )}
+            {selected.type === "trend-line" && (
+              <button type="button" className={`m-tool ${selected.ray ? "is-on" : ""}`} aria-label={selected.ray ? "Stop ray extension" : "Extend trendline as ray"} aria-pressed={selected.ray} title="Ray" onClick={() => patchSelected((drawing) => drawing.type === "trend-line" ? { ...drawing, ray: !drawing.ray } : drawing)}>↗</button>
+            )}
+            <button type="button" className={`m-tool ${selected.alert ? "is-on" : ""}`} aria-label={selected.alert ? "Turn off touch alert" : "Alert when price touches this drawing"} aria-pressed={selected.alert} title="Alert" onClick={() => patchSelected((drawing) => ({ ...drawing, alert: !drawing.alert }))}>🔔</button>
+            <button type="button" className="m-tool" aria-label="Delete drawing" title="Delete" onClick={() => patchSelected(() => null)}>✕</button>
+          </div>
+        )}
+
+        {tab === "watchlist" && (
+          <div className="m-panel" aria-label="Watchlist">
+            {SYMBOLS.map((item) => (
+              <button key={item} type="button" className={`m-row ${item === symbol ? "is-on" : ""}`} onClick={() => switchMarket(item, interval)}>{item}</button>
+            ))}
+          </div>
+        )}
+        {tab === "explore" && (
+          <div className="m-panel" aria-label="Explore liquidation zones">
+            <div className="m-panel-head">
+              <strong>清算区</strong>
+              <button type="button" className="m-text-btn" aria-label="刷新清算" disabled={coolSec > 0} onClick={() => void refreshZones()}>{coolSec > 0 ? `${coolSec}s` : "刷新"}</button>
+            </div>
+            {boxes.length === 0 && <p className="m-empty-copy" data-liq-empty="true">∅ {liqNotice || "暂无符合条件的清算区"}</p>}
+            {boxes.map((box) => (
+              <div key={box.id} className={`m-zone m-zone-${box.role}`} data-risk={box.risk} data-border={box.risk === "极高" ? "2" : "0"}>
+                <span>{box.role === "support" ? "支撑" : "阻力"} · {box.risk}</span>
+                <b>{formatAlertPrice(box.lo)}–{formatAlertPrice(box.hi)}</b>
+              </div>
+            ))}
+          </div>
+        )}
+        {tab === "community" && (
+          <div className="m-panel" aria-label="Community alerts">
+            <div className="m-panel-head"><strong>触碰提醒</strong></div>
+            {log.length === 0 && <p className="m-empty-copy">还没有触碰提醒</p>}
+            {log.map((row) => <div key={row.id} className="m-log">{row.message}</div>)}
+          </div>
+        )}
+        {tab === "menu" && (
+          <div className="m-panel" aria-label="Menu">
+            <p className="m-empty-copy">本页不含 Pine 编辑器。添加到主屏幕后，触碰提醒可以弹出 iPhone 通知。</p>
+            <button type="button" className="m-text-btn" onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}>主题</button>
+            <button type="button" className="m-text-btn" data-action="test-chime" onClick={() => void enableSoundAndNotify()}>开启通知与声音 / 测试响铃</button>
+          </div>
+        )}
+      </div>
+
+      <div className="m-controls">
+        <div className="m-scroll" role="group" aria-label="Symbols">
+          {SYMBOLS.map((item) => (
+            <button key={item} type="button" className={`m-chip ${item === symbol ? "is-on" : ""}`} aria-pressed={item === symbol} onClick={() => switchMarket(item, interval)}>{item}</button>
+          ))}
+        </div>
+        <div className="m-scroll" role="group" aria-label="Timeframe">
+          {INTERVALS.map((item) => (
+            <button key={item.id} type="button" className={`m-chip ${item.id === interval ? "is-on" : ""}`} aria-pressed={item.id === interval} onClick={() => switchMarket(symbol, item.id)}>{item.label}</button>
+          ))}
+        </div>
+        <div className="m-iconbar" role="toolbar" aria-label="Chart actions">
+          <button type="button" className={`m-icon ${showDrawings ? "is-on" : ""}`} aria-label={showDrawings ? "Hide drawings" : "Show drawings"} aria-pressed={showDrawings} title="Drawings" onClick={() => setShowDrawings((value) => !value)}>✎</button>
+          <button type="button" className={`m-icon ${showLiq ? "is-on" : ""}`} aria-label={showLiq ? "Hide liquidation map" : "Show liquidation map"} aria-pressed={showLiq} title="Liquidation" data-action="liq" onClick={() => setShowLiq((value) => !value)}>▣</button>
+          <button type="button" className="m-icon" aria-label="刷新清算" title="Refresh liquidation" disabled={coolSec > 0} data-liq-refresh={coolSec > 0 ? "cooldown" : "idle"} onClick={() => void refreshZones()}>{coolSec > 0 ? coolSec : "↻"}</button>
+          <button type="button" className={`m-icon ${alertsOn ? "is-on" : ""}`} aria-label={alertsOn ? "Touch alerts on" : "Touch alerts off"} aria-pressed={alertsOn} title="Alerts" data-action="alerts" onClick={() => { setAlertsOn((value) => !value); setBellOpen((open) => !open); }}>🔔</button>
+          <button type="button" className="m-icon" aria-label="Undo" title="Undo" disabled={history.past.length === 0} onClick={undo}>↶</button>
+          <button type="button" className="m-icon" aria-label="Redo" title="Redo" disabled={history.future.length === 0} onClick={redo}>↷</button>
+          <button type="button" className="m-icon" aria-label="Fit chart" title="Fit" data-action="fit" onClick={() => fitChartView(chartRef.current)}>⤢</button>
+        </div>
+        {bellOpen && (
+          <div className="m-bell" role="dialog" aria-label="通知与声音">
+            <button type="button" className="m-chime" data-action="test-chime" onClick={() => void enableSoundAndNotify()}>开启通知与声音 / 测试响铃</button>
+          </div>
+        )}
+      </div>
+
+      <nav className="m-tabs" aria-label="Sections">
+        <button type="button" className={tab === "watchlist" ? "is-on" : ""} aria-current={tab === "watchlist" ? "page" : undefined} onClick={() => setTab("watchlist")}>Watchlist</button>
+        <button type="button" className={tab === "chart" ? "is-on" : ""} aria-current={tab === "chart" ? "page" : undefined} onClick={() => setTab("chart")}>Chart</button>
+        <button type="button" className={tab === "explore" ? "is-on" : ""} aria-label="Explore liquidation" aria-current={tab === "explore" ? "page" : undefined} onClick={() => setTab("explore")}>Explore</button>
+        <button type="button" className={tab === "community" ? "is-on" : ""} aria-label="Community alerts" aria-current={tab === "community" ? "page" : undefined} onClick={() => setTab("community")}>Community</button>
+        <button type="button" className={tab === "menu" ? "is-on" : ""} aria-current={tab === "menu" ? "page" : undefined} onClick={() => setTab("menu")}>Menu</button>
+      </nav>
+    </div>
+  );
+}
