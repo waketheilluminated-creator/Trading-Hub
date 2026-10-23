@@ -21,7 +21,7 @@ import { candleThemeOptions, chartThemeOptions } from "@/lib/chart-theme.ts";
 import { LIQ_HEATMAP_POLL_MS, loadLiqHeatmapBands, requestLiqRefresh, type LiqBand, type LiqZone } from "@/lib/liq-heatmap.ts";
 import { LiqHeatmapPrimitive } from "@/lib/liq-heatmap-primitive.ts";
 import { inferTickFromCandles, precisionFromTick, priceFormatForTick } from "@/lib/price-precision.ts";
-import { applyTheme, currentDocumentTheme, nextTheme, subscribeTheme } from "@/lib/theme.ts";
+import { currentDocumentTheme, subscribeTheme } from "@/lib/theme.ts";
 import { createMobileAlertSound, type MobileAlertSound } from "@/lib/mobile-alert-sound.ts";
 import {
   applyTap,
@@ -75,7 +75,7 @@ const TOOLS: { id: MobileTool; label: string }[] = [
 ];
 
 type FeedStatus = "loading" | "online" | "polling" | "error";
-type TabId = "watchlist" | "chart" | "explore" | "community" | "menu";
+type TabId = "chart" | "alerts";
 type LogRow = { id: string; message: string; at: number };
 type Badge = { id: string; y: number; label: string; role: "support" | "resistance" };
 
@@ -83,6 +83,28 @@ const VENUES: MarketVenue[] = ["binance", "bybit", "okx", "bitget"];
 
 function titleFor(symbol: string): string {
   return `${symbol.replace(/USDT$/, "")} / Tether PERPETUAL FUT…`;
+}
+
+function alertDrawingLabel(drawing: MobileDrawing): string | null {
+  switch (drawing.type) {
+    case "trend-line":
+      return `Trendline ${formatAlertPrice(drawing.a.price)}–${formatAlertPrice(drawing.b.price)}`;
+    case "horizontal-line":
+      return `Horizontal ${formatAlertPrice(drawing.price)}`;
+    case "horizontal-ray":
+      return `Ray ${formatAlertPrice(drawing.price)}`;
+    case "rectangle":
+      return `Rectangle ${formatAlertPrice(Math.min(drawing.a.price, drawing.b.price))}–${formatAlertPrice(Math.max(drawing.a.price, drawing.b.price))}`;
+    case "long":
+    case "short":
+    case "price-range":
+    case "text":
+      return null;
+    default: {
+      const neverDrawing: never = drawing;
+      return neverDrawing;
+    }
+  }
 }
 
 function toCandle(candle: MarketCandle) {
@@ -216,6 +238,9 @@ export function MobileChart() {
   const soundRef = useRef<MobileAlertSound | null>(null);
   const postedRef = useRef(new Set<string>());
   const readyRef = useRef(false);
+  const tabRef = useRef<TabId>("chart");
+  const soundOnRef = useRef(false);
+  const notifyOnRef = useRef(false);
   const idRef = useRef(1);
 
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -233,6 +258,9 @@ export function MobileChart() {
   const [showLiq, setShowLiq] = useState(true);
   const [showDrawings, setShowDrawings] = useState(true);
   const [alertsOn, setAlertsOn] = useState(false);
+  const [soundOn, setSoundOn] = useState(false);
+  const [notifyOn, setNotifyOn] = useState(false);
+  const [unread, setUnread] = useState(0);
   const [rawZones, setRawZones] = useState<LiqZone[]>([]);
   const [rawBands, setRawBands] = useState<LiqBand[]>([]);
   const [liqNotice, setLiqNotice] = useState<string | null>(null);
@@ -240,7 +268,6 @@ export function MobileChart() {
   const [tab, setTab] = useState<TabId>("chart");
   const [toast, setToast] = useState<string | null>(null);
   const [log, setLog] = useState<LogRow[]>([]);
-  const [bellOpen, setBellOpen] = useState(false);
   const [badges, setBadges] = useState<Badge[]>([]);
 
   const price = candles.length ? candles[candles.length - 1].close : 0;
@@ -301,7 +328,10 @@ export function MobileChart() {
     showLiqRef.current = showLiq;
     boxesRef.current = boxes;
     layoutRef.current = layoutBadges;
-  }, [symbol, interval, tool, draft, drawings, selectedId, showDrawings, showLiq, boxes, layoutBadges]);
+    tabRef.current = tab;
+    soundOnRef.current = soundOn;
+    notifyOnRef.current = notifyOn;
+  }, [symbol, interval, tool, draft, drawings, selectedId, showDrawings, showLiq, boxes, layoutBadges, tab, soundOn, notifyOn]);
 
   function commitDrawings(next: MobileDrawing[]) {
     drawingsRef.current = next;
@@ -323,12 +353,13 @@ export function MobileChart() {
     const message = event.message;
     setToast(message);
     setLog((rows) => [{ id: `${event.id}:${Date.now()}`, message, at: Date.now() }, ...rows].slice(0, 40));
+    if (tabRef.current !== "alerts") setUnread((count) => Math.min(99, count + 1));
     const sound = soundRef.current;
-    if (sound?.unlocked) void sound.play();
+    if (soundOnRef.current && sound?.unlocked) void sound.play();
     const title = "Trading Hub";
     try {
       const registration = await navigator.serviceWorker?.getRegistration();
-      if (registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      if (notifyOnRef.current && registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
         await registration.showNotification(title, { body: message, silent: false });
       }
     } catch { /* notification unavailable until the PWA is installed */ }
@@ -362,21 +393,62 @@ export function MobileChart() {
     }
   }
 
-  async function enableSoundAndNotify() {
+  function soundEngine(): MobileAlertSound {
     const sound = soundRef.current ?? createMobileAlertSound();
     soundRef.current = sound;
+    return sound;
+  }
+
+  async function toggleSound() {
+    if (soundOnRef.current) {
+      soundOnRef.current = false;
+      setSoundOn(false);
+      return;
+    }
+    await soundEngine().unlock();
+    soundOnRef.current = true;
+    setSoundOn(true);
+  }
+
+  async function testSound() {
+    const sound = soundEngine();
     await sound.unlock();
+    soundOnRef.current = true;
+    setSoundOn(true);
     await sound.play();
+    setToast("Test Sound");
+  }
+
+  async function toggleNotify() {
+    if (notifyOnRef.current) {
+      notifyOnRef.current = false;
+      setNotifyOn(false);
+      return;
+    }
     try {
-      if (typeof Notification !== "undefined" && Notification.permission !== "granted") await Notification.requestPermission();
-      const registration = await navigator.serviceWorker?.ready;
-      if (registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
-        await registration.showNotification("Trading Hub", { body: "测试响铃", silent: false });
+      if (typeof Notification === "undefined") {
+        setToast("Notifications unavailable");
+        return;
       }
-    } catch { /* permission prompt dismissed */ }
-    setAlertsOn(true);
-    setToast("测试响铃");
-    setBellOpen(false);
+      if (Notification.permission !== "granted") {
+        const result = await Notification.requestPermission();
+        if (result !== "granted") {
+          setToast("Notifications blocked");
+          return;
+        }
+      }
+    } catch {
+      setToast("Notifications blocked");
+      return;
+    }
+    notifyOnRef.current = true;
+    setNotifyOn(true);
+  }
+
+  function showAlerts() {
+    tabRef.current = "alerts";
+    setTab("alerts");
+    setUnread(0);
   }
 
   async function reloadZones(current = symbolRef.current) {
@@ -657,7 +729,6 @@ export function MobileChart() {
       setStatus("loading");
       setFeedError(null);
     }
-    setTab("chart");
   }
 
   function undo() {
@@ -676,6 +747,10 @@ export function MobileChart() {
     });
   }
 
+  function setDrawingAlert(id: string, alert: boolean) {
+    commitDrawings(drawings.map((drawing) => (drawing.id === id ? { ...drawing, alert } : drawing)));
+  }
+
   function patchSelected(update: (drawing: MobileDrawing) => MobileDrawing | null) {
     if (!selectedId) return;
     const next = drawings.flatMap((drawing) => {
@@ -692,9 +767,9 @@ export function MobileChart() {
       <header className="m-head">
         <div className="m-head-top">
           <span className="m-coin" aria-hidden="true">₿</span>
-          <button type="button" className="m-title" aria-label={`${symbol} symbol`} onClick={() => setTab("watchlist")}>
+          <div className="m-title" aria-label={`${symbol} symbol`}>
             <strong>{titleFor(symbol)}</strong>
-          </button>
+          </div>
           <span className={`live-dot ${status === "loading" ? "" : status}`} data-feed={status} aria-label={status === "online" ? "Live" : status} />
           <span className="m-quote" aria-label="Quote currency USDT">USDT</span>
         </div>
@@ -739,40 +814,46 @@ export function MobileChart() {
           </div>
         )}
 
-        {tab === "watchlist" && (
-          <div className="m-panel" aria-label="Watchlist">
-            {SYMBOLS.map((item) => (
-              <button key={item} type="button" className={`m-row ${item === symbol ? "is-on" : ""}`} onClick={() => switchMarket(item, interval)}>{item}</button>
-            ))}
-          </div>
-        )}
-        {tab === "explore" && (
-          <div className="m-panel" aria-label="Explore liquidation zones">
-            <div className="m-panel-head">
-              <strong>清算区</strong>
-              <button type="button" className="m-text-btn" aria-label="刷新清算" disabled={coolSec > 0} onClick={() => void refreshZones()}>{coolSec > 0 ? `${coolSec}s` : "刷新"}</button>
+        {tab === "alerts" && (
+          <div className="m-panel" aria-label="Alerts">
+            <div className="m-switch">
+              <span>Notifications</span>
+              <button type="button" className={`m-switch-btn ${notifyOn ? "is-on" : ""}`} aria-pressed={notifyOn} aria-label="iPhone notifications" onClick={() => void toggleNotify()}>{notifyOn ? "On" : "Off"}</button>
             </div>
+            <div className="m-switch">
+              <span>Sound</span>
+              <button type="button" className={`m-switch-btn ${soundOn ? "is-on" : ""}`} aria-pressed={soundOn} aria-label="Audible alert sound" onClick={() => void toggleSound()}>{soundOn ? "On" : "Off"}</button>
+            </div>
+            <button type="button" className="m-chime" data-action="test-chime" onClick={() => void testSound()}>Test Sound</button>
+            <div className="m-switch">
+              <span>Touch alerts</span>
+              <button type="button" className={`m-switch-btn ${alertsOn ? "is-on" : ""}`} aria-pressed={alertsOn} aria-label={alertsOn ? "Touch alerts on" : "Touch alerts off"} onClick={() => setAlertsOn((value) => !value)}>{alertsOn ? "On" : "Off"}</button>
+            </div>
+            <h2 className="m-section">Drawing alerts</h2>
+            {drawings.every((drawing) => alertDrawingLabel(drawing) == null) && <p className="m-empty-copy">No drawing alerts</p>}
+            {drawings.flatMap((drawing) => {
+              const label = alertDrawingLabel(drawing);
+              if (!label) return [];
+              return [(
+                <div key={drawing.id} className="m-alert-row">
+                  <span>{label}</span>
+                  <button type="button" className={`m-switch-btn ${drawing.alert ? "is-on" : ""}`} aria-pressed={drawing.alert} aria-label={`Drawing alert ${label}`} onClick={() => setDrawingAlert(drawing.id, !drawing.alert)}>{drawing.alert ? "On" : "Off"}</button>
+                </div>
+              )];
+            })}
+            <h2 className="m-section">Liquidation alerts</h2>
             {boxes.length === 0 && <p className="m-empty-copy" data-liq-empty="true">∅ {liqNotice || "暂无符合条件的清算区"}</p>}
             {boxes.map((box) => (
               <div key={box.id} className={`m-zone m-zone-${box.role}`} data-risk={box.risk} data-border={box.risk === "极高" ? "2" : "0"}>
-                <span>{box.role === "support" ? "支撑" : "阻力"} · {box.risk}</span>
+                <span>{box.role === "support" ? "Support" : "Resistance"} · {box.risk}{alertsOn && showLiq ? " · armed" : ""}</span>
                 <b>{formatAlertPrice(box.lo)}–{formatAlertPrice(box.hi)}</b>
               </div>
             ))}
-          </div>
-        )}
-        {tab === "community" && (
-          <div className="m-panel" aria-label="Community alerts">
-            <div className="m-panel-head"><strong>触碰提醒</strong></div>
-            {log.length === 0 && <p className="m-empty-copy">还没有触碰提醒</p>}
-            {log.map((row) => <div key={row.id} className="m-log">{row.message}</div>)}
-          </div>
-        )}
-        {tab === "menu" && (
-          <div className="m-panel" aria-label="Menu">
-            <p className="m-empty-copy">本页不含 Pine 编辑器。添加到主屏幕后，触碰提醒可以弹出 iPhone 通知。</p>
-            <button type="button" className="m-text-btn" onClick={() => applyTheme(nextTheme(currentDocumentTheme()))}>主题</button>
-            <button type="button" className="m-text-btn" data-action="test-chime" onClick={() => void enableSoundAndNotify()}>开启通知与声音 / 测试响铃</button>
+            <h2 className="m-section">History</h2>
+            {log.length === 0 && <p className="m-empty-copy">No triggered alerts</p>}
+            <div aria-label="Alert history">
+              {log.map((row) => <div key={row.id} className="m-log">{row.message}</div>)}
+            </div>
           </div>
         )}
       </div>
@@ -792,24 +873,19 @@ export function MobileChart() {
           <button type="button" className={`m-icon ${showDrawings ? "is-on" : ""}`} aria-label={showDrawings ? "Hide drawings" : "Show drawings"} aria-pressed={showDrawings} title="Drawings" onClick={() => setShowDrawings((value) => !value)}>✎</button>
           <button type="button" className={`m-icon ${showLiq ? "is-on" : ""}`} aria-label={showLiq ? "Hide liquidation map" : "Show liquidation map"} aria-pressed={showLiq} title="Liquidation" data-action="liq" onClick={() => setShowLiq((value) => !value)}>▣</button>
           <button type="button" className="m-icon" aria-label="刷新清算" title="Refresh liquidation" disabled={coolSec > 0} data-liq-refresh={coolSec > 0 ? "cooldown" : "idle"} onClick={() => void refreshZones()}>{coolSec > 0 ? coolSec : "↻"}</button>
-          <button type="button" className={`m-icon ${alertsOn ? "is-on" : ""}`} aria-label={alertsOn ? "Touch alerts on" : "Touch alerts off"} aria-pressed={alertsOn} title="Alerts" data-action="alerts" onClick={() => { setAlertsOn((value) => !value); setBellOpen((open) => !open); }}>🔔</button>
+          <button type="button" className={`m-icon ${alertsOn ? "is-on" : ""}`} aria-label="Open alerts" aria-pressed={alertsOn} title="Alerts" data-action="alerts" onClick={showAlerts}>🔔</button>
           <button type="button" className="m-icon" aria-label="Undo" title="Undo" disabled={history.past.length === 0} onClick={undo}>↶</button>
           <button type="button" className="m-icon" aria-label="Redo" title="Redo" disabled={history.future.length === 0} onClick={redo}>↷</button>
           <button type="button" className="m-icon" aria-label="Fit chart" title="Fit" data-action="fit" onClick={() => fitChartView(chartRef.current)}>⤢</button>
         </div>
-        {bellOpen && (
-          <div className="m-bell" role="dialog" aria-label="通知与声音">
-            <button type="button" className="m-chime" data-action="test-chime" onClick={() => void enableSoundAndNotify()}>开启通知与声音 / 测试响铃</button>
-          </div>
-        )}
       </div>
 
       <nav className="m-tabs" aria-label="Sections">
-        <button type="button" className={tab === "watchlist" ? "is-on" : ""} aria-current={tab === "watchlist" ? "page" : undefined} onClick={() => setTab("watchlist")}>Watchlist</button>
         <button type="button" className={tab === "chart" ? "is-on" : ""} aria-current={tab === "chart" ? "page" : undefined} onClick={() => setTab("chart")}>Chart</button>
-        <button type="button" className={tab === "explore" ? "is-on" : ""} aria-label="Explore liquidation" aria-current={tab === "explore" ? "page" : undefined} onClick={() => setTab("explore")}>Explore</button>
-        <button type="button" className={tab === "community" ? "is-on" : ""} aria-label="Community alerts" aria-current={tab === "community" ? "page" : undefined} onClick={() => setTab("community")}>Community</button>
-        <button type="button" className={tab === "menu" ? "is-on" : ""} aria-current={tab === "menu" ? "page" : undefined} onClick={() => setTab("menu")}>Menu</button>
+        <button type="button" className={tab === "alerts" ? "is-on" : ""} aria-current={tab === "alerts" ? "page" : undefined} onClick={showAlerts}>
+          Alerts
+          {unread > 0 ? <span className="m-tab-count" data-unread={unread}>{unread}</span> : null}
+        </button>
       </nav>
     </div>
   );

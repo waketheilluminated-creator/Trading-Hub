@@ -26,6 +26,17 @@ test("mobile page is an installable standalone PWA without Pine", () => {
   assert.doesNotMatch(worker, /addEventListener\("fetch"/);
 });
 
+test("mobile bottom tabs are Chart then Alerts", () => {
+  const src = read("../app/mobile/mobile-chart.tsx");
+  const nav = src.slice(src.indexOf('<nav className="m-tabs"'));
+  assert.match(nav, /Chart<\/button>[\s\S]*Alerts/);
+  assert.doesNotMatch(src, /Watchlist|Explore|Community|>Menu</);
+  assert.match(src, /Test Sound/);
+  assert.match(src, /data-unread=/);
+  assert.match(src, /iPhone notifications/);
+  assert.match(src, /Audible alert sound/);
+});
+
 test("mobile overlay toggles never rescale the chart", () => {
   const src = read("../app/mobile/mobile-chart.tsx");
   assert.match(src, /fitChartView\(/);
