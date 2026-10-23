@@ -17,7 +17,6 @@
 .m-price { font-size: 20px; font-weight: 680; letter-spacing: -0.03em; }
 .m-up { color: #089981; font-size: 13px; }
 .m-down { color: #f23645; font-size: 13px; }
-.m-sub { margin-top: 1px; color: var(--muted); font-size: 12px; }
 .m-stage { position: relative; flex: 1; min-height: 0; background: var(--bg); }
 .m-chart { position: absolute; inset: 0; touch-action: none; }
 .m-chart[data-hidden="true"] { visibility: hidden; }

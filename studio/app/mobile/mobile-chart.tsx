@@ -10,7 +10,6 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
-  HistogramSeries,
   createChart,
   type IChartApi,
   type ISeriesApi,
@@ -86,13 +85,6 @@ function titleFor(symbol: string): string {
   return `${symbol.replace(/USDT$/, "")} / Tether PERPETUAL FUT…`;
 }
 
-function formatVol(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return String(Math.round(value));
-}
-
 function toCandle(candle: MarketCandle) {
   return {
     time: candle.time as UTCTimestamp,
@@ -100,14 +92,6 @@ function toCandle(candle: MarketCandle) {
     high: candle.high,
     low: candle.low,
     close: candle.close,
-  };
-}
-
-function toVolume(candle: MarketCandle) {
-  return {
-    time: candle.time as UTCTimestamp,
-    value: candle.volume,
-    color: candle.close >= candle.open ? "rgba(8,153,129,0.55)" : "rgba(242,54,69,0.55)",
   };
 }
 
@@ -215,7 +199,6 @@ export function MobileChart() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const liqRef = useRef<LiqHeatmapPrimitive | null>(null);
   const drawRef = useRef<MobileDrawingPrimitive | null>(null);
   const symbolRef = useRef("BTCUSDT");
@@ -263,7 +246,7 @@ export function MobileChart() {
   const price = candles.length ? candles[candles.length - 1].close : 0;
   const boxes = useMemo(() => selectMobileLiqBoxes(rawZones, rawBands, price || Number.NaN), [rawZones, rawBands, price]);
   const quote = useMemo(() => {
-    if (candles.length < 1) return { price: "—", delta: "", up: true, volume: "—" };
+    if (candles.length < 1) return { price: "—", delta: "", up: true };
     const last = candles[candles.length - 1];
     const prev = candles[candles.length - 2] ?? last;
     const diff = last.close - prev.close;
@@ -274,7 +257,6 @@ export function MobileChart() {
       price: last.close.toLocaleString("en-US", { minimumFractionDigits: Math.min(1, digits), maximumFractionDigits: digits }),
       delta: `${sign}${Math.abs(diff) >= 100 ? diff.toFixed(1) : diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)`,
       up: diff >= 0,
-      volume: formatVol(last.volume),
     };
   }, [candles]);
   const selected = drawings.find((drawing) => drawing.id === selectedId) ?? null;
@@ -296,19 +278,16 @@ export function MobileChart() {
 
   const paintReplace = useCallback((next: MarketCandle[]) => {
     const series = candleRef.current;
-    const volume = volumeRef.current;
     const chart = chartRef.current;
-    if (!series || !volume || !chart) return;
+    if (!series || !chart) return;
     series.applyOptions({ priceFormat: priceFormatForTick(inferTickFromCandles(next)) });
     series.setData(next.map(toCandle));
-    volume.setData(next.map(toVolume));
     fitChartView(chart);
     layoutBadges();
   }, [layoutBadges]);
 
   const paintTick = useCallback((next: MarketCandle) => {
     candleRef.current?.update(toCandle(next));
-    volumeRef.current?.update(toVolume(next));
   }, []);
 
   useEffect(() => {
@@ -435,7 +414,7 @@ export function MobileChart() {
         fontSize: 10,
       },
       grid: { vertLines: { color: "#f0f3fa" }, horzLines: { color: "#f0f3fa" } },
-      rightPriceScale: { borderColor: "#e0e3eb", scaleMargins: { top: 0.08, bottom: 0.22 } },
+      rightPriceScale: { borderColor: "#e0e3eb", scaleMargins: { top: 0.08, bottom: 0.08 } },
       timeScale: { borderColor: "#e0e3eb", timeVisible: true, secondsVisible: false, rightOffset: 6, barSpacing: 6, minBarSpacing: 0.5 },
       crosshair: { mode: CrosshairMode.Normal },
       handleScroll: { pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false, mouseWheel: true },
@@ -444,18 +423,13 @@ export function MobileChart() {
     });
     chart.applyOptions(chartThemeOptions(currentDocumentTheme()));
     const series = chart.addSeries(CandlestickSeries, { ...candleThemeOptions(currentDocumentTheme()), borderVisible: false, priceLineVisible: true });
-    const volume = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" }, priceScaleId: "volume", priceLineVisible: false, lastValueVisible: false,
-    });
-    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
     const liq = new LiqHeatmapPrimitive();
     const draws = new MobileDrawingPrimitive();
     series.attachPrimitive(liq);
     series.attachPrimitive(draws);
     chartRef.current = chart;
     candleRef.current = series;
-    volumeRef.current = volume;
     liqRef.current = liq;
     drawRef.current = draws;
     soundRef.current = createMobileAlertSound();
@@ -728,7 +702,6 @@ export function MobileChart() {
           <span className="m-price">{quote.price}</span>
           <span className={quote.up ? "m-up" : "m-down"}>{quote.delta}</span>
         </div>
-        <div className="m-sub">Vol · {quote.volume}</div>
       </header>
 
       <div className="m-stage">

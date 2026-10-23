@@ -29,6 +29,7 @@ test("mobile page is an installable standalone PWA without Pine", () => {
 test("mobile overlay toggles never rescale the chart", () => {
   const src = read("../app/mobile/mobile-chart.tsx");
   assert.match(src, /fitChartView\(/);
+  assert.doesNotMatch(src, /HistogramSeries|priceScaleId:\s*"volume"|Vol ·/);
   for (const toggle of ["showLiq", "showDrawings", "alertsOn"]) {
     const bodies = effectsDependingOn(src, toggle);
     assert.ok(bodies.length > 0, `${toggle} drives an effect`);
