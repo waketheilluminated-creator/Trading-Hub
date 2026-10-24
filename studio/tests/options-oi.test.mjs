@@ -446,7 +446,8 @@ test("the route delegates to the server loader and the card stays inside the rig
   assert.match(route, /max-age=60/);
   assert.doesNotMatch(route, /deribit\.com/);
   assert.match(server, /https:\/\/www\.deribit\.com\/api\/v2\/public\/get_book_summary_by_currency/);
-  assert.match(server, /redirect:\s*"error"/);
+  assert.match(server, /redirect:\s*"manual"/);
+  assert.match(server, /response\.status >= 300 && response\.status < 400/);
 
   const panelStart = workspace.indexOf('<aside className="right-panel"');
   const panel = workspace.slice(panelStart, workspace.indexOf("</aside>", panelStart));

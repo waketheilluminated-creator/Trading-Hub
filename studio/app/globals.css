@@ -595,6 +595,7 @@ button.alert-dialog-backdrop { border:0; padding:0; cursor:default; }
 .options-axis { stroke:var(--line); }
 .options-tick { fill:var(--faint); font-size:8px; }
 .options-distance { fill:var(--amber); font-size:10px; font-weight:700; }
+.options-distance-label { color:var(--amber); font-weight:700; }
 .options-footnote { margin:6px 0 0; color:var(--faint); font-size:9px; line-height:1.35; }
 .options-status { margin:0; height:168px; display:grid; place-items:center; color:var(--muted); font-size:11px; text-align:center; }
 .options-status.error { color:var(--red); }

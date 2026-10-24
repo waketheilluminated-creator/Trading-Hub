@@ -149,7 +149,7 @@ export function OptionsExpiryCard() {
             <line className="options-axis" x1={layout.plotLeft} x2={layout.plotRight} y1={layout.zeroY} y2={layout.zeroY} />
             {layout.maxPain ? <line className="options-marker" x1={layout.maxPain.x} x2={layout.maxPain.x} y1={layout.plotTop} y2={layout.plotBottom} strokeDasharray="3 3"><title>{`Max pain ${snapshot.maxPain == null ? "" : formatStrike(snapshot.maxPain)}`}</title></line> : null}
             {layout.spot ? <line className="options-marker options-marker-spot" x1={layout.spot.x} x2={layout.spot.x} y1={layout.plotTop} y2={layout.plotBottom} strokeDasharray="3 3"><title>{`Spot ${formatSpotUsd(snapshot.spot)}`}</title></line> : null}
-            {layout.distance ? <text className="options-distance" x={layout.distance.x} y={layout.distance.y} textAnchor="middle">{layout.distance.text}</text> : null}
+            {layout.distance && layout.band && layout.band.width >= 36 ? <text className="options-distance" x={layout.distance.x} y={layout.distance.y} textAnchor="middle">{layout.distance.text}</text> : null}
             {layout.ticks.map((tick) => (
               <text key={tick.text} className="options-tick" x={tick.x} y={layout.height - 6} textAnchor="middle">{tick.text}</text>
             ))}
@@ -159,6 +159,7 @@ export function OptionsExpiryCard() {
       {snapshot ? (
         <p className="options-markers">
           <span>max pain {snapshot.maxPain == null ? "—" : formatStrike(snapshot.maxPain)}</span>
+          {distance ? <span className="options-distance-label">{distance}</span> : null}
           <span>spot {formatSpotUsd(snapshot.spot)}</span>
         </p>
       ) : null}

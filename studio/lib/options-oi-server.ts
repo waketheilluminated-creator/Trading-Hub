@@ -1,6 +1,6 @@
 // Trust boundary: only BTC/ETH and a calendar expiry reach Deribit.
 // Client spot, book, and open-interest parameters are never read.
-// Both URLs are fixed public endpoints; redirects are rejected.
+// Both URLs are fixed public endpoints. Redirects are not followed.
 
 import {
   OPTIONS_OI_CACHE_MS,
@@ -53,9 +53,11 @@ export async function loadOptionsOi(url: URL, fetchImpl: typeof fetch = fetch, n
 async function loadBook(currency: OptionsCurrency, fetchImpl: typeof fetch, now: number): Promise<CachedBook> {
   const cached = cache.get(currency);
   if (cached && now - cached.at < OPTIONS_OI_CACHE_MS) return cached;
+  // Workers reject redirect "error". "manual" still refuses to follow a redirect
+  // to another host; a 3xx is treated as an upstream failure below.
   const init: RequestInit = {
     headers: { accept: "application/json" },
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
   };
   const bookResponse = await fetchImpl(bookUrl(currency), init);
@@ -88,6 +90,7 @@ function indexUrl(currency: OptionsCurrency): string {
 }
 
 async function readJson(response: Response): Promise<unknown> {
+  if (response.status >= 300 && response.status < 400) throw new Error("upstream");
   if (!response.ok) throw new Error("upstream");
   return response.json() as Promise<unknown>;
 }
