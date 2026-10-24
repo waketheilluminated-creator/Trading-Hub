@@ -110,9 +110,19 @@ import {
   writeSidePanelPrefs,
 } from "@/lib/side-panel-layout.js";
 import { legendEntries, studyDefinition, type StudyId } from "@/lib/chart-studies.ts";
+import {
+  DEFAULT_PIVOT_POINTS_HIGH_LOW,
+  pivotLabelModels,
+  pivotPointsParamsLabel,
+  readPivotPointsSettings,
+  writePivotPointsSettings,
+  type PivotPointsHighLowSettings,
+} from "@/lib/pivot-points-high-low.ts";
+import { PivotPointsPrimitive } from "@/lib/pivot-points-primitive.ts";
 import { buildPineRenderModel, describePineModel, pineModelHasOutput, type PineMarkerModel, type PineRenderModel, type PineRuntimeOutput } from "@/lib/pine-chart-model.ts";
 import { PineOverlayPrimitive } from "@/lib/pine-overlay-primitive.ts";
 import { ChartStudyLegend, type ChartLegendRow } from "@/components/chart-study-legend";
+import { PivotPointsSettings } from "@/components/pivot-points-settings";
 import { IndicatorsMenu } from "@/components/indicators-menu";
 import { applyTheme, currentDocumentTheme, nextTheme, subscribeTheme, type ThemeName } from "@/lib/theme.ts";
 import { candleThemeOptions, chartPalette, chartThemeOptions } from "@/lib/chart-theme.ts";
@@ -324,6 +334,20 @@ function useStoredFlag(key: string): [boolean, (next: boolean | ((current: boole
   return [value, setValue];
 }
 
+function useStoredFlagDefault(key: string, fallback: boolean): [boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
+  const value = useSyncExternalStore(
+    subscribePanePrefs,
+    () => readClientPaneFlag(window.localStorage, key, fallback),
+    () => false,
+  );
+  const setValue = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = readStoredFlag(window.localStorage, key, fallback);
+    writeStoredFlag(window.localStorage, key, typeof next === "function" ? next(current) : next);
+    notifyPanePrefs();
+  }, [key, fallback]);
+  return [value, setValue];
+}
+
 function readLiveSidePanelWidth(): number {
   if (!panePrefsAreLive()) return SIDE_PANEL_DEFAULT_WIDTH;
   return readSidePanelPrefs(window.localStorage).width;
@@ -390,6 +414,7 @@ export function TradingWorkspace() {
   const largeOrderPrimitiveRef = useRef<LargeOrderSrPrimitive | null>(null);
   const largeTradePrimitiveRef = useRef<LargeTradeMarkersPrimitive | null>(null);
   const liqHeatmapPrimitiveRef = useRef<LiqHeatmapPrimitive | null>(null);
+  const pivotPrimitiveRef = useRef<PivotPointsPrimitive | null>(null);
   const liqBandsRef = useRef<LiqBand[]>([]);
   const liqTipRef = useRef<HTMLDivElement>(null);
   const wallTipRef = useRef<HTMLDivElement>(null);
@@ -428,6 +453,18 @@ export function TradingWorkspace() {
   const [slowHidden, setSlowHidden] = useStoredFlag(studyDefinition("ema21").hiddenKey);
   const [cvdHidden, setCvdHidden] = useStoredFlag(studyDefinition("cvd").hiddenKey);
   const [oiHidden, setOiHidden] = useStoredFlag(studyDefinition("oi").hiddenKey);
+  const [showPivots, setShowPivots] = useStoredFlagDefault(studyDefinition("pivotsHl").addedKey, studyDefinition("pivotsHl").defaultAdded === true);
+  const [pivotsHidden, setPivotsHidden] = useStoredFlag(studyDefinition("pivotsHl").hiddenKey);
+  const [pivotSettingsOpen, setPivotSettingsOpen] = useState(false);
+  const pivotSettings = useSyncExternalStore(
+    subscribePanePrefs,
+    () => (panePrefsAreLive() ? readPivotPointsSettings(window.localStorage) : DEFAULT_PIVOT_POINTS_HIGH_LOW),
+    () => DEFAULT_PIVOT_POINTS_HIGH_LOW,
+  );
+  const setPivotSettings = useCallback((next: PivotPointsHighLowSettings) => {
+    writePivotPointsSettings(window.localStorage, next);
+    notifyPanePrefs();
+  }, []);
   const [pineModel, setPineModel] = useState<PineRenderModel | null>(null);
   const [pineHidden, setPineHidden] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
@@ -671,6 +708,11 @@ export function TradingWorkspace() {
   const pricePrecision = effectiveTick != null ? precisionFromTick(effectiveTick) : null;
   if (pricePrecision != null) liqDecimalsRef.current = pricePrecision; // liq/wall box labels follow the axis
   const fmtPrice = useCallback((value: number | null) => formatPriceWithPrecision(value, pricePrecision), [pricePrecision]);
+  const pivotLabels = useMemo(() => pivotLabelModels(candles.map((candle) => ({
+    high: candle.high,
+    low: candle.low,
+    time: typeof candle.time === "number" ? candle.time : undefined,
+  })), pivotSettings, pricePrecision), [candles, pivotSettings, pricePrecision]);
   // TradingView legend semantics: change of the last bar vs the previous close. Measuring from the first
   // loaded bar would make the number depend on how much history (300 vs 5000 bars) happens to be loaded.
   const previous = candles.at(-2);
@@ -761,6 +803,7 @@ export function TradingWorkspace() {
     const largeOrderPrimitive = new LargeOrderSrPrimitive();
     const largeTradePrimitive = new LargeTradeMarkersPrimitive();
     const liqHeatmapPrimitive = new LiqHeatmapPrimitive();
+    const pivotPrimitive = new PivotPointsPrimitive();
     const drawingStorage = drawingStorageRef.current ?? createDrawingStorage();
     drawingStorageRef.current = drawingStorage;
     const drawingSaveScheduler = new DrawingSaveScheduler(drawingStorage);
@@ -768,6 +811,7 @@ export function TradingWorkspace() {
     candleSeries.attachPrimitive(largeOrderPrimitive);
     candleSeries.attachPrimitive(largeTradePrimitive);
     candleSeries.attachPrimitive(liqHeatmapPrimitive);
+    candleSeries.attachPrimitive(pivotPrimitive);
     const replaceDrawings = (next: Drawing[], kind: DrawingChangeKind) => {
       drawingsRef.current = next;
       setDrawings(next);
@@ -803,6 +847,7 @@ export function TradingWorkspace() {
     largeOrderPrimitiveRef.current = largeOrderPrimitive;
     largeTradePrimitiveRef.current = largeTradePrimitive;
     liqHeatmapPrimitiveRef.current = liqHeatmapPrimitive;
+    pivotPrimitiveRef.current = pivotPrimitive;
     drawingControllerRef.current = drawingController;
     drawingSaveSchedulerRef.current = drawingSaveScheduler;
     drawingController.attach(chartHost.current);
@@ -811,6 +856,7 @@ export function TradingWorkspace() {
     return () => {
       drawingSaveScheduler.flush();
       drawingController.detach();
+      candleSeries.detachPrimitive(pivotPrimitive);
       candleSeries.detachPrimitive(liqHeatmapPrimitive);
       candleSeries.detachPrimitive(largeTradePrimitive);
       candleSeries.detachPrimitive(largeOrderPrimitive);
@@ -820,6 +866,7 @@ export function TradingWorkspace() {
       if (largeOrderPrimitiveRef.current === largeOrderPrimitive) largeOrderPrimitiveRef.current = null;
       if (largeTradePrimitiveRef.current === largeTradePrimitive) largeTradePrimitiveRef.current = null;
       if (liqHeatmapPrimitiveRef.current === liqHeatmapPrimitive) liqHeatmapPrimitiveRef.current = null;
+      if (pivotPrimitiveRef.current === pivotPrimitive) pivotPrimitiveRef.current = null;
       if (drawingSaveSchedulerRef.current === drawingSaveScheduler) drawingSaveSchedulerRef.current = null;
       chart.remove();
       chartRef.current = null; candleSeriesRef.current = null; fastSeriesRef.current = null; slowSeriesRef.current = null;
@@ -840,6 +887,20 @@ export function TradingWorkspace() {
       candleTimes,
     );
   }, [candles, showFast, showSlow]);
+
+  useEffect(() => {
+    pivotPrimitiveRef.current?.setLabels(showPivots && !pivotsHidden ? pivotLabels : []);
+  }, [chartVersion, pivotLabels, pivotsHidden, showPivots]);
+
+  useEffect(() => {
+    if (!pivotSettingsOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      const row = document.querySelector('.study-legend-row[data-study="pivotsHl"]');
+      if (!row?.contains(event.target as Node)) setPivotSettingsOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointer);
+    return () => window.removeEventListener("pointerdown", onPointer);
+  }, [pivotSettingsOpen]);
 
   useEffect(() => {
     fastSeriesRef.current?.applyOptions({ visible: !fastHidden });
@@ -1600,23 +1661,31 @@ export function TradingWorkspace() {
     else setSidePanelPrefs({ width: clampSidePanelWidth(next, window.innerWidth), collapsed: false });
   };
 
-  const studyAdded: Record<StudyId, boolean> = { ema9: showFast, ema21: showSlow, cvd: showCvdPane, oi: showOiPane };
-  const studyHidden: Record<StudyId, boolean> = { ema9: fastHidden, ema21: slowHidden, cvd: cvdHidden, oi: oiHidden };
+  const studyAdded: Record<StudyId, boolean> = { ema9: showFast, ema21: showSlow, pivotsHl: showPivots, cvd: showCvdPane, oi: showOiPane };
+  const studyHidden: Record<StudyId, boolean> = { ema9: fastHidden, ema21: slowHidden, pivotsHl: pivotsHidden, cvd: cvdHidden, oi: oiHidden };
   const legendRows: ChartLegendRow[] = [
     ...legendEntries(
       Object.fromEntries((Object.keys(studyAdded) as StudyId[]).map((id) => [id, { added: studyAdded[id], hidden: studyHidden[id] }])),
       { cvd: cvdModel.label, oi: oiModel.label },
-    ).map((entry) => ({ id: entry.id, title: entry.title, params: entry.id === "cvd" || entry.id === "oi" ? undefined : entry.params, color: entry.color, visible: entry.visible })),
+    ).map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      params: entry.id === "pivotsHl" ? pivotPointsParamsLabel(pivotSettings) : entry.id === "cvd" || entry.id === "oi" ? undefined : entry.params,
+      color: entry.color,
+      visible: entry.visible,
+      configurable: entry.id === "pivotsHl",
+    })),
     ...(pineModel ? [{ id: "pine", title: pineModel.title, params: pineModel.overlay ? undefined : "pane", color: "#b48cf2", visible: !pineHidden }] : []),
   ];
-  const setStudyAdded: Record<StudyId, (next: boolean) => void> = { ema9: setShowFast, ema21: setShowSlow, cvd: setShowCvdPane, oi: setShowOiPane };
-  const setStudyHidden: Record<StudyId, (next: boolean | ((current: boolean) => boolean)) => void> = { ema9: setFastHidden, ema21: setSlowHidden, cvd: setCvdHidden, oi: setOiHidden };
+  const setStudyAdded: Record<StudyId, (next: boolean) => void> = { ema9: setShowFast, ema21: setShowSlow, pivotsHl: setShowPivots, cvd: setShowCvdPane, oi: setShowOiPane };
+  const setStudyHidden: Record<StudyId, (next: boolean | ((current: boolean) => boolean)) => void> = { ema9: setFastHidden, ema21: setSlowHidden, pivotsHl: setPivotsHidden, cvd: setCvdHidden, oi: setOiHidden };
   const toggleStudyVisible = (id: string) => {
     if (id === "pine") { setPineHidden((value) => !value); return; }
     setStudyHidden[id as StudyId]((value) => !value);
   };
   const removeStudy = (id: string) => {
     if (id === "pine") { removePine(); return; }
+    if (id === "pivotsHl") setPivotSettingsOpen(false);
     setStudyAdded[id as StudyId](false);
     setStudyHidden[id as StudyId](false);
   };
@@ -1751,11 +1820,18 @@ export function TradingWorkspace() {
               liqRefreshCooldownSec={liqCooldownSec}
               onLiqRefresh={refreshLiqZones}
             />
-            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"} data-replay-active={replayCursor != null ? "on" : "off"} data-liq-anchor={liqAnchorTime ?? ""} data-last-visible={candles.at(-1)?.time ?? ""}>
+            <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"} data-pivot-points={showPivots && !pivotsHidden ? pivotLabels.length : 0} data-replay-active={replayCursor != null ? "on" : "off"} data-liq-anchor={liqAnchorTime ?? ""} data-last-visible={candles.at(-1)?.time ?? ""}>
             <div className="chart-legend">
               <div className="market-head"><h1>{symbol.replace("USDT", "/USDT")} Perpetual</h1><span className="exchange-pill">{venueLabel(activeVenue).toUpperCase()}</span></div>
               <div className="quote-line"><span className="price" data-price-precision={pricePrecision ?? ""}>{fmtPrice(last?.close ?? null)}</span><span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span><span>H {fmtPrice(last?.high ?? null)}</span><span>L {fmtPrice(last?.low ?? null)}</span></div>
-              <ChartStudyLegend rows={legendRows} onToggleVisible={toggleStudyVisible} onRemove={removeStudy} />
+              <ChartStudyLegend
+                rows={legendRows}
+                onToggleVisible={toggleStudyVisible}
+                onRemove={removeStudy}
+                onConfigure={(id) => { if (id === "pivotsHl") setPivotSettingsOpen((open) => !open); }}
+                settingsFor={pivotSettingsOpen ? "pivotsHl" : null}
+                settings={pivotSettingsOpen ? <PivotPointsSettings value={pivotSettings} onChange={setPivotSettings} /> : null}
+              />
               {showLiqHeatmap && <div className="indicator-label" data-liq-heatmap-legend="on"><span data-liq-legend="above"><i style={{ background: `rgba(${LIQ_SHORT_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_SHORT_RGB})` }} />{LIQ_LEGEND_ABOVE}</span><span data-liq-legend="below"><i style={{ background: `rgba(${LIQ_LONG_RGB}, 0.6)`, outline: `1px solid rgb(${LIQ_LONG_RGB})` }} />{LIQ_LEGEND_BELOW}</span>{liqZones.length > 0 && <span data-liq-zone-count={liqZones.length}>{liqZones.length} zone{liqZones.length > 1 ? "s" : ""}</span>}{liqZones.length > 0 && <span className="liq-risk-key" data-liq-legend-risk><i className="liq-risk-medium" data-border-px={liqZoneBorderWidth("中")} />{LIQ_LEGEND_RISK_MEDIUM}<i className="liq-risk-high" data-border-px={liqZoneBorderWidth("高")} />{LIQ_LEGEND_RISK_HIGH}<i className="liq-risk-extreme" data-border-px={liqZoneBorderWidth("极高")} />{LIQ_LEGEND_RISK_EXTREME}</span>}{liqUpdatedLabel && <span className="liq-updated" data-liq-updated>{liqUpdatedLabel}</span>}{liqVenuesFailed.length > 0 && <span className="liq-venues-warning" role="note" data-liq-venues-failed={liqVenuesFailed.join(",")} title={replay ? `No historical OI for replay: ${liqVenuesFailed.join(", ")}` : `Estimator could not reach: ${liqVenuesFailed.join(", ")}`}>⚠ {replay ? `回放不可用 unavailable: ${liqVenuesFailed.join(", ")}` : `${liqVenuesFailed.length} venue${liqVenuesFailed.length > 1 ? "s" : ""} failed`}</span>}{liqZones.length > 0 && !replay && <button type="button" className={`liq-zone-bell${zoneAlertsOn ? " active" : ""}`} data-liq-zone-alert={zoneAlertsOn ? "on" : "off"} aria-pressed={zoneAlertsOn} aria-label={ZONE_ALERT_LABEL} title={zoneAlertError ?? `${ZONE_ALERT_LABEL}${zoneAlertsOn ? "（已开启）" : ""}`} disabled={zoneAlertBusy} onClick={() => void toggleZoneAlerts()}>{zoneAlertsOn ? "🔔" : "🔕"}</button>}<button type="button" className="indicator-remove" aria-label="Remove liquidation heatmap" title="Hide liquidation heatmap" onClick={() => setShowLiqHeatmap(false)}>×</button></div>}
             </div>
             {(showLargeOrderSr || showLargeTrades) && <LargeOrderDock

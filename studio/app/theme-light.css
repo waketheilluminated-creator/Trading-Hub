@@ -270,6 +270,15 @@ html.theme-light .study-legend-button {
 html.theme-light .study-legend-button:hover, html.theme-light .study-legend-button:focus-visible {
     background: #e8edf2
 }
+html.theme-light .pivot-settings {
+    border: 1px solid #d9dee5;
+    background: rgba(240, 242, 245, 0.96);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.122)
+}
+html.theme-light .pivot-settings input {
+    border: 1px solid #d2d8e0;
+    background: #f1f3f5
+}
 html.theme-light .indicators-popover {
     border: 1px solid #d2d8e0;
     background: #eff1f4;

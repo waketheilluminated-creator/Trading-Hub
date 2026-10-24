@@ -1,15 +1,21 @@
+import type { ReactNode } from "react";
+
 export type ChartLegendRow = {
   id: string;
   title: string;
   params?: string;
   color: string;
   visible: boolean;
+  configurable?: boolean;
 };
 
 type ChartStudyLegendProps = {
   rows: readonly ChartLegendRow[];
   onToggleVisible(id: string): void;
   onRemove(id: string): void;
+  onConfigure?(id: string): void;
+  settingsFor?: string | null;
+  settings?: ReactNode;
 };
 
 function EyeIcon({ open }: { open: boolean }) {
@@ -18,6 +24,15 @@ function EyeIcon({ open }: { open: boolean }) {
       <path d="M1.5 9S4.2 4 9 4s7.5 5 7.5 5-2.7 5-7.5 5S1.5 9 1.5 9Z" />
       <circle cx="9" cy="9" r="2.2" />
       {!open && <path d="M3 15 15 3" />}
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <circle cx="7" cy="7" r="1.7" />
+      <path d="M7 1.8v1.3M7 10.9v1.3M1.8 7h1.3M10.9 7h1.3M3.2 3.2l.9.9M9.9 9.9l.9.9M10.8 3.2l-.9.9M4.1 9.9l-.9.9" />
     </svg>
   );
 }
@@ -36,7 +51,7 @@ function RemoveIcon() {
  * and remove actions; hidden studies stay listed but dimmed with the eye kept
  * visible so they can be shown again.
  */
-export function ChartStudyLegend({ rows, onToggleVisible, onRemove }: ChartStudyLegendProps) {
+export function ChartStudyLegend({ rows, onToggleVisible, onRemove, onConfigure, settingsFor, settings }: ChartStudyLegendProps) {
   if (!rows.length) return null;
   return (
     <ul className="study-legend" aria-label="Chart indicators">
@@ -58,10 +73,23 @@ export function ChartStudyLegend({ rows, onToggleVisible, onRemove }: ChartStudy
               >
                 <EyeIcon open={row.visible} />
               </button>
+              {row.configurable && onConfigure ? (
+                <button
+                  type="button"
+                  className="study-legend-button"
+                  aria-label={`Settings ${label}`}
+                  aria-expanded={settingsFor === row.id}
+                  title="Lengths"
+                  onClick={() => onConfigure(row.id)}
+                >
+                  <GearIcon />
+                </button>
+              ) : null}
               <button type="button" className="study-legend-button" aria-label={`Remove ${label}`} title="Remove" onClick={() => onRemove(row.id)}>
                 <RemoveIcon />
               </button>
             </span>
+            {settingsFor === row.id ? settings : null}
           </li>
         );
       })}
