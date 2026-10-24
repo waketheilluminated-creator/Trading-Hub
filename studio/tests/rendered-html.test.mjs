@@ -110,12 +110,12 @@ test("server-renders the Trading Hub trading workspace", async () => {
   assert.match(panelHtml, /<h2 class="right-panel-title" id="th-right-panel-title">Advanced Analytics<\/h2>/);
   assert.match(html, /aria-labelledby="th-right-panel-title"/);
   assert.ok(panelHtml.indexOf("right-panel-title") < panelHtml.indexOf('class="section-kicker"'));
-  assert.equal((panelHtml.match(/<h3 class="section-kicker">/g) ?? []).length, 3);
+  assert.equal((panelHtml.match(/<h3 class="section-kicker">/g) ?? []).length, 4);
   assert.doesNotMatch(panelHtml.slice(0, panelHtml.indexOf("</aside>")), /<h2 class="section-kicker"/);
   // TH-UI-08: every right-panel section has a title-row toggle that starts expanded on SSR.
   const sectionToggles = html.match(/<button\b[^>]*class="section-toggle"[^>]*>/g) ?? [];
-  assert.equal(sectionToggles.length, 3, "Derivatives pulse, Order flow, Alerts");
-  for (const key of ["th-section-derivatives-open", "th-section-order-flow-open", "th-section-alerts-open"]) {
+  assert.equal(sectionToggles.length, 4, "Derivatives pulse, Options expiry, Order flow, Alerts");
+  for (const key of ["th-section-derivatives-open", "th-section-options-expiry-open", "th-section-order-flow-open", "th-section-alerts-open"]) {
     const tag = sectionToggles.find((t) => t.includes(`aria-controls="${key}-body"`));
     assert.ok(tag, `missing toggle for ${key}`);
     assert.match(tag, /aria-expanded="true"/);

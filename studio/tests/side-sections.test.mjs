@@ -9,7 +9,7 @@ test("all right-panel sections use the shared collapsible SideSection", () => {
   const start = workspace.indexOf('<aside className="right-panel"');
   assert.notEqual(start, -1);
   const panel = workspace.slice(start, workspace.indexOf("</aside>", start));
-  for (const [title, key] of [["Derivatives pulse", "DERIVATIVES_SECTION_KEY"], ["Order flow", "ORDER_FLOW_SECTION_KEY"], ["Alerts", "ALERTS_SECTION_KEY"]]) {
+  for (const [title, key] of [["Derivatives pulse", "DERIVATIVES_SECTION_KEY"], ["Options expiry", "OPTIONS_SECTION_KEY"], ["Order flow", "ORDER_FLOW_SECTION_KEY"], ["Alerts", "ALERTS_SECTION_KEY"]]) {
     assert.match(panel, new RegExp(`<SideSection[\\s\\S]{0,40}title="${title}"[\\s\\S]{0,40}storageKey=\\{${key}\\}`), title);
   }
   assert.doesNotMatch(panel, /<section className="side-section"/, "no hand-rolled, non-collapsible sections");
