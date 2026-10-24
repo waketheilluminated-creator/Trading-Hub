@@ -1,4 +1,6 @@
-export type StudyId = "ema9" | "ema21" | "cvd" | "oi";
+import { DEFAULT_PIVOT_POINTS_HIGH_LOW, PIVOT_HIGH_COLOR, pivotPointsParamsLabel } from "./pivot-points-high-low.ts";
+
+export type StudyId = "ema9" | "ema21" | "pivotsHl" | "cvd" | "oi";
 export type StudyPlacement = "overlay" | "pane";
 
 export type StudyDefinition = {
@@ -12,6 +14,8 @@ export type StudyDefinition = {
   addedKey: string;
   /** localStorage flag: study is on the chart but its plots are hidden (eye off). */
   hiddenKey: string;
+  /** When the user has no stored choice, the study starts on the chart. */
+  defaultAdded?: boolean;
 };
 
 export type StudyFlags = Partial<Record<StudyId, { added: boolean; hidden: boolean }>>;
@@ -29,6 +33,7 @@ export type LegendEntry = {
 export const STUDY_CATALOG: readonly StudyDefinition[] = [
   { id: "ema9", name: "EMA", params: "9 close", description: "Exponential moving average · overlay", placement: "overlay", color: "#62d6e8", addedKey: "th-study-ema9", hiddenKey: "th-study-ema9-hidden" },
   { id: "ema21", name: "EMA", params: "21 close", description: "Exponential moving average · overlay", placement: "overlay", color: "#f2c66d", addedKey: "th-study-ema21", hiddenKey: "th-study-ema21-hidden" },
+  { id: "pivotsHl", name: "Pivot Points High Low", params: pivotPointsParamsLabel(DEFAULT_PIVOT_POINTS_HIGH_LOW), description: "Confirmed pivot highs and lows · overlay", placement: "overlay", color: PIVOT_HIGH_COLOR, addedKey: "th-study-pivots-hl", hiddenKey: "th-study-pivots-hl-hidden", defaultAdded: true },
   { id: "cvd", name: "CVD", params: "perp · public trades", description: "Cumulative volume delta · separate pane", placement: "pane", color: "#53c990", addedKey: "th-pane-cvd", hiddenKey: "th-pane-cvd-hidden" },
   { id: "oi", name: "Open interest", params: "USD", description: "Derivatives open interest · separate pane", placement: "pane", color: "#62d6e8", addedKey: "th-pane-oi", hiddenKey: "th-pane-oi-hidden" },
 ];

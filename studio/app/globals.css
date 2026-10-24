@@ -147,7 +147,7 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .liq-zone-bell:disabled { opacity:.5; cursor:wait; }
 .indicator-remove:hover { color:var(--ink); background:#303b4b; }
 .study-legend { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; align-items:flex-start; gap:1px; pointer-events:none; }
-.study-legend-row { display:flex; align-items:center; gap:6px; min-height:22px; padding:1px 4px 1px 2px; border:1px solid transparent; border-radius:4px; font:11px var(--font-geist-mono); color:#c3cad5; pointer-events:auto; }
+.study-legend-row { position:relative; display:flex; align-items:center; gap:6px; min-height:22px; padding:1px 4px 1px 2px; border:1px solid transparent; border-radius:4px; font:11px var(--font-geist-mono); color:#c3cad5; pointer-events:auto; }
 .study-legend-row:hover, .study-legend-row:focus-within { border-color:#2d3848; background:rgba(13,18,26,.88); }
 .study-legend-swatch { display:inline-block; width:8px; height:2px; border-radius:1px; }
 .study-legend-params { color:#7f8a9b; }
@@ -160,6 +160,9 @@ body.side-panel-resizing .chart-canvas { pointer-events:none; }
 .study-legend-row.hidden-study:hover .study-legend-actions .study-legend-button { opacity:1; }
 .study-legend-button { width:22px; height:20px; display:grid; place-items:center; padding:0; color:#9aa5b4; border:0; border-radius:4px; background:transparent; cursor:pointer; }
 .study-legend-button:hover, .study-legend-button:focus-visible { color:var(--ink); background:#243140; }
+.pivot-settings { position:absolute; z-index:6; top:calc(100% + 4px); left:0; display:grid; grid-template-columns:14px 46px 46px; gap:4px 6px; align-items:center; padding:6px; border:1px solid #2d3848; border-radius:6px; background:rgba(13,18,26,.96); box-shadow:0 8px 20px rgba(0,0,0,.35); }
+.pivot-settings input { width:46px; padding:3px 4px; color:var(--ink); border:1px solid #33404f; border-radius:4px; background:#0c1219; font:11px var(--font-geist-mono); }
+.pivot-settings svg { display:block; }
 .indicators-menu { position:relative; }
 .indicators-button { display:flex; align-items:center; gap:4px; }
 .indicators-fx { font:italic 600 12px var(--font-geist-mono); }
