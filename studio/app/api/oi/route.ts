@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Use a compact perpetual symbol such as BTCUSDT" }, { status: 400 });
   }
   if (!isChartInterval(interval)) {
-    return Response.json({ error: "Supported intervals: 1, 5, 15, 60, 240, D" }, { status: 400 });
+    return Response.json({ error: "Supported intervals: 1, 5, 15, 30, 60, 240, D" }, { status: 400 });
   }
 
   try {

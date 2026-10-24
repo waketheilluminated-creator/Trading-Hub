@@ -1,8 +1,8 @@
 export const MARKET_VENUES = ["bybit", "binance", "okx", "bitget"] as const;
 export type MarketVenue = (typeof MARKET_VENUES)[number];
-export type ChartInterval = "1" | "5" | "15" | "60" | "240" | "D";
+export type ChartInterval = "1" | "5" | "15" | "30" | "60" | "240" | "D";
 
-export const CHART_INTERVALS: readonly ChartInterval[] = ["1", "5", "15", "60", "240", "D"];
+export const CHART_INTERVALS: readonly ChartInterval[] = ["1", "5", "15", "30", "60", "240", "D"];
 
 export const VENUE_LABELS: Record<MarketVenue, string> = {
   bybit: "Bybit",
@@ -33,6 +33,7 @@ const BINANCE_INTERVAL: Record<ChartInterval, string> = {
   "1": "1m",
   "5": "5m",
   "15": "15m",
+  "30": "30m",
   "60": "1h",
   "240": "4h",
   D: "1d",
@@ -42,6 +43,7 @@ const OKX_BAR: Record<ChartInterval, string> = {
   "1": "1m",
   "5": "5m",
   "15": "15m",
+  "30": "30m",
   "60": "1H",
   "240": "4H",
   D: "1D",
@@ -51,6 +53,7 @@ const BITGET_BAR: Record<ChartInterval, string> = {
   "1": "1m",
   "5": "5m",
   "15": "15m",
+  "30": "30m",
   "60": "1H",
   "240": "4H",
   D: "1D",
@@ -70,6 +73,7 @@ export function parseChartInterval(value: unknown, fallback: ChartInterval = "15
   if (raw === "1" || raw === "1m" || raw === "1min" || raw === "1minute") return "1";
   if (raw === "5" || raw === "5m" || raw === "5min") return "5";
   if (raw === "15" || raw === "15m" || raw === "15min") return "15";
+  if (raw === "30" || raw === "30m" || raw === "30min") return "30";
   if (raw === "60" || raw === "1h" || raw === "1hr" || raw === "60m") return "60";
   if (raw === "240" || raw === "4h" || raw === "4hr") return "240";
   if (raw === "d" || raw === "1d" || raw === "day" || raw === "daily") return "D";
