@@ -41,14 +41,37 @@ import {
 } from "@/lib/mobile/drawings.ts";
 import { MobileDrawingPrimitive, previewDrawing } from "@/lib/mobile/drawing-primitive.ts";
 import {
-  defaultTouchTolerance,
-  evaluateTouches,
   formatAlertPrice,
   selectMobileLiqBoxes,
   stackBadgeYs,
   type MobileLiqBox,
   type TouchFire,
 } from "@/lib/mobile/touch.ts";
+import {
+  MOBILE_ALERT_POLL_MS,
+  beginCreate,
+  blankDraft,
+  cancelExpanded,
+  centerPriceRange,
+  deleteAlert,
+  draftFromDrawing,
+  evaluateAlertBook,
+  expandAlert,
+  loadGlobalAlerts,
+  openOrCreateLiq,
+  pauseAlert,
+  planAlertPolls,
+  quoteKey,
+  saveExpanded,
+  saveGlobalAlerts,
+  updateExpanded,
+  withDrawingAlerts,
+  type AlertListState,
+  type AlertQuote,
+  type AlertSegment,
+  type GlobalAlert,
+} from "@/lib/mobile/alerts.ts";
+import { AlertsPanel } from "./alerts-panel.tsx";
 import type { ChartInterval, MarketCandle, MarketVenue } from "@/lib/market-venues.ts";
 
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "PYTHUSDT", "ZECUSDT"] as const;
@@ -76,35 +99,12 @@ const TOOLS: { id: MobileTool; label: string }[] = [
 
 type FeedStatus = "loading" | "online" | "polling" | "error";
 type TabId = "chart" | "alerts";
-type LogRow = { id: string; message: string; at: number };
 type Badge = { id: string; y: number; label: string; role: "support" | "resistance" };
 
 const VENUES: MarketVenue[] = ["binance", "bybit", "okx", "bitget"];
 
 function titleFor(symbol: string): string {
   return `${symbol.replace(/USDT$/, "")} / Tether PERPETUAL FUT…`;
-}
-
-function alertDrawingLabel(drawing: MobileDrawing): string | null {
-  switch (drawing.type) {
-    case "trend-line":
-      return `Trendline ${formatAlertPrice(drawing.a.price)}–${formatAlertPrice(drawing.b.price)}`;
-    case "horizontal-line":
-      return `Horizontal ${formatAlertPrice(drawing.price)}`;
-    case "horizontal-ray":
-      return `Ray ${formatAlertPrice(drawing.price)}`;
-    case "rectangle":
-      return `Rectangle ${formatAlertPrice(Math.min(drawing.a.price, drawing.b.price))}–${formatAlertPrice(Math.max(drawing.a.price, drawing.b.price))}`;
-    case "long":
-    case "short":
-    case "price-range":
-    case "text":
-      return null;
-    default: {
-      const neverDrawing: never = drawing;
-      return neverDrawing;
-    }
-  }
 }
 
 function toCandle(candle: MarketCandle) {
@@ -241,6 +241,11 @@ export function MobileChart() {
   const tabRef = useRef<TabId>("chart");
   const soundOnRef = useRef(false);
   const notifyOnRef = useRef(false);
+  const candlesRef = useRef<MarketCandle[]>([]);
+  const bookRef = useRef<AlertListState>({ alerts: [], draft: null, edit: null, expandedId: null });
+  const focusRef = useRef<{ from: number; to: number } | null>(null);
+  const alertsReadyRef = useRef(false);
+  const pollAlertsRef = useRef<(live: () => boolean) => Promise<void>>(async () => {});
   const idRef = useRef(1);
 
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -257,18 +262,22 @@ export function MobileChart() {
   const [preview, setPreview] = useState<MobileDrawing | null>(null);
   const [showLiq, setShowLiq] = useState(true);
   const [showDrawings, setShowDrawings] = useState(true);
-  const [alertsOn, setAlertsOn] = useState(false);
+  const [alertsOn] = useState(true);
   const [soundOn, setSoundOn] = useState(false);
   const [notifyOn, setNotifyOn] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [book, setBook] = useState<AlertListState>({ alerts: [], draft: null, edit: null, expandedId: null });
+  const [alertSymbol, setAlertSymbol] = useState("ALL");
+  const [alertSegment, setAlertSegment] = useState<AlertSegment>("active");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [rawZones, setRawZones] = useState<LiqZone[]>([]);
   const [rawBands, setRawBands] = useState<LiqBand[]>([]);
   const [liqNotice, setLiqNotice] = useState<string | null>(null);
   const [coolSec, setCoolSec] = useState(0);
   const [tab, setTab] = useState<TabId>("chart");
   const [toast, setToast] = useState<string | null>(null);
-  const [log, setLog] = useState<LogRow[]>([]);
   const [badges, setBadges] = useState<Badge[]>([]);
+  const [now, setNow] = useState(0);
 
   const price = candles.length ? candles[candles.length - 1].close : 0;
   const boxes = useMemo(() => selectMobileLiqBoxes(rawZones, rawBands, price || Number.NaN), [rawZones, rawBands, price]);
@@ -310,6 +319,11 @@ export function MobileChart() {
     series.applyOptions({ priceFormat: priceFormatForTick(inferTickFromCandles(next)) });
     series.setData(next.map(toCandle));
     fitChartView(chart);
+    const focus = focusRef.current;
+    if (focus) {
+      series.priceScale().setVisibleRange(focus);
+      focusRef.current = null;
+    }
     layoutBadges();
   }, [layoutBadges]);
 
@@ -331,7 +345,9 @@ export function MobileChart() {
     tabRef.current = tab;
     soundOnRef.current = soundOn;
     notifyOnRef.current = notifyOn;
-  }, [symbol, interval, tool, draft, drawings, selectedId, showDrawings, showLiq, boxes, layoutBadges, tab, soundOn, notifyOn]);
+    candlesRef.current = candles;
+    bookRef.current = book;
+  }, [symbol, interval, tool, draft, drawings, selectedId, showDrawings, showLiq, boxes, layoutBadges, tab, soundOn, notifyOn, candles, book]);
 
   function commitDrawings(next: MobileDrawing[]) {
     drawingsRef.current = next;
@@ -349,23 +365,24 @@ export function MobileChart() {
     return { time, price: priceAt };
   }
 
-  async function deliver(event: TouchFire) {
+  async function deliver(event: TouchFire, gate: { sound: boolean; notify: boolean; symbol?: string; interval?: ChartInterval } = { sound: true, notify: true }) {
     const message = event.message;
+    const alertSymbol = gate.symbol ?? symbolRef.current;
+    const alertInterval = gate.interval ?? intervalRef.current;
     setToast(message);
-    setLog((rows) => [{ id: `${event.id}:${Date.now()}`, message, at: Date.now() }, ...rows].slice(0, 40));
     if (tabRef.current !== "alerts") setUnread((count) => Math.min(99, count + 1));
     const sound = soundRef.current;
-    if (soundOnRef.current && sound?.unlocked) void sound.play();
+    if (gate.sound && soundOnRef.current && sound?.unlocked) void sound.play();
     const title = "Trading Hub";
     try {
       const registration = await navigator.serviceWorker?.getRegistration();
-      if (notifyOnRef.current && registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      if (gate.notify && notifyOnRef.current && registration && typeof Notification !== "undefined" && Notification.permission === "granted") {
         await registration.showNotification(title, { body: message, silent: false });
       }
     } catch { /* notification unavailable until the PWA is installed */ }
     const kind = notifyKind(event.target);
     const ranged = kind === "liq-support" || kind === "liq-resistance" || kind === "rectangle";
-    const payload = { symbol: symbolRef.current, kind, price: event.price, lo: ranged ? event.lo : null, hi: ranged ? event.hi : null };
+    const payload = { symbol: alertSymbol, kind, price: event.price, lo: ranged ? event.lo : null, hi: ranged ? event.hi : null };
     try {
       await fetch("/api/mobile/notify", {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
@@ -379,9 +396,9 @@ export function MobileChart() {
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            symbol: symbolRef.current,
+            symbol: alertSymbol,
             venue: venueRef.current,
-            interval: intervalRef.current,
+            interval: alertInterval,
             operator: "crossing",
             level: event.price,
             frequency: "every",
@@ -450,6 +467,118 @@ export function MobileChart() {
     setTab("alerts");
     setUnread(0);
   }
+
+  function syncDrawingFlags(next: AlertListState) {
+    const linked = withDrawingAlerts(drawingsRef.current, next.alerts, symbolRef.current, intervalRef.current);
+    if (JSON.stringify(linked) !== JSON.stringify(drawingsRef.current)) {
+      drawingsRef.current = linked;
+      setDrawings(linked);
+    }
+    const seen = new Set<string>();
+    for (const alert of next.alerts) {
+      if (!alert.drawingId) continue;
+      const key = `${alert.symbol}:${alert.interval}`;
+      if (seen.has(key) || (alert.symbol === symbolRef.current && alert.interval === intervalRef.current)) continue;
+      seen.add(key);
+      const stored = loadMobileDrawings(window.localStorage, alert.symbol, alert.interval);
+      saveMobileDrawings(window.localStorage, alert.symbol, alert.interval, withDrawingAlerts(stored, next.alerts, alert.symbol, alert.interval));
+    }
+  }
+
+  function applyBook(update: (state: AlertListState) => AlertListState) {
+    const next = update(bookRef.current);
+    bookRef.current = next;
+    setBook(next);
+    syncDrawingFlags(next);
+  }
+
+  function armDrawing(drawing: MobileDrawing) {
+    applyBook((state) => {
+      const id = `draw:${drawing.id}`;
+      if (state.alerts.some((alert) => alert.id === id)) return expandAlert(state, id);
+      const draft = draftFromDrawing(symbolRef.current, intervalRef.current, drawing, Date.now());
+      return draft ? beginCreate(state, draft) : state;
+    });
+    showAlerts();
+  }
+
+  function armLiq() {
+    const level = candlesRef.current.at(-1)?.close ?? 0;
+    applyBook((state) => openOrCreateLiq(state, symbolRef.current, intervalRef.current, level, Date.now()));
+    showAlerts();
+  }
+
+  function createAlert() {
+    const level = candlesRef.current.at(-1)?.close ?? 0;
+    applyBook((state) => beginCreate(state, blankDraft(symbolRef.current, intervalRef.current, level, Date.now())));
+    showAlerts();
+  }
+
+  function showOnChart(alert: GlobalAlert) {
+    const range = centerPriceRange(alert.level);
+    focusRef.current = range;
+    if (alert.symbol !== symbolRef.current || alert.interval !== intervalRef.current) switchMarket(alert.symbol, alert.interval);
+    else if (range) {
+      candleRef.current?.priceScale().setVisibleRange(range);
+      focusRef.current = null;
+    }
+    tabRef.current = "chart";
+    setTab("chart");
+  }
+
+  async function pollAlerts(live: () => boolean) {
+    await Promise.resolve();
+    if (!live()) return;
+    const current = bookRef.current;
+    const pairs = planAlertPolls(current.alerts, symbolRef.current, intervalRef.current, Date.now());
+    const quotes: Record<string, AlertQuote> = {};
+    const bars = candlesRef.current;
+    if (bars.length > 0) {
+      const last = bars[bars.length - 1];
+      quotes[quoteKey(symbolRef.current, intervalRef.current)] = { prev: bars.length > 1 ? bars[bars.length - 2] : null, bar: last };
+    }
+    for (const pair of pairs) {
+      try {
+        const result = await fetchCandles(pair.symbol, pair.interval, 2);
+        if (!live()) return;
+        const last = result.candles[result.candles.length - 1];
+        const prev = result.candles[result.candles.length - 2] ?? null;
+        if (last) quotes[quoteKey(pair.symbol, pair.interval)] = { prev, bar: last };
+      } catch { /* this symbol is retried on the next poll */ }
+    }
+    const zones: Record<string, MobileLiqBox[]> = {};
+    const liqSymbols = [...new Set(current.alerts.filter((alert) => alert.kind === "liq").map((alert) => alert.symbol))];
+    for (const sym of liqSymbols) {
+      let price = 0;
+      for (const [key, quote] of Object.entries(quotes)) if (key.startsWith(`${sym}:`)) price = quote.bar.close;
+      if (!(price > 0)) continue;
+      if (sym === symbolRef.current && boxesRef.current.length > 0) {
+        zones[sym] = boxesRef.current;
+        continue;
+      }
+      try {
+        const model = await loadLiqHeatmapBands(sym);
+        if (!live()) return;
+        const fresh = selectMobileLiqBoxes(model.zones, model.bands, price);
+        if (fresh.length > 0) zones[sym] = fresh;
+      } catch { /* keep the zones already stored on the alert */ }
+    }
+    if (!live()) return;
+    const result = evaluateAlertBook({ alerts: current.alerts, quotes, zones, now: Date.now(), cooldown: cooldownRef.current });
+    cooldownRef.current = result.cooldown;
+    if (JSON.stringify(result.alerts) !== JSON.stringify(bookRef.current.alerts)) {
+      const next = { ...bookRef.current, alerts: result.alerts };
+      bookRef.current = next;
+      setBook(next);
+    }
+    for (const fire of result.fired) {
+      void deliver(fire.event, { sound: fire.alert.sound, notify: fire.alert.notify, symbol: fire.alert.symbol, interval: fire.alert.interval });
+    }
+  }
+
+  useEffect(() => {
+    pollAlertsRef.current = pollAlerts;
+  });
 
   async function reloadZones(current = symbolRef.current) {
     const model = await loadLiqHeatmapBands(current);
@@ -685,29 +814,43 @@ export function MobileChart() {
   }, [showDrawings, drawings, selectedId, preview]);
 
   useEffect(() => {
-    if (!alertsOn || candles.length < 2) return;
-    const prev = candles[candles.length - 2];
-    const bar = candles[candles.length - 1];
-    const result = evaluateTouches({
-      prev,
-      bar,
-      drawings: showDrawings ? drawings : [],
-      zones: showLiq ? boxes : [],
-      cooldown: cooldownRef.current,
-      now: Date.now(),
-      tolerance: defaultTouchTolerance(bar.close),
-      alertsArmed: true,
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      alertsReadyRef.current = true;
+      setBook((current) => ({ ...current, alerts: loadGlobalAlerts(window.localStorage) }));
     });
-    cooldownRef.current = result.cooldown;
-    if (!result.fired.length) return;
-    for (const event of result.fired) void deliver(event);
-  }, [alertsOn, showDrawings, showLiq, candles, drawings, boxes]);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!alertsReadyRef.current) return;
+    saveGlobalAlerts(window.localStorage, book.alerts);
+  }, [book.alerts]);
+
+  useEffect(() => {
+    if (!alertsOn) return;
+    let live = true;
+    const run = () => { void pollAlertsRef.current(() => live); };
+    run();
+    const timer = window.setInterval(run, MOBILE_ALERT_POLL_MS);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [alertsOn, book.alerts, symbol, interval]);
 
   useEffect(() => {
     if (!toast) return;
     const id = window.setTimeout(() => setToast(null), 4200);
     return () => window.clearTimeout(id);
   }, [toast]);
+
+  useEffect(() => {
+    if (tab !== "alerts") return;
+    let live = true;
+    const tick = () => { if (live) setNow(Date.now()); };
+    const kick = window.setTimeout(tick, 0);
+    const id = window.setInterval(tick, 30_000);
+    return () => { live = false; window.clearTimeout(kick); window.clearInterval(id); };
+  }, [tab]);
 
   function switchMarket(nextSymbol: string, nextInterval: ChartInterval) {
     const same = nextSymbol === symbolRef.current && nextInterval === intervalRef.current;
@@ -747,10 +890,6 @@ export function MobileChart() {
     });
   }
 
-  function setDrawingAlert(id: string, alert: boolean) {
-    commitDrawings(drawings.map((drawing) => (drawing.id === id ? { ...drawing, alert } : drawing)));
-  }
-
   function patchSelected(update: (drawing: MobileDrawing) => MobileDrawing | null) {
     if (!selectedId) return;
     const next = drawings.flatMap((drawing) => {
@@ -758,8 +897,12 @@ export function MobileChart() {
       const patched = update(drawing);
       return patched ? [patched] : [];
     });
+    const removed = !next.some((drawing) => drawing.id === selectedId);
     commitDrawings(next);
-    if (!next.some((drawing) => drawing.id === selectedId)) setSelectedId(null);
+    if (removed) {
+      applyBook((state) => deleteAlert(state, `draw:${selectedId}`));
+      setSelectedId(null);
+    }
   }
 
   return (
@@ -809,56 +952,42 @@ export function MobileChart() {
             {selected.type === "trend-line" && (
               <button type="button" className={`m-tool ${selected.ray ? "is-on" : ""}`} aria-label={selected.ray ? "Stop ray extension" : "Extend trendline as ray"} aria-pressed={selected.ray} title="Ray" onClick={() => patchSelected((drawing) => drawing.type === "trend-line" ? { ...drawing, ray: !drawing.ray } : drawing)}>↗</button>
             )}
-            <button type="button" className={`m-tool ${selected.alert ? "is-on" : ""}`} aria-label={selected.alert ? "Turn off touch alert" : "Alert when price touches this drawing"} aria-pressed={selected.alert} title="Alert" onClick={() => patchSelected((drawing) => ({ ...drawing, alert: !drawing.alert }))}>🔔</button>
+            <button type="button" className={`m-tool ${selected.alert ? "is-on" : ""}`} aria-label="Create alert from drawing" aria-pressed={selected.alert} title="Alert" onClick={() => armDrawing(selected)}>🔔</button>
             <button type="button" className="m-tool" aria-label="Delete drawing" title="Delete" onClick={() => patchSelected(() => null)}>✕</button>
           </div>
         )}
 
         {tab === "alerts" && (
-          <div className="m-panel" aria-label="Alerts">
-            <div className="m-switch">
-              <span>Notifications</span>
-              <button type="button" className={`m-switch-btn ${notifyOn ? "is-on" : ""}`} aria-pressed={notifyOn} aria-label="iPhone notifications" onClick={() => void toggleNotify()}>{notifyOn ? "On" : "Off"}</button>
-            </div>
-            <div className="m-switch">
-              <span>Sound</span>
-              <button type="button" className={`m-switch-btn ${soundOn ? "is-on" : ""}`} aria-pressed={soundOn} aria-label="Audible alert sound" onClick={() => void toggleSound()}>{soundOn ? "On" : "Off"}</button>
-            </div>
-            <button type="button" className="m-chime" data-action="test-chime" onClick={() => void testSound()}>Test Sound</button>
-            <div className="m-switch">
-              <span>Touch alerts</span>
-              <button type="button" className={`m-switch-btn ${alertsOn ? "is-on" : ""}`} aria-pressed={alertsOn} aria-label={alertsOn ? "Touch alerts on" : "Touch alerts off"} onClick={() => setAlertsOn((value) => !value)}>{alertsOn ? "On" : "Off"}</button>
-            </div>
-            <h2 className="m-section">Drawing alerts</h2>
-            {drawings.every((drawing) => alertDrawingLabel(drawing) == null) && <p className="m-empty-copy">No drawing alerts</p>}
-            {drawings.flatMap((drawing) => {
-              const label = alertDrawingLabel(drawing);
-              if (!label) return [];
-              return [(
-                <div key={drawing.id} className="m-alert-row">
-                  <span>{label}</span>
-                  <button type="button" className={`m-switch-btn ${drawing.alert ? "is-on" : ""}`} aria-pressed={drawing.alert} aria-label={`Drawing alert ${label}`} onClick={() => setDrawingAlert(drawing.id, !drawing.alert)}>{drawing.alert ? "On" : "Off"}</button>
-                </div>
-              )];
-            })}
-            <h2 className="m-section">Liquidation alerts</h2>
-            {boxes.length === 0 && <p className="m-empty-copy" data-liq-empty="true">∅ {liqNotice || "暂无符合条件的清算区"}</p>}
-            {boxes.map((box) => (
-              <div key={box.id} className={`m-zone m-zone-${box.role}`} data-risk={box.risk} data-border={box.risk === "极高" ? "2" : "0"}>
-                <span>{box.role === "support" ? "Support" : "Resistance"} · {box.risk}{alertsOn && showLiq ? " · armed" : ""}</span>
-                <b>{formatAlertPrice(box.lo)}–{formatAlertPrice(box.hi)}</b>
-              </div>
-            ))}
-            <h2 className="m-section">History</h2>
-            {log.length === 0 && <p className="m-empty-copy">No triggered alerts</p>}
-            <div aria-label="Alert history">
-              {log.map((row) => <div key={row.id} className="m-log">{row.message}</div>)}
-            </div>
-          </div>
+          <AlertsPanel
+            book={book}
+            symbols={book.alerts.map((alert) => alert.symbol)}
+            intervals={INTERVALS}
+            symbolChoices={SYMBOLS}
+            filterSymbol={alertSymbol}
+            segment={alertSegment}
+            settingsOpen={settingsOpen}
+            notifyOn={notifyOn}
+            soundOn={soundOn}
+            now={now}
+            onFilterSymbol={setAlertSymbol}
+            onSegment={setAlertSegment}
+            onToggleSettings={() => setSettingsOpen((open) => !open)}
+            onToggleNotify={() => void toggleNotify()}
+            onToggleSound={() => void toggleSound()}
+            onTestSound={() => void testSound()}
+            onCreate={createAlert}
+            onExpand={(id) => applyBook((state) => expandAlert(state, id))}
+            onChange={(next) => applyBook((state) => updateExpanded(state, next))}
+            onSave={() => applyBook((state) => saveExpanded(state))}
+            onCancel={() => applyBook((state) => cancelExpanded(state))}
+            onPause={(id) => applyBook((state) => pauseAlert(state, id))}
+            onDelete={(id) => applyBook((state) => deleteAlert(state, id))}
+            onShowChart={showOnChart}
+          />
         )}
       </div>
 
-      <div className="m-controls">
+      {tab === "chart" && <div className="m-controls">
         <div className="m-scroll" role="group" aria-label="Symbols">
           {SYMBOLS.map((item) => (
             <button key={item} type="button" className={`m-chip ${item === symbol ? "is-on" : ""}`} aria-pressed={item === symbol} onClick={() => switchMarket(item, interval)}>{item}</button>
@@ -873,12 +1002,13 @@ export function MobileChart() {
           <button type="button" className={`m-icon ${showDrawings ? "is-on" : ""}`} aria-label={showDrawings ? "Hide drawings" : "Show drawings"} aria-pressed={showDrawings} title="Drawings" onClick={() => setShowDrawings((value) => !value)}>✎</button>
           <button type="button" className={`m-icon ${showLiq ? "is-on" : ""}`} aria-label={showLiq ? "Hide liquidation map" : "Show liquidation map"} aria-pressed={showLiq} title="Liquidation" data-action="liq" onClick={() => setShowLiq((value) => !value)}>▣</button>
           <button type="button" className="m-icon" aria-label="刷新清算" title="Refresh liquidation" disabled={coolSec > 0} data-liq-refresh={coolSec > 0 ? "cooldown" : "idle"} onClick={() => void refreshZones()}>{coolSec > 0 ? coolSec : "↻"}</button>
-          <button type="button" className={`m-icon ${alertsOn ? "is-on" : ""}`} aria-label="Open alerts" aria-pressed={alertsOn} title="Alerts" data-action="alerts" onClick={showAlerts}>🔔</button>
+          <button type="button" className="m-icon" aria-label="Create liquidation alert" title="Liquidation alert" onClick={armLiq}>⚑</button>
+          <button type="button" className="m-icon" aria-label="Open alerts" title="Alerts" data-action="alerts" onClick={showAlerts}>🔔</button>
           <button type="button" className="m-icon" aria-label="Undo" title="Undo" disabled={history.past.length === 0} onClick={undo}>↶</button>
           <button type="button" className="m-icon" aria-label="Redo" title="Redo" disabled={history.future.length === 0} onClick={redo}>↷</button>
           <button type="button" className="m-icon" aria-label="Fit chart" title="Fit" data-action="fit" onClick={() => fitChartView(chartRef.current)}>⤢</button>
         </div>
-      </div>
+      </div>}
 
       <nav className="m-tabs" aria-label="Sections">
         <button type="button" className={tab === "chart" ? "is-on" : ""} aria-current={tab === "chart" ? "page" : undefined} onClick={() => setTab("chart")}>Chart</button>

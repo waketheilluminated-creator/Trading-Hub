@@ -27,14 +27,30 @@ test("mobile page is an installable standalone PWA without Pine", () => {
 });
 
 test("mobile bottom tabs are Chart then Alerts", () => {
-  const src = read("../app/mobile/mobile-chart.tsx");
-  const nav = src.slice(src.indexOf('<nav className="m-tabs"'));
+  const chart = read("../app/mobile/mobile-chart.tsx");
+  const panel = read("../app/mobile/alerts-panel.tsx");
+  const nav = chart.slice(chart.indexOf('<nav className="m-tabs"'));
   assert.match(nav, /Chart<\/button>[\s\S]*Alerts/);
-  assert.doesNotMatch(src, /Watchlist|Explore|Community|>Menu</);
-  assert.match(src, /Test Sound/);
-  assert.match(src, /data-unread=/);
-  assert.match(src, /iPhone notifications/);
-  assert.match(src, /Audible alert sound/);
+  assert.doesNotMatch(chart + panel, /Watchlist|Explore|Community|>Menu</);
+  assert.match(panel, /Test Sound/);
+  assert.match(chart, /data-unread=/);
+  assert.match(panel, /iPhone notifications/);
+  assert.match(panel, /Audible alert sound/);
+  assert.match(panel, /data-alert-expanded/);
+  assert.match(panel, /Alert symbol/);
+  assert.match(panel, /Alert type/);
+  assert.match(panel, /Alert timeframe/);
+  assert.match(panel, /Alert level/);
+  assert.match(panel, /Trigger once/);
+  assert.match(panel, /Trigger every time/);
+  assert.match(panel, /Alert sound/);
+  assert.match(panel, /Alert notification/);
+  assert.match(panel, /Expiry/);
+  assert.match(panel, /Show on chart/);
+  assert.match(chart, /centerPriceRange\(/);
+  assert.match(chart, /function createAlert\(\) \{[\s\S]*?showAlerts\(\)/);
+  assert.match(chart, /function armDrawing\(drawing: MobileDrawing\) \{[\s\S]*?showAlerts\(\)/);
+  assert.match(chart, /function armLiq\(\) \{[\s\S]*?showAlerts\(\)/);
 });
 
 test("mobile overlay toggles never rescale the chart", () => {
