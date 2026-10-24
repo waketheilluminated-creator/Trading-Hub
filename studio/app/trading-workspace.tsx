@@ -121,6 +121,7 @@ import { DrawingToolbar } from "@/components/drawing-toolbar";
 import { LargeOrderDock } from "@/components/large-order-dock";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { AlertDialog } from "@/components/alert-dialog";
+import { OptionsExpiryCard } from "@/components/options-expiry-card";
 import { fitChartView } from "@/lib/chart-fit.ts";
 import { formatPriceWithPrecision, historyRetryDelayMs, inferTickFromCandles, precisionFromTick, priceFormatForTick, roundToTick } from "@/lib/price-precision.ts";
 import { AlertManager, AlertToasts, useAlertFeed } from "@/components/alert-manager";
@@ -257,6 +258,7 @@ function isTextEditingElement(target: EventTarget | null): boolean {
 }
 
 const DERIVATIVES_SECTION_KEY = "th-section-derivatives-open";
+const OPTIONS_SECTION_KEY = "th-section-options-expiry-open";
 const ORDER_FLOW_SECTION_KEY = "th-section-order-flow-open";
 
 const ALERTS_SECTION_KEY = "th-section-alerts-open";
@@ -1848,6 +1850,9 @@ export function TradingWorkspace() {
               <div className="metric-card"><span>Basis</span><strong className={((derivatives?.markPrice ?? 0) - (derivatives?.indexPrice ?? 0)) >= 0 ? "positive" : "negative"}>{derivatives?.markPrice && derivatives?.indexPrice ? `${(((derivatives.markPrice - derivatives.indexPrice) / derivatives.indexPrice) * 100).toFixed(3)}%` : "—"}</strong><small>Mark vs index</small></div>
             </div>
             <div className="data-source"><span>{derivativesNotice || "Pine: open_interest · funding_rate · cvd_perp"}</span><code>CCXT · {derivatives?.exchange || derivativesExchange}</code></div>
+          </SideSection>
+          <SideSection title="Options expiry" storageKey={OPTIONS_SECTION_KEY}>
+            <OptionsExpiryCard />
           </SideSection>
           <SideSection title="Order flow" storageKey={ORDER_FLOW_SECTION_KEY}>
             <div className="metric-grid">

@@ -572,3 +572,29 @@ button.metric-card.active, button.metric-card[aria-pressed="true"] { border-colo
 .settings-path { display:block; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#0b1017; color:var(--cyan); font:12px var(--font-geist-mono); word-break:break-all; }
 .amber { color:var(--amber); } .muted { color:var(--muted); } .negative { color:var(--red); }
 button.alert-dialog-backdrop { border:0; padding:0; cursor:default; }
+
+.options-card { min-width:0; }
+.options-kicker { margin:0; color:var(--amber); font-size:10px; font-weight:650; letter-spacing:.03em; line-height:1.35; }
+.options-headline { margin:3px 0 0; color:var(--ink); font-size:13px; font-weight:650; line-height:1.3; }
+.options-toolbar { display:flex; align-items:center; gap:4px; margin-top:6px; }
+.options-toolbar select { min-width:0; flex:1 1 auto; padding:3px 4px; color:var(--ink); background:var(--panel-2); border:1px solid var(--line); border-radius:6px; font-size:10px; }
+.options-toolbar select.currency { flex:0 0 auto; }
+.options-icon-button { width:22px; height:22px; display:grid; place-items:center; flex:none; padding:0; color:var(--muted); border:1px solid var(--line); border-radius:6px; background:transparent; cursor:pointer; }
+.options-icon-button:hover, .options-icon-button[aria-pressed="true"] { color:var(--ink); background:var(--panel-2); }
+.options-legend, .options-markers { display:flex; justify-content:space-between; gap:8px; margin:6px 0 0; color:var(--faint); font-size:9px; }
+.options-legend i { width:7px; height:7px; display:inline-block; margin-right:4px; vertical-align:-1px; }
+.options-swatch-call { background:var(--amber); }
+.options-swatch-put { background:var(--muted); }
+.options-chart-host { height:168px; margin-top:4px; }
+.options-chart { display:block; width:100%; height:168px; }
+.options-chart text { font-family:var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; }
+.options-bar-call { fill:var(--amber); }
+.options-bar-put { fill:var(--muted); }
+.options-band { fill:var(--amber); opacity:.16; }
+.options-marker { stroke:var(--faint); stroke-width:1; }
+.options-axis { stroke:var(--line); }
+.options-tick { fill:var(--faint); font-size:8px; }
+.options-distance { fill:var(--amber); font-size:10px; font-weight:700; }
+.options-footnote { margin:6px 0 0; color:var(--faint); font-size:9px; line-height:1.35; }
+.options-status { margin:0; height:168px; display:grid; place-items:center; color:var(--muted); font-size:11px; text-align:center; }
+.options-status.error { color:var(--red); }
