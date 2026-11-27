@@ -180,3 +180,68 @@ test("renders temporary price-change measurement values from its session", () =>
   assert.ok(labels.some((label) => label.includes("10.00 → 20.00")));
   assert.ok(calls.some(([method]) => method === "fillRect"));
 });
+
+test("rubber-band preview draws an anchor dot and the live segment", () => {
+  const primitive = new DrawingPrimitive();
+  attachPrimitive(primitive);
+  const draw = () => {
+    const calls = [];
+    const context = new Proxy({}, {
+      get: (_target, property) => (...args) => { calls.push([property, ...args]); },
+      set: (_target, property, value) => { calls.push(["set", property, value]); return true; },
+    });
+    primitive.paneViews()[0].renderer().draw({
+      useMediaCoordinateSpace(callback) {
+        callback({ context, mediaSize: { width: 400, height: 200 } });
+      },
+    });
+    return calls;
+  };
+
+  primitive.setState([], {
+    phase: "previewing",
+    tool: "trend-line",
+    start: { time: 100, price: 10 },
+    preview: { time: 100, price: 10 },
+  }, [100]);
+  assert.ok(draw().some(([method]) => method === "arc"), "anchor dot");
+
+  primitive.setState([], {
+    phase: "previewing",
+    tool: "trend-line",
+    start: { time: 100, price: 10 },
+    preview: { time: 1000, price: 80 },
+  }, [100, 1000]);
+  const live = draw();
+  assert.ok(live.some(([method, x, y]) => method === "lineTo" && x === 100 && y === 80));
+});
+
+test("hiding drawings drops them from hit testing and hover highlights a visible line", () => {
+  const primitive = new DrawingPrimitive();
+  attachPrimitive(primitive);
+  const drawing = {
+    id: "line",
+    type: "horizontal-line",
+    points: [{ time: 100, price: 10 }],
+    style: { color: "#fff", lineWidth: 2 },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  primitive.setState([drawing], { phase: "idle" }, [100]);
+  assert.deepEqual(primitive.hitTestDrawing({ x: 40, y: 10 }), { drawingId: "line", part: "body" });
+  primitive.setHidden(true);
+  assert.equal(primitive.hitTestDrawing({ x: 40, y: 10 }), null);
+  primitive.setHidden(false);
+  primitive.setHovered("line");
+  const calls = [];
+  const context = new Proxy({}, {
+    get: (_target, property) => (...args) => { calls.push([property, ...args]); },
+    set: (_target, property, value) => { calls.push(["set", property, value]); return true; },
+  });
+  primitive.paneViews()[0].renderer().draw({
+    useMediaCoordinateSpace(callback) {
+      callback({ context, mediaSize: { width: 400, height: 200 } });
+    },
+  });
+  assert.ok(calls.some(([kind, prop, value]) => kind === "set" && prop === "globalAlpha" && value === 0.22));
+});

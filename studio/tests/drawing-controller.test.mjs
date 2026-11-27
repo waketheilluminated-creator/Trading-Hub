@@ -402,6 +402,164 @@ test("Escape cancels an in-progress measurement and exits the measure tool", () 
   assert.deepEqual(h.chartOptions.at(-1), { handleScroll: true, handleScale: true });
 });
 
+test("first trend-line click arms a rubber-band preview on the anchor", () => {
+  let state = reduceDrawingSession(initialDrawingSession, { type: "BEGIN", tool: "trend-line", point: p1 });
+  assert.deepEqual(state, { phase: "previewing", tool: "trend-line", start: p1, preview: p1 });
+  state = reduceDrawingSession(state, { type: "PREVIEW", point: p2 });
+  assert.deepEqual(state, { phase: "previewing", tool: "trend-line", start: p1, preview: p2 });
+});
+
+test("click-click waits for the second click and drag-release commits on pointerup", () => {
+  const click = createControllerHarness({ initialDrawings: [], initialTool: "trend-line", hit: null });
+  click.controller.onPointerDown(pointerEvent());
+  click.controller.onPointerUp(pointerEvent());
+  assert.equal(click.controller.getSession().phase, "previewing");
+  assert.deepEqual(click.getDrawings(), []);
+  click.controller.onPointerDown({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(click.getDrawings().length, 1);
+  assert.deepEqual(click.getDrawings()[0].points, [p1, p2]);
+  assert.equal(click.tool.current, "select");
+  assert.equal(click.controller.getSession().phase, "selected");
+
+  const drag = createControllerHarness({ initialDrawings: [], initialTool: "arrow", hit: null });
+  drag.controller.onPointerDown(pointerEvent());
+  drag.controller.onPointerMove({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(drag.controller.getSession().phase, "previewing");
+  assert.deepEqual(drag.controller.getSession().preview, p2);
+  assert.deepEqual(drag.getDrawings(), []);
+  drag.controller.onPointerUp({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(drag.getDrawings().length, 1);
+  assert.equal(drag.getDrawings()[0].type, "arrow");
+  assert.equal(drag.tool.current, "select");
+});
+
+test("preview moves do not republish React session state and coalesce paints to one frame", () => {
+  const sessions = [];
+  const renders = [];
+  let frame = null;
+  const tool = { current: "trend-line" };
+  const controller = new DrawingController({
+    chart: {
+      applyOptions() {},
+      timeScale: () => ({ coordinateToTime: (x) => x }),
+    },
+    series: { coordinateToPrice: (y) => y },
+    getDrawings: () => [],
+    replaceDrawings() {},
+    getTool: () => tool.current,
+    setTool(next) { tool.current = next; },
+    setSession: (session) => sessions.push(session.phase),
+    requestRender: () => renders.push(controller.getSession().preview?.price ?? null),
+    requestText() {},
+    hitTest: () => null,
+    createId: () => "d-live",
+    now: () => 3,
+    requestAnimationFrame: (callback) => { frame = callback; return 1; },
+    cancelAnimationFrame() { frame = null; },
+  });
+  controller.onPointerDown(pointerEvent());
+  assert.deepEqual(sessions, ["previewing"]);
+  const paintsAfterClick = renders.length;
+  controller.onPointerMove({ ...pointerEvent(), clientX: 160, clientY: 40 });
+  controller.onPointerMove({ ...pointerEvent(), clientX: 180, clientY: 50 });
+  assert.deepEqual(sessions, ["previewing"]);
+  assert.equal(renders.length, paintsAfterClick);
+  assert.equal(typeof frame, "function");
+  frame();
+  frame = null;
+  assert.equal(renders.at(-1), 50);
+  assert.equal(controller.getSession().preview.price, 50);
+});
+
+test("Shift constrains the rubber band to 45-degree steps", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "trend-line", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  h.controller.onPointerMove({ ...pointerEvent(), clientX: 200, clientY: 80, shiftKey: true });
+  const preview = h.controller.getSession().preview;
+  assert.ok(Math.abs(preview.time - 186.312) < 0.05, `time ${preview.time}`);
+  assert.ok(Math.abs(preview.price - 96.312) < 0.05, `price ${preview.price}`);
+});
+
+test("magnet snaps to the nearest OHLC within a few pixels and ignores distant prices", () => {
+  let drawings = [];
+  const tool = { current: "trend-line" };
+  const controller = new DrawingController({
+    chart: {
+      applyOptions() {},
+      timeScale: () => ({ coordinateToTime: (x) => x, timeToCoordinate: (time) => time }),
+    },
+    series: { coordinateToPrice: (y) => y, priceToCoordinate: (price) => price },
+    getDrawings: () => drawings,
+    replaceDrawings(next) { drawings = next; },
+    getTool: () => tool.current,
+    setTool(next) { tool.current = next; },
+    requestRender() {},
+    requestText() {},
+    hitTest: () => null,
+    getModes: () => ({ magnet: true, continuous: false, locked: false, hidden: false }),
+    getCandles: () => [{ time: 100, open: 10, high: 14, low: 8, close: 12 }],
+    createId: () => "d-mag",
+    now: () => 4,
+  });
+  controller.onPointerDown({ ...pointerEvent(), clientX: 100, clientY: 13.2 });
+  assert.deepEqual(controller.getSession().start, { time: 100, price: 14 });
+  controller.onPointerMove({ ...pointerEvent(), clientX: 180, clientY: 40 });
+  assert.deepEqual(controller.getSession().preview, { time: 180, price: 40 });
+});
+
+test("continuous drawing keeps the tool armed and lock blocks selection edits", () => {
+  let drawings = [];
+  const tool = { current: "trend-line" };
+  const modes = { magnet: false, continuous: true, locked: false, hidden: false };
+  const controller = new DrawingController({
+    chart: {
+      applyOptions() {},
+      timeScale: () => ({ coordinateToTime: (x) => x }),
+    },
+    series: { coordinateToPrice: (y) => y },
+    getDrawings: () => drawings,
+    replaceDrawings(next) { drawings = next; },
+    getTool: () => tool.current,
+    setTool(next) { tool.current = next; },
+    requestRender() {},
+    requestText() {},
+    hitTest: () => null,
+    getModes: () => modes,
+    createId: () => "d-keep",
+    now: () => 8,
+  });
+  controller.onPointerDown(pointerEvent());
+  controller.onPointerMove({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  controller.onPointerUp({ ...pointerEvent(), clientX: 200, clientY: 20 });
+  assert.equal(drawings.length, 1);
+  assert.equal(tool.current, "trend-line");
+  controller.onPointerDown({ ...pointerEvent(), clientX: 30, clientY: 4 });
+  assert.equal(controller.getSession().phase, "previewing");
+  assert.equal(drawings.length, 1);
+
+  modes.locked = true;
+  tool.current = "select";
+  const locked = new DrawingController({
+    chart: { applyOptions() {}, timeScale: () => ({ coordinateToTime: (x) => x }) },
+    series: { coordinateToPrice: (y) => y },
+    getDrawings: () => [trend],
+    replaceDrawings() { assert.fail("locked drawings cannot be edited"); },
+    getTool: () => "select",
+    setTool() {},
+    requestRender() {},
+    requestText() {},
+    hitTest: () => ({ drawingId: "d-1", part: "body" }),
+    getModes: () => ({ magnet: false, continuous: false, locked: true, hidden: false }),
+    createId: () => "d-lock",
+    now: () => 9,
+  });
+  locked.onPointerDown(pointerEvent());
+  assert.notEqual(locked.getSession().phase, "dragging");
+  locked.dispatch({ type: "SELECT", drawingId: "d-1" });
+  assert.equal(locked.deleteSelected(), false);
+  assert.equal(locked.getSession().phase, "selected");
+});
+
 test("contextmenu listener is attached to the chart host only and removed on detach", () => {
   const added = []; const removed = [];
   const host = {

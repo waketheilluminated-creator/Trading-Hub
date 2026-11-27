@@ -130,14 +130,22 @@ function drawHandles(context: CanvasRenderingContext2D, drawing: ScreenDrawing):
   }
 }
 
+function drawAnchorDot(context: CanvasRenderingContext2D, point: ScreenPoint, color: string): void {
+  context.beginPath();
+  context.arc(point.x, point.y, HANDLE_RADIUS, 0, Math.PI * 2);
+  context.fillStyle = color;
+  context.fill();
+}
+
 function drawScreenDrawing(
   context: CanvasRenderingContext2D,
   drawing: ScreenDrawing,
   paneWidth: number,
   selected: boolean,
+  hovered: boolean,
 ): void {
   context.save();
-  if (selected) drawSelectionHighlight(context, drawing, paneWidth);
+  if (selected || hovered) drawSelectionHighlight(context, drawing, paneWidth);
   if (drawing.type === "text") {
     drawText(context, drawing);
   } else {
@@ -150,6 +158,7 @@ function drawScreenDrawing(
     traceDrawing(context, drawing, paneWidth);
     context.stroke();
     if (drawing.type === "arrow") drawArrowHead(context, drawing);
+    if (drawing.id === PREVIEW_ID && drawing.points[0]) drawAnchorDot(context, drawing.points[0], color);
   }
   if (selected) drawHandles(context, drawing);
   context.restore();
@@ -219,23 +228,27 @@ function drawPriceChangeMeasurement(
 class DrawingPaneRenderer implements IPrimitivePaneRenderer {
   private readonly getScene: () => readonly ScreenDrawing[];
   private readonly getSelectedId: () => string | null;
+  private readonly getHoveredId: () => string | null;
   private readonly getMeasurement: () => PriceChangeMeasurement | null;
 
   constructor(
     getScene: () => readonly ScreenDrawing[],
     getSelectedId: () => string | null,
+    getHoveredId: () => string | null,
     getMeasurement: () => PriceChangeMeasurement | null,
   ) {
     this.getScene = getScene;
     this.getSelectedId = getSelectedId;
+    this.getHoveredId = getHoveredId;
     this.getMeasurement = getMeasurement;
   }
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const selectedId = this.getSelectedId();
+      const hoveredId = this.getHoveredId();
       for (const drawing of this.getScene()) {
-        drawScreenDrawing(context, drawing, mediaSize.width, drawing.id === selectedId);
+        drawScreenDrawing(context, drawing, mediaSize.width, drawing.id === selectedId, drawing.id === hoveredId);
       }
       const measurement = this.getMeasurement();
       if (measurement) drawPriceChangeMeasurement(context, measurement, mediaSize.width, mediaSize.height);
@@ -268,7 +281,14 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   private scene: readonly ScreenDrawing[] = [];
   private measurement: PriceChangeMeasurement | null = null;
   private selectedId: string | null = null;
-  private readonly paneRenderer = new DrawingPaneRenderer(() => this.scene, () => this.selectedId, () => this.measurement);
+  private hoveredId: string | null = null;
+  private hidden = false;
+  private readonly paneRenderer = new DrawingPaneRenderer(
+    () => this.scene,
+    () => this.selectedId,
+    () => this.hoveredId,
+    () => this.measurement,
+  );
   private readonly views: readonly IPrimitivePaneView[] = [new DrawingPaneView(this.paneRenderer)];
 
   attached({ chart, series, requestUpdate }: SeriesAttachedParameter<Time, "Candlestick">): void {
@@ -297,6 +317,21 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     this.candleTimes = candleTimes;
     this.selectedId = selectedIdFor(session);
     this.rebuildScene();
+    this.requestUpdate?.();
+  }
+
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    if (hidden) this.hoveredId = null;
+    this.rebuildScene();
+    this.requestUpdate?.();
+  }
+
+  setHovered(id: string | null): void {
+    if (this.hidden) id = null;
+    if (this.hoveredId === id) return;
+    this.hoveredId = id;
     this.requestUpdate?.();
   }
 
@@ -335,7 +370,7 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
       this.measurement = null;
       return;
     }
-    const scene = buildScreenDrawings(this.drawings, this.candleTimes, this.coordinateAdapter);
+    const scene = buildScreenDrawings(this.hidden ? [] : this.drawings, this.candleTimes, this.coordinateAdapter);
     const preview = previewDrawingFor(this.session);
     if (preview) {
       scene.push(...buildScreenDrawings([preview], this.candleTimes, this.coordinateAdapter).map((drawing) => ({
