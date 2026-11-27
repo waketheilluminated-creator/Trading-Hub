@@ -267,13 +267,13 @@ test("keeps the heatmap toggle independent and off until the user enables it", (
   assert.equal(storage.getItem("th-large-order-sr"), "1");
 
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
-  const toolbar = readFileSync(fileURLToPath(new URL("../components/drawing-toolbar.tsx", import.meta.url)), "utf8");
+  const toolbar = readFileSync(fileURLToPath(new URL("../components/overlay-toggles.tsx", import.meta.url)), "utf8");
   const primitive = readFileSync(fileURLToPath(new URL("../lib/liq-heatmap-primitive.ts", import.meta.url)), "utf8");
   const route = readFileSync(fileURLToPath(new URL("../app/api/liq-heatmap/route.ts", import.meta.url)), "utf8");
   assert.match(toolbar, /data-icon="liq-heatmap"/);
   assert.match(toolbar, /Show liquidation heatmap/);
   assert.match(toolbar, /Hide liquidation heatmap/);
-  assert.doesNotMatch(toolbar.slice(toolbar.indexOf("data-icon=\"liq-heatmap\""), toolbar.indexOf("Chart settings")), /data-icon="large-order-sr"|data-icon="large-trades"/);
+  assert.doesNotMatch(toolbar.slice(toolbar.indexOf("data-icon=\"liq-heatmap\"")), /data-icon="large-order-sr"|data-icon="large-trades"/);
   assert.match(workspace, /LIQ_HEATMAP_STORAGE_KEY/);
   assert.match(workspace, /onLiqHeatmapToggle=\{\(\) => setShowLiqHeatmap\(\(value\) => !value\)\}/);
   assert.match(workspace, /data-liq-heatmap=/);

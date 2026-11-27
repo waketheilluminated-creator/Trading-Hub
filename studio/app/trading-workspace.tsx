@@ -26,7 +26,11 @@ import {
   writeStoredFlag,
 } from "@/lib/chart-indicator-panes.ts";
 import { DrawingController, initialDrawingSession, type DrawingChangeKind, type DrawingSession } from "@/lib/drawings/controller.ts";
+import { EMPTY_DRAWING_FAVORITES, notifyDrawingFavorites, readClientDrawingFavorites, subscribeDrawingFavorites, toggleDrawingFavorite, writeDrawingFavorites } from "@/lib/drawings/favorites.ts";
+import { initialDrawingModes, toggleDrawingMode, type DrawingModeKey, type DrawingModes } from "@/lib/drawings/modes.ts";
 import { DrawingPrimitive } from "@/lib/drawings/primitive.ts";
+import { removableIndicatorIds, type RemovalKind } from "@/lib/drawings/removal.ts";
+import { applyBarSpacingZoom } from "@/lib/drawings/zoom.ts";
 import { DrawingSaveScheduler, createDrawingStorage, loadDrawings, type DrawingStorage } from "@/lib/drawings/store.ts";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/drawings/types.ts";
 import { chartDrawingMarket, type ChartDrawingMarket } from "@/lib/drawings/workspace-market.ts";
@@ -118,6 +122,7 @@ import { applyTheme, currentDocumentTheme, nextTheme, subscribeTheme, type Theme
 import { candleThemeOptions, chartPalette, chartThemeOptions } from "@/lib/chart-theme.ts";
 import { AiAnalystDrawer } from "@/components/ai-analyst-drawer";
 import { DrawingToolbar } from "@/components/drawing-toolbar";
+import { OverlayToggles } from "@/components/overlay-toggles";
 import { LargeOrderDock } from "@/components/large-order-dock";
 import { SymbolSearchDialog, type SymbolSearchMarket } from "@/components/symbol-search-dialog";
 import { AlertDialog } from "@/components/alert-dialog";
@@ -420,6 +425,8 @@ export function TradingWorkspace() {
   const replay = replayRaw && replayRaw.symbol === symbol ? replayRaw : null; // a symbol switch leaves replay
   const replayCursor = replay?.phase === "active" ? replay.cursor : null;
   const candles = useMemo(() => (replayCursor == null ? liveCandles : sliceReplayCandles(liveCandles, replayCursor)), [liveCandles, replayCursor]);
+  const drawingCandlesRef = useRef<Candle[]>([]);
+  drawingCandlesRef.current = candles;
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showFast, setShowFast] = useStoredFlag(studyDefinition("ema9").addedKey);
@@ -624,7 +631,12 @@ export function TradingWorkspace() {
   const [consoleHeight, setConsoleHeight] = useState(82);
   const [pineApplied, setPineApplied] = useState(false);
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool>("select");
+  const favorites = useSyncExternalStore(subscribeDrawingFavorites, readClientDrawingFavorites, () => EMPTY_DRAWING_FAVORITES);
+  const [drawingModes, setDrawingModes] = useState<DrawingModes>(initialDrawingModes);
+  const drawingModesRef = useRef(drawingModes);
+  drawingModesRef.current = drawingModes;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const replaceDrawingsRef = useRef<(next: Drawing[], kind: DrawingChangeKind) => void>(() => {});
   const [drawingSession, setDrawingSession] = useState<DrawingSession>(initialDrawingSession);
   const [textAnchor, setTextAnchor] = useState<DrawingPoint | null>(null);
   const [textInputPosition, setTextInputPosition] = useState<{ x: number; y: number } | null>(null);
@@ -649,6 +661,26 @@ export function TradingWorkspace() {
       applyDrawingTool(tool);
     }
   }, [applyDrawingTool, clearDrawingTextEntry]);
+
+  const toggleFavorite = useCallback((tool: DrawingTool) => {
+    const next = toggleDrawingFavorite(readClientDrawingFavorites(), tool);
+    if (next.blocked) return true;
+    writeDrawingFavorites(window.localStorage, next.favorites);
+    notifyDrawingFavorites();
+    return false;
+  }, []);
+
+  const toggleDrawingModeFlag = useCallback((key: DrawingModeKey) => {
+    setDrawingModes((current) => toggleDrawingMode(current, key));
+  }, []);
+
+  const zoomChart = useCallback((direction: "in" | "out") => {
+    applyBarSpacingZoom(chartRef.current, direction);
+  }, []);
+
+  useEffect(() => {
+    drawingPrimitiveRef.current?.setHidden(drawingModes.hidden);
+  }, [chartVersion, drawingModes.hidden]);
 
   useEffect(() => {
     const palette = chartPalette(theme);
@@ -770,12 +802,14 @@ export function TradingWorkspace() {
     candleSeries.attachPrimitive(liqHeatmapPrimitive);
     const replaceDrawings = (next: Drawing[], kind: DrawingChangeKind) => {
       drawingsRef.current = next;
+      // Preview and drag paints stay on the primitive. React state updates only when the gesture commits,
+      // so a rubber-band mousemove does not re-render the workspace.
+      if (kind !== "commit") return;
       setDrawings(next);
-      if (kind === "commit") {
-        const market = drawingMarketRef.current;
-        drawingSaveScheduler.schedule(market.venue, market.symbol, next);
-      }
+      const market = drawingMarketRef.current;
+      drawingSaveScheduler.schedule(market.venue, market.symbol, next);
     };
+    replaceDrawingsRef.current = replaceDrawings;
     const drawingController = new DrawingController({
       chart,
       series: candleSeries,
@@ -785,7 +819,20 @@ export function TradingWorkspace() {
       setTool: applyDrawingTool,
       setSession: setDrawingSession,
       onCancel: clearDrawingTextEntry,
-      requestRender: () => drawingPrimitive.setState(drawingsRef.current, drawingController.getSession(), candleTimesRef.current),
+      getModes: () => drawingModesRef.current,
+      getCandles: () => drawingCandlesRef.current.flatMap((candle) => {
+        const time = Number(candle.time);
+        if (!Number.isFinite(time)) return [];
+        return [{ time, open: candle.open, high: candle.high, low: candle.low, close: candle.close }];
+      }),
+      setHovered: (id) => drawingPrimitive.setHovered(id),
+      requestRender: () => {
+        drawingPrimitive.setMarket(drawingCandlesRef.current.flatMap((candle) => {
+          const time = Number(candle.time);
+          return Number.isFinite(time) ? [{ time, close: candle.close }] : [];
+        }));
+        drawingPrimitive.setState(drawingsRef.current, drawingController.getSession(), candleTimesRef.current);
+      },
       requestText: (point) => {
         const x = chart.timeScale().timeToCoordinate(point.time);
         const y = candleSeries.priceToCoordinate(point.price);
@@ -1625,6 +1672,20 @@ export function TradingWorkspace() {
     setStudyHidden[id](false);
     setStudyAdded[id](true);
   };
+  const indicatorFlags = { ema9: showFast, ema21: showSlow, cvd: showCvdPane, oi: showOiPane, pine: pineApplied };
+  const removeChartItems = (kind: RemovalKind) => {
+    if (kind === "drawings" || kind === "both") {
+      replaceDrawingsRef.current([], "commit");
+      drawingControllerRef.current?.cancel();
+      drawingPrimitiveRef.current?.setState([], drawingControllerRef.current?.getSession() ?? initialDrawingSession, candleTimesRef.current);
+    }
+    if (kind === "indicators" || kind === "both") {
+      for (const id of removableIndicatorIds(indicatorFlags)) {
+        if (id === "pine") removePine();
+        else removeStudy(id);
+      }
+    }
+  };
 
   useEffect(() => {
     const handleWorkspaceShortcut = (event: KeyboardEvent) => {
@@ -1733,6 +1794,17 @@ export function TradingWorkspace() {
               {INTERVALS.map((item) => <button key={item.value} onClick={() => { beginMarketLoad(); setInterval(item.value); }} className={`time-button ${interval === item.value ? "active" : ""}`}>{item.label}</button>)}
               <span className="toolbar-separator" />
               <IndicatorsMenu added={studyAdded} pineApplied={pineApplied} onToggleStudy={toggleStudyFromMenu} onAddPine={runPine} open={indicatorsOpen} onOpenChange={setIndicatorsOpen} />
+              <OverlayToggles
+                unfilledLargeOrdersVisible={showLargeOrderSr}
+                onUnfilledLargeOrdersToggle={() => setShowLargeOrderSr((value) => !value)}
+                executedLargeTradesVisible={showLargeTrades}
+                onExecutedLargeTradesToggle={() => setShowLargeTrades((value) => !value)}
+                liqHeatmapVisible={showLiqHeatmap}
+                onLiqHeatmapToggle={() => setShowLiqHeatmap((value) => !value)}
+                liqRefreshState={liqRefreshState}
+                liqRefreshCooldownSec={liqCooldownSec}
+                onLiqRefresh={refreshLiqZones}
+              />
             </div>
             <div className="toolbar-cluster"><button className={`chart-replay-button${replay ? " active" : ""}`} data-replay={replay?.phase ?? "off"} aria-pressed={!!replay} aria-label="Bar replay" title={replay ? REPLAY_TOOLTIP_ON : REPLAY_TOOLTIP} onClick={() => setReplay(replay ? null : { phase: "pick", symbol })}><ReplayIcon /></button><button className="chart-alert-button" aria-label="Create alert (Alt+A)" title={replay ? "Alerts are disabled during replay" : "Create alert (Alt+A)"} disabled={!!replay} onClick={() => setShowAlertForm(true)}><span aria-hidden="true">◷</span> Alert</button><span className="toolbar-separator" /><select aria-label="Chart market venue" className="toolbar-venue-select" value={chartVenue} onChange={(event) => { const venue = event.target.value; if (!isMarketVenue(venue)) return; beginMarketLoad(); setChartVenue(venue); }}>{venueOptions()}</select><span className="toolbar-separator" /><span className={`live-dot ${marketStatus.phase === "error" ? "error" : connected ? "online" : marketStatus.phase === "polling" ? "polling" : ""}`} /><span className="live-copy">{marketStatus.phase === "error" ? "Market error" : marketStatus.phase === "live" ? `Live · ${venueLabel(activeVenue)}` : marketStatus.phase === "polling" ? `Polling · ${venueLabel(activeVenue)}` : "Connecting"}</span><span className="toolbar-separator" /><select aria-label="History bars" title="Bars of history to load" className="toolbar-venue-select toolbar-bars-select" value={barCount} onChange={(event) => writeBarCountPref(Number(event.target.value))}>{CHART_BAR_COUNT_OPTIONS.map((count) => <option key={count} value={count}>{count.toLocaleString("en-US")} bars</option>)}</select><button className="time-button" title="Fit all bars and auto-scale price" onClick={() => fitChartView(chartRef.current)}>Fit</button></div>
           </div>
@@ -1740,16 +1812,15 @@ export function TradingWorkspace() {
           <div className="chart-region">
             <DrawingToolbar
               activeTool={activeDrawingTool}
+              favorites={favorites}
+              modes={drawingModes}
+              drawingsCount={drawings.length}
+              indicatorCount={removableIndicatorIds(indicatorFlags).length}
               onToolChange={changeDrawingToolFromToolbar}
-              unfilledLargeOrdersVisible={showLargeOrderSr}
-              onUnfilledLargeOrdersToggle={() => setShowLargeOrderSr((value) => !value)}
-              executedLargeTradesVisible={showLargeTrades}
-              onExecutedLargeTradesToggle={() => setShowLargeTrades((value) => !value)}
-              liqHeatmapVisible={showLiqHeatmap}
-              onLiqHeatmapToggle={() => setShowLiqHeatmap((value) => !value)}
-              liqRefreshState={liqRefreshState}
-              liqRefreshCooldownSec={liqCooldownSec}
-              onLiqRefresh={refreshLiqZones}
+              onToggleFavorite={toggleFavorite}
+              onToggleMode={toggleDrawingModeFlag}
+              onZoom={zoomChart}
+              onRemove={removeChartItems}
             />
             <div className={`chart-stage ${drawingCursorClass}`} data-drawing-phase={drawingSession.phase} data-drawing-count={drawings.length} data-cvd-pane={showCvdPane ? "on" : "off"} data-oi-pane={showOiPane ? "on" : "off"} data-large-order-sr={showLargeOrderSr ? "on" : "off"} data-large-trades={showLargeTrades ? "on" : "off"} data-large-order-list={showLargeOrderSr || showLargeTrades ? "on" : "off"} data-liq-heatmap={showLiqHeatmap ? "on" : "off"} data-replay-active={replayCursor != null ? "on" : "off"} data-liq-anchor={liqAnchorTime ?? ""} data-last-visible={candles.at(-1)?.time ?? ""}>
             <div className="chart-legend">

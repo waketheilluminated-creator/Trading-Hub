@@ -238,7 +238,7 @@ test("client refresh: POSTs once, re-sanitizes, maps 429 retry-after, rejects fo
 });
 
 test("UI: refresh button sits next to the flame toggle, no polling timers for recompute", () => {
-  const toolbar = readFileSync(new URL("../components/drawing-toolbar.tsx", import.meta.url), "utf8");
+  const toolbar = readFileSync(new URL("../components/overlay-toggles.tsx", import.meta.url), "utf8");
   const workspace = readFileSync(new URL("../app/trading-workspace.tsx", import.meta.url), "utf8");
   assert.match(toolbar, /<LiqHeatmapIcon \/>\s*<\/button>\s*\{onLiqRefresh && <button[\s\S]*?aria-label="刷新清算"/);
   assert.match(toolbar, /disabled=\{liqRefreshState !== "idle"\}/);

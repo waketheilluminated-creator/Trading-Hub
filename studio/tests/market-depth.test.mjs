@@ -384,7 +384,7 @@ test("persists the left-rail S/R toggle without throwing in private mode", () =>
 
 test("workspace keeps unfilled walls on the K-chart with an aged list and a separate executed toggle", () => {
   const workspace = readFileSync(fileURLToPath(new URL("../app/trading-workspace.tsx", import.meta.url)), "utf8");
-  const toolbar = readFileSync(fileURLToPath(new URL("../components/drawing-toolbar.tsx", import.meta.url)), "utf8");
+  const toolbar = readFileSync(fileURLToPath(new URL("../components/overlay-toggles.tsx", import.meta.url)), "utf8");
   const dock = readFileSync(fileURLToPath(new URL("../components/large-order-dock.tsx", import.meta.url)), "utf8");
   assert.match(toolbar, /Show unfilled large orders/);
   assert.match(toolbar, /Hide unfilled large orders/);
@@ -392,8 +392,7 @@ test("workspace keeps unfilled walls on the K-chart with an aged list and a sepa
   assert.match(toolbar, /Hide executed large trades/);
   assert.match(toolbar, /data-icon="large-order-sr"/);
   assert.match(toolbar, /data-icon="large-trades"/);
-  const rail = toolbar.slice(toolbar.indexOf("rail-spacer"), toolbar.indexOf("Chart settings"));
-  assert.ok(rail.indexOf("data-rail-tool=\"large-orders\"") > 0 && rail.indexOf("data-rail-tool=\"large-orders\"") < rail.indexOf("data-rail-tool=\"large-trades\""));
+  assert.ok(toolbar.indexOf("data-rail-tool=\"large-orders\"") < toolbar.indexOf("data-rail-tool=\"large-trades\""));
   // EMAs stay off by default (TH-UI-05); TH-UI-06 persists them as legend studies
   // whose stored flag falls back to false on the client and server.
   assert.match(workspace, /\[showFast, setShowFast\] = useStoredFlag\(studyDefinition\("ema9"\)\.addedKey\)/);

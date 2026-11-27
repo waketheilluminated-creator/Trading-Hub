@@ -1,22 +1,31 @@
-import type { Time } from "lightweight-charts";
+import type { Time, UTCTimestamp } from "lightweight-charts";
 import { toDrawingPoint, type DrawingCoordinateAdapter } from "./coordinates.ts";
+import { constrainToOctant, pointerPastThreshold, snapToOhlc, type MagnetCandle } from "./gestures.ts";
 import type { DrawingHit, HitPart, ScreenPoint } from "./geometry.ts";
 import { translateDrawing } from "./geometry.ts";
-import { DEFAULT_DRAWING_STYLE, type Drawing, type DrawingPoint, type DrawingTool } from "./types.ts";
+import { initialDrawingModes, type DrawingModes } from "./modes.ts";
+import { createStoredDrawing, creationMode, isPairTool, isStoredTool, type Drawing, type DrawingPoint, type DrawingTool, type DrawingType } from "./types.ts";
 import { pointerInMainPane } from "../chart-indicator-panes.ts";
 
 type SessionEffect = { committed?: Drawing; updated?: Drawing };
 export type IdleDrawingSession = { phase: "idle" } & SessionEffect;
 export type PlacingFirstDrawingSession = {
   phase: "placing-first";
-  tool: Exclude<DrawingTool, "select" | "crosshair" | "horizontal-line">;
+  tool: DrawingType;
   start: DrawingPoint;
 } & SessionEffect;
 export type PreviewingDrawingSession = {
   phase: "previewing";
-  tool: "trend-line" | "arrow";
+  tool: DrawingType;
   start: DrawingPoint;
   preview: DrawingPoint;
+} & SessionEffect;
+export type PlacingDrawingSession = {
+  phase: "placing";
+  tool: DrawingType;
+  anchors: DrawingPoint[];
+  preview: DrawingPoint;
+  draftId?: string;
 } & SessionEffect;
 export type MeasuringDrawingSession = {
   phase: "measuring";
@@ -43,6 +52,7 @@ export type DrawingSession =
   | IdleDrawingSession
   | PlacingFirstDrawingSession
   | PreviewingDrawingSession
+  | PlacingDrawingSession
   | MeasuringDrawingSession
   | MeasuredDrawingSession
   | SelectedDrawingSession
@@ -55,6 +65,8 @@ export type DrawingAction =
   | { type: "PREVIEW"; point: DrawingPoint }
   | { type: "MEASURE_END"; point: DrawingPoint }
   | { type: "COMMIT"; point: DrawingPoint; id: string; now: number }
+  | { type: "STROKE"; point: DrawingPoint }
+  | { type: "FINISH"; id: string; now: number }
   | { type: "TEXT_COMMIT"; text: string; id: string; now: number }
   | { type: "SELECT"; drawingId: string }
   | { type: "START_DRAG"; drawing: Drawing; part: HitPart; point: DrawingPoint }
@@ -63,52 +75,28 @@ export type DrawingAction =
   | { type: "CLEAR_SELECTION" }
   | { type: "CANCEL" };
 
-const twoPointTool = (tool: DrawingTool): tool is "trend-line" | "arrow" => tool === "trend-line" || tool === "arrow";
-
-function drawingFor(tool: "trend-line" | "arrow", start: DrawingPoint, end: DrawingPoint, id: string, now: number): Drawing {
-  return {
-    id,
-    type: tool,
-    points: [start, end],
-    style: DEFAULT_DRAWING_STYLE,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function horizontalDrawing(point: DrawingPoint, id: string, now: number): Drawing {
-  return {
-    id,
-    type: "horizontal-line",
-    points: [point],
-    style: DEFAULT_DRAWING_STYLE,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function textDrawing(point: DrawingPoint, text: string, id: string, now: number): Drawing {
-  return {
-    id,
-    type: "text",
-    points: [point],
-    text,
-    style: DEFAULT_DRAWING_STYLE,
-    createdAt: now,
-    updatedAt: now,
-  };
+function pointIndex(part: HitPart): number | null {
+  if (part === "body") return null;
+  const index = Number(part.slice("point-".length));
+  return Number.isInteger(index) ? index : null;
 }
 
 function dragDrawing(state: DraggingDrawingSession, point: DrawingPoint, now: number): Drawing {
   const { original, part } = state;
-  if (part === "point-0" && original.points.length === 2) {
-    return { ...original, points: [point, original.points[1]], updatedAt: now } as Drawing;
+  const index = pointIndex(part);
+  if (index !== null && original.points[index]) {
+    const locked = (anchor: DrawingPoint): DrawingPoint => {
+      if (original.type === "horizontal-line" || original.type === "horizontal-ray") return { ...anchor, price: point.price };
+      if (original.type === "vertical-line") return { ...anchor, time: point.time };
+      return point;
+    };
+    return { ...original, points: original.points.map((anchor, anchorIndex) => anchorIndex === index ? locked(anchor) : anchor), updatedAt: now };
   }
-  if (part === "point-1" && original.points.length === 2) {
-    return { ...original, points: [original.points[0], point], updatedAt: now } as Drawing;
+  if (original.type === "horizontal-line" || original.type === "horizontal-ray") {
+    return { ...original, points: original.points.map((anchor) => ({ ...anchor, price: point.price })), updatedAt: now };
   }
-  if (original.type === "horizontal-line") {
-    return { ...original, points: [{ ...original.points[0], price: point.price }], updatedAt: now };
+  if (original.type === "vertical-line") {
+    return { ...original, points: original.points.map((anchor) => ({ ...anchor, time: point.time })), updatedAt: now };
   }
   return { ...translateDrawing(original, point.time - state.origin.time, point.price - state.origin.price), updatedAt: now };
 }
@@ -119,20 +107,28 @@ export function reduceDrawingSession(state: DrawingSession, action: DrawingActio
       if (action.tool === "price-change") {
         return { phase: "measuring", tool: "price-change", start: action.point, preview: action.point };
       }
-      if (action.tool === "horizontal-line" && action.id && action.now !== undefined) {
-        const committed = horizontalDrawing(action.point, action.id, action.now);
+      if (isStoredTool(action.tool) && creationMode(action.tool) === "instant" && action.id && action.now !== undefined) {
+        const committed = createStoredDrawing(action.tool, [action.point], action.id, action.now);
         return { phase: "selected", selectedId: committed.id, committed };
       }
-      if (twoPointTool(action.tool) || action.tool === "text") {
+      if (isPairTool(action.tool)) {
+        return { phase: "previewing", tool: action.tool, start: action.point, preview: action.point };
+      }
+      if (isStoredTool(action.tool) && creationMode(action.tool) === "text") {
         return { phase: "placing-first", tool: action.tool, start: action.point };
+      }
+      if (isStoredTool(action.tool)) {
+        return { phase: "placing", tool: action.tool, anchors: [action.point], preview: action.point, draftId: action.id };
       }
       return state;
     case "PREVIEW":
-      if (state.phase === "measuring") {
+      if (state.phase === "measuring" || state.phase === "previewing" || state.phase === "placing") {
         return { ...state, preview: action.point };
       }
-      if (state.phase === "placing-first" && twoPointTool(state.tool)) {
-        return { phase: "previewing", tool: state.tool, start: state.start, preview: action.point };
+      return state;
+    case "STROKE":
+      if (state.phase === "placing" && creationMode(state.tool) === "brush") {
+        return { ...state, anchors: [...state.anchors, action.point], preview: action.point };
       }
       return state;
     case "MEASURE_END":
@@ -140,15 +136,34 @@ export function reduceDrawingSession(state: DrawingSession, action: DrawingActio
       return { phase: "measured", tool: "price-change", start: state.start, end: action.point };
     case "COMMIT":
       if (state.phase === "previewing") {
-        const committed = drawingFor(state.tool, state.start, action.point, action.id, action.now);
+        const committed = createStoredDrawing(state.tool, [state.start, action.point], action.id, action.now);
         return { phase: "selected", selectedId: committed.id, committed };
       }
+      if (state.phase === "placing") {
+        const mode = creationMode(state.tool);
+        if (mode === "brush") return state;
+        const anchors = [...state.anchors, action.point];
+        if (mode === "path") return { ...state, anchors, preview: action.point };
+        if (typeof mode === "number" && anchors.length >= mode) {
+          const committed = createStoredDrawing(state.tool, anchors, state.draftId ?? action.id, action.now);
+          return { phase: "selected", selectedId: committed.id, committed };
+        }
+        return { ...state, anchors, preview: action.point };
+      }
       return state;
+    case "FINISH":
+      if (state.phase !== "placing") return state;
+      if (creationMode(state.tool) !== "path" && creationMode(state.tool) !== "brush") return state;
+      if (state.anchors.length < 2) return initialDrawingSession;
+      {
+        const committed = createStoredDrawing(state.tool, state.anchors, state.draftId ?? action.id, action.now);
+        return { phase: "selected", selectedId: committed.id, committed };
+      }
     case "TEXT_COMMIT":
       if (state.phase !== "placing-first" || state.tool !== "text") return state;
       if (!action.text.trim()) return initialDrawingSession;
       {
-        const committed = textDrawing(state.start, action.text, action.id, action.now);
+        const committed = createStoredDrawing("text", [state.start], action.id, action.now, action.text);
         return { phase: "selected", selectedId: committed.id, committed };
       }
     case "SELECT":
@@ -172,16 +187,26 @@ export function reduceDrawingSession(state: DrawingSession, action: DrawingActio
       return state.phase === "dragging"
         ? { phase: "selected", selectedId: state.selectedId }
         : initialDrawingSession;
+    default: {
+      const unreachable: never = action;
+      return unreachable;
+    }
   }
 }
 
 type ChartInteraction = {
   applyOptions(options: { handleScroll: boolean; handleScale: boolean }): void;
-  timeScale(): { coordinateToTime(x: number): Time | null };
+  timeScale(): {
+    coordinateToTime(x: number): Time | null;
+    timeToCoordinate?(time: Time): number | null;
+  };
   panes?(): ReadonlyArray<{ getHeight(): number }>;
 };
 
-type SeriesInteraction = { coordinateToPrice(y: number): number | null };
+type SeriesInteraction = {
+  coordinateToPrice(y: number): number | null;
+  priceToCoordinate?(price: number): number | null;
+};
 export type DrawingChangeKind = "transient" | "commit";
 
 export type DrawingControllerOptions = {
@@ -195,6 +220,12 @@ export type DrawingControllerOptions = {
   requestRender(): void;
   requestText(point: DrawingPoint): void;
   onCancel?(): void;
+  getModes?(): DrawingModes;
+  getCandles?(): readonly MagnetCandle[];
+  setHovered?(id: string | null): void;
+  /** Coalesce preview paints. Tests inject a synchronous stand-in. */
+  requestAnimationFrame?(callback: () => void): number;
+  cancelAnimationFrame?(handle: number): void;
   /** Returns the frontmost hit from the shared primitive scene. */
   hitTest(point: ScreenPoint): DrawingHit | null;
   createId?(): string;
@@ -209,6 +240,15 @@ export class DrawingController {
   private candleTimes: readonly number[] = [];
   private interactionsLocked = false;
   private activePointerId: number | null = null;
+  private anchorScreen: ScreenPoint | null = null;
+  private placementMoved = false;
+  private placingPointerId: number | null = null;
+  private lastPoint: DrawingPoint | null = null;
+  private hoverId: string | null = null;
+  private frameHandle: number | null = null;
+  private frameQueued = false;
+  private lastDownAt = 0;
+  private lastStrokeScreen: ScreenPoint | null = null;
 
   constructor(options: DrawingControllerOptions) {
     this.options = options;
@@ -244,6 +284,7 @@ export class DrawingController {
     window.removeEventListener("blur", this.onWindowBlur);
     this.releasePointer();
     this.unlockInteractions();
+    this.cancelFrame();
     this.host = null;
   }
 
@@ -265,15 +306,17 @@ export class DrawingController {
     this.dispatch({ type: "TEXT_COMMIT", text, id: this.createId(), now: this.now() });
     this.unlockInteractions();
     if (!text.trim()) return false;
-    this.options.setTool("select");
+    this.finishArmedTool();
     return true;
   }
 
   deleteSelected(): boolean {
-    if (this.session.phase !== "selected") return false;
+    const session = this.session;
+    if (this.modes().locked) return false;
+    if (session.phase !== "selected") return false;
     const drawings = this.options.getDrawings();
-    if (!drawings.some((drawing) => drawing.id === this.session.selectedId)) return false;
-    this.options.replaceDrawings(drawings.filter((drawing) => drawing.id !== this.session.selectedId), "commit");
+    if (!drawings.some((drawing) => drawing.id === session.selectedId)) return false;
+    this.options.replaceDrawings(drawings.filter((drawing) => drawing.id !== session.selectedId), "commit");
     this.dispatch({ type: "CLEAR_SELECTION" });
     return true;
   }
@@ -290,10 +333,13 @@ export class DrawingController {
     if (typeof event.button === "number" && event.button > 0) return;
     const screenPoint = this.toHostPoint(event);
     if (!pointerInMainPane(screenPoint.y, this.mainPaneHeight())) return;
-    const point = toDrawingPoint(screenPoint, this.coordinateAdapter);
-
+    const point = this.adjustPoint(screenPoint, !!event.shiftKey);
     if (point === null) return;
+    this.lastPoint = point;
+
     if (tool === "select") {
+      this.publishHover(null);
+      if (this.modes().locked || this.modes().hidden) return;
       const hit = this.options.hitTest(screenPoint);
       if (!hit) {
         this.dispatch({ type: "CLEAR_SELECTION" });
@@ -314,25 +360,48 @@ export class DrawingController {
       if (this.session.phase === "measuring") {
         this.dispatch({ type: "MEASURE_END", point });
         this.unlockInteractions();
+        this.resetPlacement();
         return;
       }
-      if (this.session.phase !== "idle") return;
+      this.beginPlacement(screenPoint, event.pointerId);
       this.dispatch({ type: "BEGIN", tool, point });
       this.lockInteractions();
       return;
     }
     if (this.session.phase === "previewing") {
-      this.dispatch({ type: "COMMIT", point, id: this.createId(), now: this.now() });
-      this.unlockInteractions();
-      this.options.setTool("select");
+      this.commitTwoPoint(point);
+      this.resetPlacement();
       return;
     }
-    if (this.session.phase !== "idle") return;
+    if (this.session.phase === "placing") {
+      const doubled = this.lastDownAt > 0 && this.now() - this.lastDownAt < 400
+        && this.session.anchors.length >= 2
+        && Math.abs((this.session.anchors.at(-1)?.time ?? 0) - point.time) < 1
+        && Math.abs((this.session.anchors.at(-1)?.price ?? 0) - point.price) < 1e-8;
+      this.lastDownAt = this.now();
+      if (doubled && creationMode(this.session.tool) === "path") {
+        this.finishOpenPath();
+        return;
+      }
+      this.dispatch({ type: "COMMIT", point, id: this.createId(), now: this.now() });
+      this.anchorScreen = screenPoint;
+      if (this.sessionPhase() === "selected") {
+        this.unlockInteractions();
+        this.finishArmedTool();
+        this.resetPlacement();
+      }
+      return;
+    }
+    if (this.session.phase === "dragging") return;
 
+    this.beginPlacement(screenPoint, event.pointerId);
+    this.lastDownAt = this.now();
+    this.lastStrokeScreen = screenPoint;
     this.dispatch({ type: "BEGIN", tool, point, id: this.createId(), now: this.now() });
-    if (tool === "horizontal-line") {
+    if (creationMode(tool) === "instant") {
       this.unlockInteractions();
-      this.options.setTool("select");
+      this.finishArmedTool();
+      this.resetPlacement();
       return;
     }
     this.lockInteractions();
@@ -342,31 +411,69 @@ export class DrawingController {
   private readonly onPointerMove = (event: PointerEvent): void => {
     const tool = this.options.getTool();
     this.reconcileActiveTool(tool);
-    if (tool === "crosshair") return;
-    if (this.session.phase !== "placing-first" && this.session.phase !== "previewing" && this.session.phase !== "measuring" && this.session.phase !== "dragging") return;
+    if (tool === "crosshair") {
+      this.publishHover(null);
+      return;
+    }
+    const placing = this.session.phase === "placing-first" || this.session.phase === "previewing" || this.session.phase === "placing" || this.session.phase === "measuring" || this.session.phase === "dragging";
+    if (!placing) {
+      this.trackHover(this.toHostPoint(event), tool);
+      return;
+    }
     if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
     const screenPoint = this.toHostPoint(event);
     if (!pointerInMainPane(screenPoint.y, this.mainPaneHeight())) {
-      if (this.session.phase !== "dragging") this.cancel();
+      if (this.session.phase === "dragging") this.cancel();
       return;
     }
-    const point = toDrawingPoint(screenPoint, this.coordinateAdapter);
-    if (point === null) {
-      this.cancel();
-      return;
-    }
+    const point = this.adjustPoint(screenPoint, !!event.shiftKey);
+    if (point === null) return;
+    this.lastPoint = point;
+    if (this.anchorScreen && pointerPastThreshold(this.anchorScreen, screenPoint)) this.placementMoved = true;
     event.preventDefault();
     if (this.session.phase === "dragging") this.dispatch({ type: "DRAG", point, now: this.now() });
-    else this.dispatch({ type: "PREVIEW", point });
+    else if (this.session.phase === "placing" && creationMode(this.session.tool) === "brush" && this.lastStrokeScreen && pointerPastThreshold(this.lastStrokeScreen, screenPoint, 3)) {
+      this.lastStrokeScreen = screenPoint;
+      this.dispatch({ type: "STROKE", point });
+    } else this.dispatch({ type: "PREVIEW", point });
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     this.reconcileActiveTool(this.options.getTool());
-    if (this.session.phase !== "dragging" || event.pointerId !== this.activePointerId) return;
-    event.preventDefault();
-    this.dispatch({ type: "END_DRAG" });
-    this.releasePointer();
-    this.unlockInteractions();
+    if (this.session.phase === "dragging") {
+      if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
+      event.preventDefault();
+      this.dispatch({ type: "END_DRAG" });
+      this.releasePointer();
+      this.unlockInteractions();
+      this.resetPlacement();
+      return;
+    }
+    if (this.placingPointerId !== null && event.pointerId !== this.placingPointerId) return;
+    if (!this.placementMoved) {
+      this.releasePlacementPointer();
+      return;
+    }
+    const screenPoint = this.toHostPoint(event);
+    const point = this.adjustPoint(screenPoint, !!event.shiftKey) ?? this.lastPoint;
+    if (this.session.phase === "previewing" && point) this.commitTwoPoint(point);
+    else if (this.session.phase === "placing" && point && this.session.tool && creationMode(this.session.tool) === "brush") {
+      this.finishOpenPath();
+    } else if (this.session.phase === "placing" && point && this.placementMoved && this.session.anchors.length === 1 && typeof creationMode(this.session.tool) === "number") {
+      this.dispatch({ type: "COMMIT", point, id: this.createId(), now: this.now() });
+      this.anchorScreen = screenPoint;
+      if (this.sessionPhase() === "selected") {
+        this.unlockInteractions();
+        this.finishArmedTool();
+        this.resetPlacement();
+        return;
+      }
+    } else if (this.session.phase === "measuring" && point) {
+      this.dispatch({ type: "MEASURE_END", point });
+      this.unlockInteractions();
+    }
+    if (this.session.phase !== "placing") this.resetPlacement();
+    else this.releasePlacementPointer();
   };
 
   private readonly onPointerCancel = (event: PointerEvent): void => {
@@ -399,8 +506,17 @@ export class DrawingController {
       this.cancel();
       return;
     }
-    if ((event.key === "Delete" || event.key === "Backspace") && !isEditable(event.target) && this.deleteSelected()) {
+    if (event.key === "Enter" && this.session.phase === "placing" && creationMode(this.session.tool) === "path") {
       event.preventDefault();
+      this.finishOpenPath();
+      return;
+    }
+    if ((event.key === "Delete" || event.key === "Backspace") && !isEditable(event.target)) {
+      if (this.session.phase === "selected" && this.modes().locked) {
+        event.preventDefault();
+        return;
+      }
+      if (this.deleteSelected()) event.preventDefault();
     }
   };
 
@@ -414,8 +530,119 @@ export class DrawingController {
       )), "transient");
     }
     if (completedDrag) this.options.replaceDrawings([...this.options.getDrawings()], "commit");
-    this.options.setSession?.(this.session);
+    const quiet = action.type === "PREVIEW" || action.type === "DRAG";
+    if (!quiet) this.options.setSession?.(this.session);
+    if (quiet) this.scheduleRender();
+    else this.flushRender();
+  }
+
+  private modes(): DrawingModes {
+    return this.options.getModes?.() ?? initialDrawingModes;
+  }
+
+  private adjustPoint(screen: ScreenPoint, shiftKey: boolean): DrawingPoint | null {
+    const snapped = this.snap(screen);
+    const point = snapped ?? toDrawingPoint(screen, this.coordinateAdapter);
+    if (!point) return null;
+    const constrain = shiftKey && this.anchorScreen
+      && (this.session.phase === "previewing" || this.session.phase === "placing" || this.session.phase === "measuring" || this.session.phase === "placing-first");
+    if (!constrain || !this.anchorScreen) return point;
+    const converted = toDrawingPoint(constrainToOctant(this.anchorScreen, screen), this.coordinateAdapter);
+    return converted ?? point;
+  }
+
+  private snap(screen: ScreenPoint): DrawingPoint | null {
+    if (!this.modes().magnet) return null;
+    const timeScale = this.options.chart.timeScale();
+    const series = this.options.series;
+    if (!timeScale.timeToCoordinate || !series.priceToCoordinate) return null;
+    const snapped = snapToOhlc(screen, this.options.getCandles?.() ?? [], {
+      timeToX: (time) => timeScale.timeToCoordinate?.(time as UTCTimestamp) ?? null,
+      priceToY: (price) => series.priceToCoordinate?.(price) ?? null,
+    });
+    return snapped ? { time: snapped.time as UTCTimestamp, price: snapped.price } : null;
+  }
+
+  private beginPlacement(screen: ScreenPoint, pointerId: number): void {
+    this.anchorScreen = screen;
+    this.placementMoved = false;
+    this.placingPointerId = pointerId;
+    this.capturePointer(pointerId);
+  }
+
+  private releasePlacementPointer(): void {
+    this.placementMoved = false;
+    this.placingPointerId = null;
+    this.releasePointer();
+  }
+
+  private resetPlacement(): void {
+    this.anchorScreen = null;
+    this.releasePlacementPointer();
+  }
+
+  private commitTwoPoint(point: DrawingPoint): void {
+    if (this.session.phase !== "previewing") return;
+    if (this.session.start.time === point.time && this.session.start.price === point.price) return;
+    this.dispatch({ type: "COMMIT", point, id: this.createId(), now: this.now() });
+    this.unlockInteractions();
+    this.finishArmedTool();
+  }
+
+  private finishOpenPath(): void {
+    if (this.session.phase !== "placing") return;
+    this.dispatch({ type: "FINISH", id: this.createId(), now: this.now() });
+    this.unlockInteractions();
+    if (this.sessionPhase() === "selected") this.finishArmedTool();
+    this.resetPlacement();
+  }
+
+  private sessionPhase(): DrawingSession["phase"] {
+    return this.session.phase;
+  }
+
+  private finishArmedTool(): void {
+    if (!this.modes().continuous) this.options.setTool("select");
+  }
+
+  private trackHover(screen: ScreenPoint, tool: DrawingTool): void {
+    if (tool !== "select" || this.modes().locked || this.modes().hidden) {
+      this.publishHover(null);
+      return;
+    }
+    this.publishHover(this.options.hitTest(screen)?.drawingId ?? null);
+  }
+
+  private publishHover(id: string | null): void {
+    if (this.hoverId === id) return;
+    this.hoverId = id;
+    this.options.setHovered?.(id);
+  }
+
+  private scheduleRender(): void {
+    if (this.frameQueued) return;
+    this.frameQueued = true;
+    const raf = this.options.requestAnimationFrame ?? defaultAnimationFrame;
+    this.frameHandle = raf(() => {
+      this.frameQueued = false;
+      this.frameHandle = null;
+      this.options.requestRender();
+    });
+  }
+
+  private flushRender(): void {
+    this.cancelFrame();
     this.options.requestRender();
+  }
+
+  private cancelFrame(): void {
+    if (!this.frameQueued || this.frameHandle === null) {
+      this.frameQueued = false;
+      return;
+    }
+    (this.options.cancelAnimationFrame ?? defaultCancelAnimationFrame)(this.frameHandle);
+    this.frameHandle = null;
+    this.frameQueued = false;
   }
 
   private mainPaneHeight(): number | null {
@@ -441,7 +668,7 @@ export class DrawingController {
   }
 
   private reconcileActiveTool(tool: DrawingTool): void {
-    const activeTool = this.session.phase === "placing-first" || this.session.phase === "previewing"
+    const activeTool = this.session.phase === "placing-first" || this.session.phase === "previewing" || this.session.phase === "placing"
       ? this.session.tool
       : this.session.phase === "measuring" || this.session.phase === "measured" ? "price-change"
       : this.session.phase === "dragging" ? "select" : null;
@@ -457,7 +684,7 @@ export class DrawingController {
       )), "transient");
     }
     this.dispatch({ type: "CANCEL" });
-    this.releasePointer();
+    this.resetPlacement();
     this.unlockInteractions();
     this.options.onCancel?.();
     if (resetTool) this.options.setTool("select");
@@ -483,6 +710,16 @@ export class DrawingController {
   private now(): number {
     return this.options.now?.() ?? Date.now();
   }
+}
+
+function defaultAnimationFrame(callback: () => void): number {
+  if (typeof requestAnimationFrame === "function") return requestAnimationFrame(callback);
+  return setTimeout(callback, 0) as unknown as number;
+}
+
+function defaultCancelAnimationFrame(handle: number): void {
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle);
+  else clearTimeout(handle);
 }
 
 function isEditable(target: EventTarget | null): boolean {

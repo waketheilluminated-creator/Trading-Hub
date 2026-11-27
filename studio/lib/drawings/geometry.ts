@@ -2,12 +2,13 @@ import type { Drawing, DrawingPoint } from "./types.ts";
 import { toScreenPoint, type DrawingCoordinateAdapter } from "./coordinates.ts";
 
 export type ScreenPoint = { x: number; y: number };
-export type HitPart = "body" | "point-0" | "point-1";
+export type HitPart = "body" | `point-${number}`;
 export type DrawingHit = { drawingId: string; part: HitPart };
 export type ScreenDrawing = {
   id: string;
   type: Drawing["type"];
   points: readonly ScreenPoint[];
+  anchors: readonly DrawingPoint[];
   style?: Drawing["style"];
   text?: string;
   interactive?: boolean;
@@ -32,11 +33,12 @@ export function buildScreenDrawings(
       id: drawing.id,
       type: drawing.type,
       points: points as ScreenPoint[],
+      anchors: drawing.points,
       style: drawing.style,
       interactive: true,
-      ...(drawing.type === "text" ? { text: drawing.text } : {}),
+      ...(drawing.text ? { text: drawing.text } : {}),
     };
-    if (drawing.type === "text") {
+    if (drawing.type === "text" && drawing.text) {
       const anchor = screenDrawing.points[0];
       screenDrawing.textBounds = {
         x: anchor.x,
@@ -79,9 +81,10 @@ export function arrowHead(start: ScreenPoint, end: ScreenPoint, size: number): [
 }
 
 export function hitTestDrawing(drawing: ScreenDrawing, point: ScreenPoint, tolerance: number): DrawingHit | null {
-  for (let index = 0; drawing.points.length >= 2 && index < 2; index += 1) {
-    if (Math.hypot(point.x - drawing.points[index].x, point.y - drawing.points[index].y) <= tolerance) {
-      return { drawingId: drawing.id, part: index === 0 ? "point-0" : "point-1" };
+  for (let index = 0; index < drawing.points.length; index += 1) {
+    const anchor = drawing.points[index];
+    if (anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) <= tolerance) {
+      return { drawingId: drawing.id, part: `point-${index}` };
     }
   }
 
