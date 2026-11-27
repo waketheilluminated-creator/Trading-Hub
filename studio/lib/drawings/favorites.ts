@@ -1,3 +1,4 @@
+import { catalogTool } from "./catalog.ts";
 import type { DrawingTool } from "./types.ts";
 
 export const DRAWING_FAVORITES_KEY = "th-drawing-favorites-v1";
@@ -12,7 +13,7 @@ type FavoriteStorage = {
 };
 
 export function isFavoriteTool(value: unknown): value is DrawingTool {
-  return typeof value === "string" && FAVORITE_TOOLS.has(value as DrawingTool);
+  return typeof value === "string" && (FAVORITE_TOOLS.has(value as DrawingTool) || catalogTool(value as DrawingTool) !== undefined);
 }
 
 function sanitize(value: unknown, max = MAX_DRAWING_FAVORITES): DrawingTool[] {

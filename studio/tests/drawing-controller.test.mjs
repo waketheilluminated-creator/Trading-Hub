@@ -560,6 +560,38 @@ test("continuous drawing keeps the tool armed and lock blocks selection edits", 
   assert.equal(locked.getSession().phase, "selected");
 });
 
+test("a three-point channel previews each segment and commits on the third click", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "parallel-channel", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  h.controller.onPointerMove({ ...pointerEvent(), clientX: 180, clientY: 30 });
+  assert.equal(h.controller.getSession().phase, "placing");
+  assert.equal(h.controller.getSession().anchors.length, 1);
+  h.controller.onPointerDown({ ...pointerEvent(), clientX: 180, clientY: 30 });
+  assert.equal(h.controller.getSession().anchors.length, 2);
+  assert.deepEqual(h.getDrawings(), []);
+  h.controller.onPointerDown({ ...pointerEvent(), clientX: 140, clientY: 50 });
+  assert.equal(h.getDrawings()[0].type, "parallel-channel");
+  assert.equal(h.getDrawings()[0].points.length, 3);
+  assert.equal(h.tool.current, "select");
+});
+
+test("a path commits on Enter and Escape drops the in-progress anchors", () => {
+  const h = createControllerHarness({ initialDrawings: [], initialTool: "polyline", hit: null });
+  h.controller.onPointerDown(pointerEvent());
+  h.controller.onPointerDown({ ...pointerEvent(), clientX: 160, clientY: 30 });
+  h.controller.onPointerDown({ ...pointerEvent(), clientX: 210, clientY: 40 });
+  assert.equal(h.getDrawings().length, 0);
+  h.controller.onKeyDown({ key: "Enter", preventDefault() {}, target: null });
+  assert.equal(h.getDrawings()[0].type, "polyline");
+  assert.equal(h.getDrawings()[0].points.length, 3);
+
+  const cancel = createControllerHarness({ initialDrawings: [], initialTool: "triangle", hit: null });
+  cancel.controller.onPointerDown(pointerEvent());
+  cancel.controller.onKeyDown({ key: "Escape", preventDefault() {}, target: null });
+  assert.deepEqual(cancel.controller.getSession(), initialDrawingSession);
+  assert.deepEqual(cancel.getDrawings(), []);
+});
+
 test("contextmenu listener is attached to the chart host only and removed on detach", () => {
   const added = []; const removed = [];
   const host = {

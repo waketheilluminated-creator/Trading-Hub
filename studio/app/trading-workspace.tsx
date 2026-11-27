@@ -826,7 +826,13 @@ export function TradingWorkspace() {
         return [{ time, open: candle.open, high: candle.high, low: candle.low, close: candle.close }];
       }),
       setHovered: (id) => drawingPrimitive.setHovered(id),
-      requestRender: () => drawingPrimitive.setState(drawingsRef.current, drawingController.getSession(), candleTimesRef.current),
+      requestRender: () => {
+        drawingPrimitive.setMarket(drawingCandlesRef.current.flatMap((candle) => {
+          const time = Number(candle.time);
+          return Number.isFinite(time) ? [{ time, close: candle.close }] : [];
+        }));
+        drawingPrimitive.setState(drawingsRef.current, drawingController.getSession(), candleTimesRef.current);
+      },
       requestText: (point) => {
         const x = chart.timeScale().timeToCoordinate(point.time);
         const y = candleSeries.priceToCoordinate(point.price);

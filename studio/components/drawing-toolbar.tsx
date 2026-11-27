@@ -23,23 +23,8 @@ const IconFrame = ({ children }: { children: ReactNode }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">{children}</svg>
 );
 
-function SelectIcon() {
-  return <IconFrame><path d="m4 2 11 8-5.4 1.1L7.8 17 4 2Z" /></IconFrame>;
-}
-function TrendLineIcon() {
-  return <IconFrame><line x1="3" y1="16" x2="17" y2="4" /><circle cx="3" cy="16" r="1" /><circle cx="17" cy="4" r="1" /></IconFrame>;
-}
-function HorizontalLineIcon() {
-  return <IconFrame><line x1="3" y1="10" x2="17" y2="10" /><circle cx="3" cy="10" r="1" /><circle cx="17" cy="10" r="1" /></IconFrame>;
-}
-function ArrowIcon() {
-  return <IconFrame><path d="M3 16 15 4M10 4h5v5" /></IconFrame>;
-}
-function TextIcon() {
-  return <IconFrame><path d="M4 4h12M10 4v12M7 16h6" /></IconFrame>;
-}
-function CrosshairIcon() {
-  return <IconFrame><circle cx="10" cy="10" r="4" /><line x1="10" y1="2" x2="10" y2="6" /><line x1="10" y1="14" x2="10" y2="18" /><line x1="2" y1="10" x2="6" y2="10" /><line x1="14" y1="10" x2="18" y2="10" /></IconFrame>;
+function ToolGlyph({ tool }: { tool: DrawingTool }) {
+  return <IconFrame><path d={catalogTool(tool)?.icon ?? ""} /></IconFrame>;
 }
 function LibraryIcon() {
   return <IconFrame><path d="M4 15.5 15.5 4" /><path d="M12.5 4H16v3.5" /><circle cx="4" cy="15.5" r="1" /></IconFrame>;
@@ -85,16 +70,6 @@ function StarIcon({ filled }: { filled: boolean }) {
     </svg>
   );
 }
-
-const TOOL_ICONS: Record<DrawingTool, () => ReactNode> = {
-  select: SelectIcon,
-  "trend-line": TrendLineIcon,
-  "horizontal-line": HorizontalLineIcon,
-  arrow: ArrowIcon,
-  text: TextIcon,
-  "price-change": PriceChangeIcon,
-  crosshair: CrosshairIcon,
-};
 
 type TrashState = "closed" | "menu" | RemovalKind;
 
@@ -193,7 +168,6 @@ export function DrawingToolbar({
           {favorites.map((tool) => {
             const entry = catalogTool(tool);
             if (!entry) return null;
-            const Icon = TOOL_ICONS[entry.tool];
             return (
               <button
                 key={entry.tool}
@@ -205,7 +179,7 @@ export function DrawingToolbar({
                 data-favorite-tool={entry.tool}
                 onClick={() => onToolChange(entry.tool)}
               >
-                <Icon />
+                <ToolGlyph tool={entry.tool} />
               </button>
             );
           })}
@@ -217,7 +191,6 @@ export function DrawingToolbar({
             <section key={group.id} className="drawing-library-section" aria-label={group.title}>
               <h2 className="drawing-library-title">{group.title}</h2>
               {group.tools.map((entry, index) => {
-                const Icon = TOOL_ICONS[entry.tool];
                 const starred = favorites.includes(entry.tool);
                 const blocked = !starred && favorites.length >= MAX_DRAWING_FAVORITES;
                 return (
@@ -229,7 +202,7 @@ export function DrawingToolbar({
                       aria-pressed={activeTool === entry.tool}
                       onClick={() => { onToolChange(entry.tool); setLibraryOpen(false); }}
                     >
-                      <Icon />
+                      <ToolGlyph tool={entry.tool} />
                       <span>{entry.name}</span>
                     </button>
                     <button

@@ -4,21 +4,21 @@ import { DRAWING_CATEGORIES, DRAWING_TOOL_CATALOG, groupedDrawingCatalog } from 
 import { initialDrawingModes, toggleDrawingMode } from "../lib/drawings/modes.ts";
 import { REMOVAL_MENU, removableIndicatorIds, removalPrompt } from "../lib/drawings/removal.ts";
 
-const LIBRARY_TOOLS = ["select", "crosshair", "trend-line", "horizontal-line", "text", "arrow"];
+const REQUIRED = ["ray", "extended-line", "parallel-channel", "fib-retracement", "rectangle", "long-position", "price-range", "polyline", "pitchfork", "arrow-up"];
 
 test("every library tool maps onto a TradingView category and empty sections stay hidden", () => {
   assert.deepEqual(DRAWING_CATEGORIES.map((category) => category.id), [
-    "cursors", "lines", "channels", "fibonacci", "patterns", "shapes", "annotation", "arrows",
+    "cursors", "lines", "channels", "fibonacci", "gann", "patterns", "forecast", "shapes", "annotation", "arrows",
   ]);
-  assert.deepEqual(DRAWING_TOOL_CATALOG.map((tool) => tool.tool), LIBRARY_TOOLS);
   for (const tool of DRAWING_TOOL_CATALOG) {
     assert.ok(DRAWING_CATEGORIES.some((category) => category.id === tool.category), tool.tool);
-    assert.ok(tool.name.length > 0);
-    assert.ok(tool.title.length > 0);
+    assert.ok(tool.name.length > 0 && tool.title.includes(tool.name));
+    assert.ok(tool.icon.length > 0);
   }
   const grouped = groupedDrawingCatalog();
-  assert.deepEqual(grouped.map((group) => group.id), ["cursors", "lines", "annotation", "arrows"]);
-  assert.deepEqual(grouped.flatMap((group) => group.tools.map((tool) => tool.tool)), LIBRARY_TOOLS);
+  assert.deepEqual(grouped.map((group) => group.id), DRAWING_CATEGORIES.map((category) => category.id));
+  assert.deepEqual(grouped.flatMap((group) => group.tools.map((tool) => tool.tool)), DRAWING_TOOL_CATALOG.map((tool) => tool.tool));
+  for (const tool of REQUIRED) assert.ok(DRAWING_TOOL_CATALOG.some((entry) => entry.tool === tool), tool);
   assert.ok(grouped.every((group) => group.title && group.tools.length > 0));
 });
 

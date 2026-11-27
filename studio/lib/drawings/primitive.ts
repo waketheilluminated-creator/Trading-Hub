@@ -18,11 +18,13 @@ import {
   type ScreenDrawing,
   type ScreenPoint,
 } from "./geometry.ts";
-import { DEFAULT_DRAWING_STYLE, type Drawing } from "./types.ts";
+import { buildFigure, hitFigure, type FigureCandle } from "./figures.ts";
+import { DEFAULT_DRAWING_STYLE, type Drawing, type DrawingType } from "./types.ts";
 
 const HIT_TOLERANCE = 8;
 const HANDLE_RADIUS = 4;
 const PREVIEW_ID = "__drawing-preview__";
+const LEGACY_DRAWINGS = new Set<DrawingType>(["trend-line", "arrow", "horizontal-line", "text"]);
 
 type PriceChangeMeasurement = {
   start: ScreenPoint;
@@ -36,11 +38,25 @@ function selectedIdFor(session: DrawingSession): string | null {
 }
 
 function previewDrawingFor(session: DrawingSession): Drawing | null {
-  if (session.phase !== "previewing") return null;
+  if (session.phase === "previewing") {
+    return {
+      id: PREVIEW_ID,
+      type: session.tool,
+      points: [session.start, session.preview],
+      style: DEFAULT_DRAWING_STYLE,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+  if (session.phase !== "placing") return null;
+  const points = [...session.anchors];
+  const last = points[points.length - 1];
+  if (!last || last.time !== session.preview.time || last.price !== session.preview.price) points.push(session.preview);
+  if (!points.length) return null;
   return {
     id: PREVIEW_ID,
     type: session.tool,
-    points: [session.start, session.preview],
+    points,
     style: DEFAULT_DRAWING_STYLE,
     createdAt: 0,
     updatedAt: 0,
@@ -164,6 +180,61 @@ function drawScreenDrawing(
   context.restore();
 }
 
+function drawComputedFigure(
+  context: CanvasRenderingContext2D,
+  drawing: ScreenDrawing,
+  paneWidth: number,
+  paneHeight: number,
+  candles: readonly FigureCandle[],
+  selected: boolean,
+): void {
+  const figure = buildFigure(drawing.type, drawing.points, drawing.anchors, { width: paneWidth, height: paneHeight }, candles);
+  const color = drawing.style?.color ?? DEFAULT_DRAWING_STYLE.color;
+  context.save();
+  context.lineWidth = drawing.style?.lineWidth ?? DEFAULT_DRAWING_STYLE.lineWidth;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  for (const line of figure.lines) {
+    if (line.points.length < 2) continue;
+    context.beginPath();
+    line.points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    if (line.closed) context.closePath();
+    if (line.fill) {
+      context.fillStyle = line.fill;
+      context.fill();
+    }
+    context.strokeStyle = line.color ?? color;
+    context.stroke();
+  }
+  for (const circle of figure.circles) {
+    context.beginPath();
+    context.ellipse(circle.x, circle.y, Math.max(circle.rx, 0.5), Math.max(circle.ry, 0.5), 0, 0, Math.PI * 2);
+    if (circle.fill) {
+      context.fillStyle = circle.fill;
+      context.fill();
+    }
+    context.strokeStyle = circle.color ?? color;
+    context.stroke();
+  }
+  context.font = "11px ui-sans-serif, system-ui, sans-serif";
+  context.textBaseline = "middle";
+  for (const label of figure.labels) {
+    const width = Math.max(16, label.text.length * 6.4 + 8);
+    context.fillStyle = "rgba(11,16,23,0.88)";
+    context.fillRect(label.x, label.y - 8, width, 16);
+    context.fillStyle = label.color ?? "#d5dce6";
+    context.fillText(label.text, label.x + 4, label.y);
+  }
+  if (drawing.id === PREVIEW_ID && drawing.points[0]) drawAnchorDot(context, drawing.points[0], color);
+  if (selected) {
+    for (const point of drawing.points) drawAnchorDot(context, point, color);
+  }
+  context.restore();
+}
+
 function formatMeasurementPrice(value: number): string {
   const magnitude = Math.abs(value);
   return value.toFixed(magnitude > 0 && magnitude < 1 ? 6 : 2);
@@ -230,25 +301,33 @@ class DrawingPaneRenderer implements IPrimitivePaneRenderer {
   private readonly getSelectedId: () => string | null;
   private readonly getHoveredId: () => string | null;
   private readonly getMeasurement: () => PriceChangeMeasurement | null;
+  private readonly getCandles: () => readonly FigureCandle[];
+  private readonly rememberPane: (size: { width: number; height: number }) => void;
 
   constructor(
     getScene: () => readonly ScreenDrawing[],
     getSelectedId: () => string | null,
     getHoveredId: () => string | null,
     getMeasurement: () => PriceChangeMeasurement | null,
+    getCandles: () => readonly FigureCandle[],
+    rememberPane: (size: { width: number; height: number }) => void,
   ) {
     this.getScene = getScene;
     this.getSelectedId = getSelectedId;
     this.getHoveredId = getHoveredId;
     this.getMeasurement = getMeasurement;
+    this.getCandles = getCandles;
+    this.rememberPane = rememberPane;
   }
 
   draw(target: CanvasRenderingTarget2D): void {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+      this.rememberPane(mediaSize);
       const selectedId = this.getSelectedId();
       const hoveredId = this.getHoveredId();
       for (const drawing of this.getScene()) {
-        drawScreenDrawing(context, drawing, mediaSize.width, drawing.id === selectedId, drawing.id === hoveredId);
+        if (LEGACY_DRAWINGS.has(drawing.type)) drawScreenDrawing(context, drawing, mediaSize.width, drawing.id === selectedId, drawing.id === hoveredId);
+        else drawComputedFigure(context, drawing, mediaSize.width, mediaSize.height, this.getCandles(), drawing.id === selectedId);
       }
       const measurement = this.getMeasurement();
       if (measurement) drawPriceChangeMeasurement(context, measurement, mediaSize.width, mediaSize.height);
@@ -283,11 +362,15 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   private selectedId: string | null = null;
   private hoveredId: string | null = null;
   private hidden = false;
+  private market: FigureCandle[] = [];
+  private paneSize = { width: 1200, height: 800 };
   private readonly paneRenderer = new DrawingPaneRenderer(
     () => this.scene,
     () => this.selectedId,
     () => this.hoveredId,
     () => this.measurement,
+    () => this.market,
+    (size) => { this.paneSize = size; },
   );
   private readonly views: readonly IPrimitivePaneView[] = [new DrawingPaneView(this.paneRenderer)];
 
@@ -328,6 +411,10 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
+  setMarket(candles: readonly { time: number; close: number }[]): void {
+    this.market = candles.filter((candle) => Number.isFinite(candle.time) && Number.isFinite(candle.close));
+  }
+
   setHovered(id: string | null): void {
     if (this.hidden) id = null;
     if (this.hoveredId === id) return;
@@ -347,6 +434,12 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     for (let index = this.scene.length - 1; index >= 0; index -= 1) {
       const drawing = this.scene[index];
       if (drawing.interactive === false) continue;
+      if (!LEGACY_DRAWINGS.has(drawing.type)) {
+        const figure = buildFigure(drawing.type, drawing.points, drawing.anchors, this.paneSize, this.market);
+        const part = hitFigure(drawing.points, figure, point, HIT_TOLERANCE);
+        if (part) return { drawingId: drawing.id, part };
+        continue;
+      }
       const hit = hitTestScreenDrawing(drawing, point, HIT_TOLERANCE);
       if (hit) return hit;
     }
